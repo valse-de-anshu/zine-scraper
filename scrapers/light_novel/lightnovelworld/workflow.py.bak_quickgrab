@@ -1,0 +1,321 @@
+"""
+scrapers/light_novel/lightnovelworld/workflow.py
+-------------------------------------------------
+LightNovelWorld download workflow.
+
+Routing:
+  - Novel page URL  → Vacuum  → Downloads/Vacuum/lightnovelworld/<Title>/
+  - Chapter URL     → Quick grab → Downloads/Quick grab/lightnovelworld/<Title>/
+
+Storage layout inside the novel folder:
+  <Title>/
+    cover.jpg
+    .zine/
+      meta.json        — novel metadata (title, author, genres, desc, status, url)
+      history.json     — per-chapter download tracker
+    chapter_0001.txt
+    chapter_0002.txt
+    ...
+
+The chapter TUI log is kept minimal — one line per chapter result,
+matching the same aesthetic as other toon scrapers.
+"""
+
+import time
+import json
+from pathlib import Path
+from typing import Optional, Any
+
+from core.ui import console, startup_clear, print_banner, active_status
+from core.cache import save_url_to_file
+from core.paths import ZineFolder
+
+from .location import get_save_path
+from .verification import verify_chapters
+from .progress import render_completion_tree
+
+_LIVE_INSTANCE = None
+CHAPTER_DELAY = 0.5   # Shorter delay for text-only downloads
+
+
+def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
+                 batch_path: Optional[Path] = None, is_batch: bool = False):
+    url = url.strip().rstrip("/")
+    
+    import sys
+    
+    is_chapter = getattr(scraper, "is_chapter_link", lambda: False)()
+    if is_chapter:
+        scraper._single_chapter_only = True
+
+    startup_clear()
+    print_banner()
+
+    with active_status("[info]Metadata...[/info]", spinner="dots"):
+        try:
+            title, chapters = scraper.get_title_and_chapters()
+            
+            _is_chapter = False
+            if not chapters:
+                if hasattr(scraper, "is_chapter_link"):
+                    _is_chapter = scraper.is_chapter_link()
+                else:
+                    _is_chapter = any(x in url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
+                    
+            if not chapters and _is_chapter:
+                import re
+                m = re.search(r"(?:chapter-|/c/|/ch-|/ch/|/read/|/chapter/)([\d]+(?:[\.-][\d]+)?)", url.lower())
+                if m:
+                    num = m.group(1).replace("-", ".")
+                else:
+                    parts = [p for p in url.strip('/').split('/') if p]
+                    num = parts[-1] if parts else "1"
+                    num = re.sub(r"[^\d.]", "", num)
+                    if not num: num = "1"
+                
+                # Make sure the format is right: (str_num, url)
+                chapters = [(num, url)]
+
+        except Exception as e:
+            console.print(f"[error]Failed to fetch metadata: {e}[/error]")
+            if not is_batch:
+                console.input("\n[info]Press Enter to return...[/info]")
+            else:
+                time.sleep(1.5)
+            return
+
+    from core.ui import filter_subchapters
+    chapters = filter_subchapters(url, title, chapters, is_batch=is_batch)
+
+    if getattr(scraper, "_single_chapter_only", False):
+        url_normalized = url.rstrip("/")
+        # Try exact match first
+        filtered = [ch for ch in chapters if ch[1].rstrip("/") == url_normalized]
+        if not filtered:
+            import re
+            m = re.search(r"/chapter/([\d\.]+)", url_normalized)
+            if m:
+                ch_target = m.group(1)
+                filtered = [ch for ch in chapters if ch[0] == ch_target]
+        if filtered:
+            chapters = filtered
+
+        # Single chapter → use get_container_root (Quick grab) + get_save_path
+        from core.paths import get_container_root
+        default_root = get_container_root(url, scraper, is_batch, batch_path)
+        target_path = get_save_path(url, scraper, is_batch, batch_path, default_root, location_manager)
+        if not target_path:
+            return
+        folder = ZineFolder(target_path)
+        location_manager.create_directory(folder)
+        save_url_to_file(url, title)
+        is_quick_grab = True
+    else:
+        from core.paths import get_container_root
+        default_root = get_container_root(url, scraper, is_batch, batch_path)
+        target_path = get_save_path(url, scraper, is_batch, batch_path, default_root, location_manager)
+        if not target_path:
+            return
+
+        is_quick_grab = "Quick grab" in str(target_path)
+
+        if is_quick_grab:
+            folder = ZineFolder(target_path)
+        else:
+            folder = ZineFolder(target_path) / title
+            
+        location_manager.create_directory(folder)
+        save_url_to_file(url, title)
+
+    # ── .zine metadata ───────────────────────────────────────────────────────
+    if not is_quick_grab:
+        zine_folder = folder / ".zine"
+        location_manager.create_directory(zine_folder)
+        meta_path = zine_folder / "meta.json"
+
+        meta_data = {
+            "title":    title,
+            "url":      scraper.series_url,
+            "source":   scraper.domain,
+            "status":   getattr(scraper, "status", "Unknown"),
+        }
+        if getattr(scraper, "author", None):
+            meta_data["author"] = scraper.author
+        if getattr(scraper, "description", None):
+            meta_data["description"] = scraper.description
+        if getattr(scraper, "genres", None):
+            meta_data["genres"] = scraper.genres
+        if getattr(scraper, "novel_id", None):
+            meta_data["novel_id"] = scraper.novel_id
+        if chapters:
+            meta_data["total_chapters"] = len(chapters)
+
+        # Merge with existing to preserve custom edits
+        if meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+                updated = False
+                for k, v in meta_data.items():
+                    if k not in existing or existing[k] != v:
+                        existing[k] = v
+                        updated = True
+                if updated:
+                    with open(meta_path, "w", encoding="utf-8") as f:
+                        json.dump(existing, f, indent=4, ensure_ascii=False)
+            except Exception:
+                pass
+        else:
+            try:
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta_data, f, indent=4, ensure_ascii=False)
+            except Exception:
+                pass
+
+    # ── Cover ────────────────────────────────────────────────────────────────
+    cover_exists = (folder / "cover.jpg").exists()
+    if not is_quick_grab and not cover_exists:
+        cover_url = getattr(scraper, "cover_url", "")
+        if cover_url:
+            with active_status("[info]Cover...[/info]", spinner="dots"):
+                cover_exists = scraper.download_cover(cover_url, folder)
+
+    cover_status_ui = None if is_quick_grab else cover_exists
+
+    # ── Verify existing chapters ─────────────────────────────────────────────
+    verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.series_url)
+
+    # ── Initial TUI header ───────────────────────────────────────────────────
+    startup_clear()
+    print_banner()
+    if is_batch:
+        console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+    console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+    cat_display = (
+        f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}"
+        if len(target_path.parts) > 1 else target_path.name
+    )
+    console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
+    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+    console.print("")
+
+    render_completion_tree(title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui)
+
+    if not to_process:
+        console.print("[success]All chapters are already downloaded.[/success]")
+        if not is_batch:
+            console.input("\n[info]Download finished. Press Enter to return...[/info]")
+        return
+
+    # ── Whistleblower TUI reconstructor ─────────────────────────────────────
+    completed_history = []
+
+    from butler.whistleblower import set_tui_callback
+    def tui_reconstruct():
+        startup_clear()
+        print_banner()
+        if is_batch:
+            console.print("[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+        console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+        cat_display2 = (
+            f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}"
+            if len(target_path.parts) > 1 else target_path.name
+        )
+        console.print(f"[menu]Category[/menu]     : [info]{cat_display2}[/info]")
+        console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+        console.print("")
+        render_completion_tree(title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui)
+        for hist in completed_history:
+            console.print(hist)
+        username = __import__('getpass').getuser()
+        console.print(f"  [error]✘ Connection lost! I've got your back, {username}...[/error]")
+        console.print(f"  [success]● Connection restored, starting the engine please wait...[/success]")
+
+    set_tui_callback(tui_reconstruct)
+
+    console.print(" ")
+    console.print(" ")
+    success_count = 0
+
+    from rich.tree import Tree
+    from rich.live import Live
+    from rich.progress import Progress, TextColumn
+    from core.ui import MinimalPulseBar, set_active_live
+
+    for ch_num, link in to_process:
+        ch_data = {"status": "downloading", "words": 0, "done": False, "success": False}
+
+        def render_ch_tree() -> Tree:
+            tree = Tree(f"[info]●[/info] [menu]Chapter {ch_num}[/menu]", guide_style="unselected")
+            if not ch_data["done"]:
+                import time as _t
+                blink = int(_t.time() * 3) % 2
+                col = "warning" if blink == 0 else "unselected"
+                tree.add(f"[{col}]●[/{col}] Downloading text...")
+            else:
+                ok = ch_data.get("success", False)
+                c = "success" if ok else "error"
+                wc = ch_data.get("words", 0)
+                label = f"Complete  ({wc:,} words)" if ok else f"Failed ({ch_data.get('status', 'error')})"
+                tree.add(f"[{c}]● {label}[/{c}]")
+            return tree
+
+        global _LIVE_INSTANCE
+        _ch_error = [None]
+
+        with Live(get_renderable=render_ch_tree, console=console, refresh_per_second=10, transient=True) as live:
+            _LIVE_INSTANCE = live
+            set_active_live(live)
+
+            def stats_cb(stats: dict):
+                ch_data.update(stats)
+
+            try:
+                result = scraper.process_chapter(link, folder, ch_num, live=live, stats_callback=stats_cb)
+                if isinstance(result, dict) and result.get("success"):
+                    tracker.mark_downloaded(scraper.series_url, ch_num)
+                    ch_data.update(result)
+                    ch_data["done"] = True
+                    ch_data["success"] = True
+                    success_count += 1
+                else:
+                    ch_data["done"] = True
+                    ch_data["success"] = False
+            except Exception as e:
+                _ch_error[0] = e
+                ch_data["done"] = True
+                ch_data["status"] = str(e)
+
+        _LIVE_INSTANCE = None
+        set_active_live(None)
+
+        # Retry on connection loss
+        if not ch_data.get("success") and _ch_error[0] is not None:
+            from core.video_engine import handle_internet_loss
+            if handle_internet_loss():
+                # One retry
+                try:
+                    result = scraper.process_chapter(link, folder, ch_num)
+                    if isinstance(result, dict) and result.get("success"):
+                        tracker.mark_downloaded(scraper.series_url, ch_num)
+                        ch_data.update(result)
+                        ch_data["success"] = True
+                        success_count += 1
+                except Exception:
+                    pass
+
+        res_color = "success" if ch_data.get("success") else "error"
+        wc = ch_data.get("words", 0)
+        wc_str = f" [unselected]({wc:,} words)[/unselected]" if wc else ""
+        log_line = f"  [{res_color}]●[/{res_color}] [unselected]Ch {ch_num}[/unselected]{wc_str}"
+        console.print(log_line)
+        completed_history.append(log_line)
+        time.sleep(CHAPTER_DELAY)
+
+    if success_count > 0:
+        console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved\n")
+    else:
+        console.print(f"\n[error]✘[/error] Failed: No chapters saved\n")
+
+    if not is_batch:
+        console.input("\n[info]Download finished. Press Enter to return...[/info]")
