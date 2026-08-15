@@ -1,0 +1,67 @@
+# ==============================================================================
+# Zine Scraper Suite — Git Ignore Configuration
+# ==============================================================================
+
+# OS & Desktop Metadata
+.directory
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE & Editor Configurations
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# AI Assistant & Internal Agent Tooling
+.agents/
+.antigravitycli/
+.antigravity/
+.gemini/
+
+# Python Virtual Environments & Bytecode
+venv/
+env/
+.venv/
+ENV/
+*__pycache__*
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+
+# Run-Time Databases, Logs & User Settings
+Logs/
+core/settings.json
+💩/
+cache/
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Media & Scraping Partial Artifacts
+*.part
+*.ytdl
+*.crdownload
+*.aria2
+
+# AI Models Directory (Strictly exclude multi-gigabyte binary weights)
+Models/*
+!Models/README.md
+!Models/README to downlode ai model.md
+!Models/**/README.md
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.weights
