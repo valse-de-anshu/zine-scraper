@@ -55,9 +55,7 @@ cache/
 
 # AI Models Directory (Strictly exclude multi-gigabyte binary weights)
 Models/*
-!Models/README.md
 !Models/README to downlode ai model.md
-!Models/**/README.md
 *.bin
 *.safetensors
 *.pt

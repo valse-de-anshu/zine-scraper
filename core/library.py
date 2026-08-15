@@ -67,14 +67,9 @@ def scaffold_library(root: Path, storage) -> None:
 
     models_guide = models_dir / "README to downlode ai model.md"
     models_main = models_dir / "README.md"
-    if not models_guide.exists() and models_main.exists():
+    if models_main.exists():
         try:
-            storage.write_file(models_guide, models_main.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    elif not models_main.exists() and models_guide.exists():
-        try:
-            storage.write_file(models_main, models_guide.read_text(encoding="utf-8"))
+            models_main.unlink()
         except Exception:
             pass
 

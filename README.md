@@ -1,177 +1,220 @@
-# Zine Scraper Suite
-
 <div align="center">
 
-```text
+<pre>
 ███████╗██╗███╗   ██╗███████╗
 ╚══███╔╝██║████╗  ██║██╔════╝
   ███╔╝ ██║██╔██╗ ██║█████╗  
  ███╔╝  ██║██║╚██╗██║██╔══╝  
 ███████╗██║██║ ╚████║███████╗
 ╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
-```
+</pre>
 
-**A high-performance, modular desktop media archiver & TUI suite.**  
-Download and permanently archive manga, webtoons, anime, videos, music, lyrics, metadata, light novels, and image galleries — all from a single terminal prompt.
+# Zine Scraper Suite
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-informational?style=flat-square)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/suJD5xtFj)
-![Architecture](https://img.shields.io/badge/Architecture-Modular%20Isolation-purple?style=flat-square)
+**A high-performance, modular desktop media archiver & rich TUI suite.**<br>
+Download and permanently archive manga, webtoons, anime, videos, lossless music, synced lyrics, light novels, and image galleries — all from a single terminal prompt.
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-red?style=for-the-badge" alt="CC BY-NC-SA 4.0 License"></a>
+  <a href="https://discord.gg/suJD5xtFj"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Community"></a>
+  <a href="https://github.com/valse-de-anshu/zine-scraper/releases"><img src="https://img.shields.io/badge/Release-v1.0.0-orange?style=for-the-badge" alt="v1.0.0"></a>
+</p>
 
 </div>
 
 ---
 
-<a id="table-of-contents"></a>
+## 🔥 You've Been Streaming. We've Been Collecting.
+
+There's a difference between watching something and *owning* it.
+
+Right now, every show you love, every chapter you've been reading, every song that hits different at 2am — is being held **hostage**. One day the site goes down. One day you're on a plane with no Wi-Fi. One day the link just stops working.
+
+**Zine Scraper gives you everything. Permanently. Offline. Yours.**
+
+No buffering. No popups. No ads. No "this content is not available in your country."  
+Just you, your media, and complete peace of mind.
+
+---
+
+### 🛋️ Imagine This Being Your Normal:
+
+* 📚 **You find a manga or webtoon you like. You paste the link. That's it.**  
+  Walk away. Come back to the entire series downloaded, numbered perfectly, cover art included — ready to read anywhere, even with your phone on airplane mode at 30,000 feet.
+
+* 🎬 **You come across an anime or video you've been meaning to watch.**  
+  Paste the link before you sleep. Wake up and it's already on your machine in full quality — no ads, no broken players, no "video removed" messages. Just press play.
+
+* 🎵 **You hear a song that completely destroys you emotionally.**  
+  Paste the link. Zine grabs the full-quality audio, embeds the album art and artist info, and even downloads the live synced lyrics so every word scrolls on your screen as it plays. Your music library will look and feel like you paid for a premium service.
+
+* 📖 **You have a novel or book you've been meaning to get through, but reading off a screen kills your eyes.**  
+  Paste it. Zine reads it to you — with actual expressive voices, character tone shifts, the whole thing. Close your eyes. Listen. Fall asleep to it if you want.
+
+* 🎙️ **You find a foreign video with no subtitles and no translation.**  
+  Drop it in. Zine listens to every word, understands the language, and writes you clean English subtitles automatically. On your machine. No internet needed.
+
+* 🔞 **You find something you really don't want to lose.**  
+  Paste the link. It's saved. Full quality. Before the site goes down, before the paywall hits, before it disappears forever.
+
+* 😴 **You've got a whole list of things you want to save.**  
+  Dump them all in one file, tell Zine to run, and go to sleep.  
+  Wake up to your entire collection — downloaded, cleaned, organized, and ready.
+
+> *The question isn't what Zine can do for you.*  
+> *The question is — how much have you already missed without it?*
+
+---
+
 ## 📋 Table of Contents
 
-1. [Requirements & Prerequisites (Fresh OS / VM)](#requirements--prerequisites-fresh-os--virtualbox)
-2. [Installation Guide](#installation)
-3. [How to Launch](#how-to-launch)
-4. [TUI Showcase & Previews](#tui-showcase--previews)
-5. [New Audio & Metadata Engines](#new-audio--metadata-engines)
-6. [AI Speech & Subtitle Models Guide (Whisper)](#ai-speech--subtitle-models-guide-models)
-7. [Available Commands](#available-commands)
-8. [Themes & Browser Cookies](#themes--browser-cookies)
-9. [Supported Platforms](#supported-platforms)
-10. [Behind The Doors — Underground Engineering](#behind-the-doors--underground-engineering)
-11. [Project Architecture](#project-architecture)
-12. [Developer Guide — Adding a New Site](#developer-guide--adding-a-new-site)
-13. [A Message From The Creator & Contribution](#a-message-from-the-creator-anshu--valse)
-14. [Credits & Acknowledgments](#credits--acknowledgments)
-
----
-
-<a id="requirements--prerequisites-fresh-os--virtualbox"></a>
-## ⚙️ Requirements & Prerequisites (Fresh OS / VirtualBox)
-
-If you just installed a fresh copy of **Linux**, **macOS**, or **Windows** (e.g. in VirtualBox, VMware, or bare-metal), you only need two basic tools installed before cloning: **Git** and **Python 3.10+**. The Zine one-click installer handles all other heavy lifting automatically.
-
-### 🐧 Linux (Ubuntu / Debian / Arch / Fedora / openSUSE)
-Open your terminal and run the prerequisite command for your distro:
-* **Ubuntu / Debian / Mint:**
-  ```bash
-  sudo apt update && sudo apt install -y git python3 python3-pip python3-venv curl
-  ```
-* **Arch Linux / Manjaro:**
-  ```bash
-  sudo pacman -Sy --noconfirm git python python-pip curl
-  ```
-* **Fedora / RHEL:**
-  ```bash
-  sudo dnf install -y git python3 python3-pip curl
-  ```
-* **openSUSE:**
-  ```bash
-  sudo zypper install -y git python3 python3-pip python3-venv curl
-  ```
-
-### 🍏 macOS
-1. Open the Terminal application.
-2. If you don't have Homebrew installed, install it:
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-3. Install Git and Python:
-   ```bash
-   brew install git python
-   ```
-
-### 🪟 Windows 10 / 11
-1. **Install Git**: Download and install from [git-scm.com](https://git-scm.com/) (or run in PowerShell: `winget install Git.Git`).
-2. **Install Python 3.10+**: Download from [python.org](https://www.python.org/downloads/) or run:
-   ```cmd
-   winget install Python.Python.3.11
-   ```
-   > [!IMPORTANT]
-   > When installing Python on Windows, **MAKE SURE TO CHECK THE BOX**: ☑️ **"Add Python to PATH"**!
-
----
-
-<a id="installation"></a>
-## 🚀 Installation Guide
-
-### Step 1 — Clone the repository
-Open your terminal / command prompt and clone the repository:
-```bash
-git clone https://github.com/<your-username>/zine-scraper.git
-cd "zine scraper"
-```
-
-### Step 2 — Run the 1-Click Automated Installer
-Zine provides auto-installers in the `run me/` folder that automatically set up the entire environment:
-
-**🐧 Linux / 🍏 macOS:**
-```bash
-cd "run me"
-chmod +x install.sh run.sh
-./install.sh
-```
-
-**🪟 Windows:**
-* Open the `zine scraper\run me` folder in File Explorer and double-click **`install.bat`** (or open Command Prompt):
-  ```cmd
-  cd "run me"
-  install.bat
-  ```
-
----
-
-### 🛠️ What the Automated Installer Does:
-1. **Installs System Binaries**: Automatically fetches and configures `ffmpeg` (audio/video merging & tag baking), `aria2` (multi-threaded acceleration), `atomicparsley`, and `unzip`.
-2. **Installs Deno Runtime**: Sets up the Deno JavaScript engine required for stream decryption on sites like `hanime.tv`.
-3. **Creates Isolated Python VENV**: Creates an isolated `venv/` environment so dependencies never collide with your global Python system packages.
-4. **Installs 40+ Python Libraries**: Installs all required modules from `requirements.txt` (`yt-dlp`, `curl_cffi`, `playwright`, `mutagen`, `rich`, `deep-translator`, `faster-whisper`, etc.).
-5. **Downloads Playwright Chromium**: Fetches stealth browser binaries for scraping JavaScript-heavy single-page applications.
-6. **Boots the 1-Time Setup Wizard**: Launches the interactive wizard to let you pick your **Library Root Folder**, **Tokyo Night / Dark Theme**, and rate-limiting delay preferences!
-
----
-
-<a id="how-to-launch"></a>
-## ▶️ How to Launch
-
-After installation is complete, launch Zine Scraper anytime using the universal launchers:
-
-**🐧 Linux / 🍏 macOS:**
-```bash
-cd "zine scraper"
-./"run me"/run.sh
-```
-*(Or simply: `source venv/bin/activate && python orchestrator.py`)*
-
-**🪟 Windows:**
-* Double-click **`run.bat`** inside the `run me\` folder.
-* Or in Command Prompt:
-  ```cmd
-  cd "zine scraper"
-  "run me\run.bat"
-  ```
+* [🖼️ TUI Showcase & Previews](#tui-showcase--previews)
+* [🚀 Installation & Setup](#installation--setup)
+  * [Prerequisites (Fresh OS / VirtualBox)](#1-prerequisites-fresh-os--virtualbox)
+  * [1-Click Automated Installer](#2-run-the-1-click-installer)
+  * [How to Launch](#3-how-to-launch)
+* [💬 Available Commands](#available-commands)
+* [🛠️ Feature Toolkit Deep Dive](#feature-toolkit-deep-dive)
+  * [Audio & Metadata Suite (`bake`, `lyrs`, `sc-lyrics`)](#1-audio-suite--metadata-tagging)
+  * [AI Speech & Subtitle Models (`subs`)](#2-ai-speech--subtitle-generator-subs)
+  * [Qwen-TTS Audiobook Synthesizer (`tts`)](#3-qwen-tts-audiobook-generator-tts)
+  * [Webtoon Image Slicer (`slice`)](#4-webtoon--manhua-image-slicer-slice)
+* [🌐 Supported Platforms](#supported-platforms)
+* [🧠 Behind The Doors — Underground Engineering](#behind-the-doors--underground-engineering)
+* [🗂️ Project Architecture](#project-architecture)
+* [✉️ Message From The Creator & Contribution](#message-from-the-creator--contribution)
+* [❤️ Credits & Acknowledgments](#credits--acknowledgments)
 
 ---
 
 <a id="tui-showcase--previews"></a>
 ## 🖼️ TUI Showcase & Previews
 
-Experience the zero-leak raw TTY cbreak interface and rich dark mode aesthetics in action:
-
-| Interface State | Preview Screenshot |
-|---|---|
-| **Main Prompt (Quick Guide)** | ![Main Prompt Quick Guide](preview/01-home-tui-quick-guide.png) |
-| **Main Prompt (Clean)** | ![Main Prompt Normal](preview/02-home-tui-normal.png) |
-| **Interactive Scraper Selector** | ![Interactive Scraper TUI](preview/03-interactive-tui-quick-grab.png) |
-| **Live Multi-Thread Download Log** | ![Download Progress TUI 01](preview/04-download-log-tui-01.png) |
-| **Active Extraction Pipeline** | ![Download Progress TUI 02](preview/05-download-log-tui-02.png) |
-| **Download Complete & Summary** | ![Download Complete TUI](preview/06-download-complete-tui.png) |
+| Interactive Command Prompt | Chapter / Episode Selector |
+| :---: | :---: |
+| <img src="preview/01-home-tui-quick-guide.png" width="440"> | <img src="preview/03-interactive-tui-quick-grab.png" width="440"> |
+| *Real-time URL detection & quick guide* | *Pick specific chapters or vacuum full series* |
+| **Live Multi-Threaded Download Pipeline** | **Download Summary & Finished Media** |
+| <img src="preview/04-download-log-tui-01.png" width="440"> | <img src="preview/06-download-complete-tui.png" width="440"> |
+| *Parallel chunk downloads with progress trees* | *Zero-loss media saved directly into your library* |
 
 ---
 
-<a id="new-audio--metadata-engines"></a>
-## 🎵 New Audio & Metadata Engines
+<a id="installation--setup"></a>
+## 🚀 Installation & Setup
 
-Zine Scraper Suite now features three dedicated audio & lyrics modules directly accessible from the main terminal prompt:
+<a id="1-prerequisites-fresh-os--virtualbox"></a>
+### 1. Prerequisites (Fresh OS / VirtualBox)
 
+You only need **Git** and **Python 3.10+** installed before cloning. The automated installer handles all other tools and libraries automatically.
+
+#### 🐧 Linux
+```bash
+# Ubuntu / Debian / Mint:
+sudo apt update && sudo apt install -y git python3 python3-pip python3-venv curl
+
+# Arch Linux / Manjaro:
+sudo pacman -Sy --noconfirm git python python-pip curl
+
+# Fedora / RHEL:
+sudo dnf install -y git python3 python3-pip curl
+
+# openSUSE:
+sudo zypper install -y git python3 python3-pip python3-venv curl
 ```
+
+#### 🍏 macOS
+```bash
+# Install Homebrew (if not already installed):
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Git and Python:
+brew install git python
+```
+
+#### 🪟 Windows 10 / 11
+1. **Install Git**: Download from [git-scm.com](https://git-scm.com/) or run `winget install Git.Git`.
+2. **Install Python 3.10+**: Download from [python.org](https://www.python.org/downloads/) or run `winget install Python.Python.3.11`.
+   > [!IMPORTANT]
+   > On Windows, ensure you check the box: ☑️ **"Add Python to PATH"** during installation!
+
+---
+
+<a id="2-run-the-1-click-installer"></a>
+### 2. Run the 1-Click Installer
+
+```bash
+# 1. Clone the repository:
+git clone https://github.com/valse-de-anshu/zine-scraper.git
+cd "zine-scraper"
+
+# 2. Run the automated installer:
+# On Linux / macOS:
+cd "run me" && chmod +x install.sh run.sh && ./install.sh
+
+# On Windows:
+# Double-click "run me\install.bat" (or run in CMD: cd "run me" && install.bat)
+```
+
+**What the installer does automatically:**
+1. Installs system binaries: `ffmpeg`, `aria2`, `atomicparsley`, and `unzip`.
+2. Installs the Deno runtime for stream token decryption on sites like `hanime.tv`.
+3. Creates an isolated virtual environment (`venv/`).
+4. Installs all 40+ Python modules from `requirements.txt`.
+5. Downloads Playwright stealth browser binaries for JavaScript single-page scrapers.
+6. Boots the interactive First-Launch Setup Wizard to configure your library folders and color themes.
+
+---
+
+<a id="3-how-to-launch"></a>
+### 3. How to Launch
+
+After installation, launch Zine Scraper anytime using the universal launcher scripts:
+
+* **🐧 Linux / 🍏 macOS:**
+  ```bash
+  cd "zine-scraper"
+  ./"run me"/run.sh
+  ```
+  *(Or: `source venv/bin/activate && python orchestrator.py`)*
+
+* **🪟 Windows:**
+  ```cmd
+  cd "zine-scraper"
+  "run me\run.bat"
+  ```
+
+---
+
+<a id="available-commands"></a>
+## 💬 Available Commands
+
+Type any of the following commands directly at the main `Paste URL:` prompt:
+
+| Command | Category | Description |
+|---|---|---|
+| **`bake`** | **Audio** | Launch Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
+| **`lyrs`** | **Audio** | Search and download synced `.lrc` lyrics for any song (LRCLIB) |
+| **`sc-lyrics`** | **Audio** | Batch scan folders and auto-sync missing `.lrc` lyrics in bulk |
+| **`slice`** | **Tools** | Webtoon Image Slicer (splits tall vertical strips into readable pages) |
+| **`subs`** | **AI Tools** | AI Subtitle Generator (Faster-Whisper local GPU transcription & translation) |
+| **`tts`** | **AI Tools** | Qwen-TTS Audiobook Synthesizer (voice design & character acting) |
+| **`settings`** | **System** | Open Settings Configurator (download roots, themes, delays) |
+| **`site`** | **System** | Open interactive Supported Sites Database catalog |
+| **`batch`** | **System** | Automatically process all URLs queued in `Batch URL.txt` |
+| **`help`** | **System** | Open full in-app markdown documentation viewer |
+| **`exit` / `q`** | **System** | Exit Zine Scraper Suite cleanly |
+
+---
+
+<a id="feature-toolkit-deep-dive"></a>
+## 🛠️ Feature Toolkit Deep Dive
+
+<a id="1-audio-suite--metadata-tagging"></a>
+### 1. Audio Suite & Metadata Tagging
+
+```text
   ┌───────────────────────────────────────────────────────────────────────────────────┐
   │ ❖ AUDIO SUITE TOOLKIT                                                             │
   ├───────────────┬───────────────────────────────────────────────────────────────────┤
@@ -183,217 +226,101 @@ Zine Scraper Suite now features three dedicated audio & lyrics modules directly 
   └───────────────┴───────────────────────────────────────────────────────────────────┘
 ```
 
-### 1. Audio Metadata & Cover Art Baking Engine (`bake`)
-View, edit, and bake metadata tags (**Title**, **Artist**, **Album**, **Year**, **Genre**, **Track Number**) and embed high-resolution **Cover Art** into audio files (`.flac`, `.mp3`, `.m4a`, `.wav`, `.ogg`, `.opus`).
-- **Inline Editing Table**: Edit all tag fields directly inside an interactive Rich Live table using `↑↓` navigation.
-- **Smart Path Resolution**: Supports drag-and-drop paths, `file://` URIs, URL-encoded spaces (`%20`), and `~` home expansion.
-- **Recent Downloads Picker**: Pressing `Enter` on an empty prompt scans your `~/Downloads/Zine` directory and opens a `Selector` menu to pick audio tracks without typing any paths.
-- **In-Place Preservation**: Modifies audio files directly in their original directory without creating duplicate files.
-
-### 2. Synced Lyrics Downloader (`lyrs`)
-Search for synchronized `.lrc` lyrics for any track or artist using fuzzy query matching against the LRCLIB API.
-- Live timestamped preview of lyrics.
-- Automatic filename matching to your local audio tracks.
-- Exports `.lrc` files right next to the target audio file.
-
-### 3. Folder Batch Lyrics Auto-Sync (`sc-lyrics`)
-Scans entire music folders for downloaded audio tracks missing `.lrc` files and automatically fetches and saves synced lyrics in bulk.
-- Live scrolling log of scanned files and sync statuses.
-- Automatic background lyric sync during music downloads (`youtube`, `soundcloud`).
+* **`bake`**: Inspect, edit, and inject metadata (**Title**, **Artist**, **Album**, **Year**, **Genre**, **Track Number**) and attach high-res **Cover Art** into `.flac`, `.mp3`, `.m4a`, `.wav`, `.ogg`, and `.opus` files with zero quality loss.
+* **`lyrs`**: Real-time fuzzy query search against the LRCLIB database with timestamped preview and instant `.lrc` companion export.
+* **`sc-lyrics`**: Bulk scanner that scans music folders for tracks missing lyrics and downloads synced `.lrc` files automatically.
 
 ---
 
-<a id="ai-speech--subtitle-models-guide-models"></a>
-## 🎙️ AI Speech & Subtitle Models Guide (`Models/`)
+<a id="2-ai-speech--subtitle-generator-subs"></a>
+### 2. AI Speech & Subtitle Generator (`subs`)
 
-This directory is the local storage hub for offline AI Speech-to-Text models used by Zine Scraper's built-in **AI Subtitle Generator** (`subs` command).
+Zine uses **`faster-whisper`** (powered by CTranslate2), running up to **4x faster than standard OpenAI Whisper** with low VRAM usage.
 
-### 📋 What is Faster-Whisper?
-Zine uses **`faster-whisper`** (powered by CTranslate2), a reimplementation of OpenAI's Whisper model that runs up to **4x faster with lower memory usage**.
-
-### Required Model Files
-A valid model folder must contain these essential files:
-```text
-Models/faster-whisper-large-v3-turbo/
-├── config.json
-├── model.bin                      (~1.6 GB)
-├── preprocessor_config.json
-├── tokenizer.json
-└── vocabulary.json
-```
-
-### 🚀 How to Download & Install the Model
-Choose **ANY** of the 4 simple installation methods below:
-
-#### Method 1 — 1-Click Python Download (Recommended)
-Run this single command from your `zine scraper` root directory (inside your activated `venv`):
+#### 🚀 Quick Model Download
+Run this command from your activated `venv` to fetch the default flagship model:
 ```bash
 python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo', local_dir='Models/faster-whisper-large-v3-turbo')"
 ```
 
-#### Method 2 — Hugging Face CLI
-If you have `huggingface-hub` installed (`pip install huggingface_hub`):
-```bash
-# Large-v3-Turbo (~1.6 GB) — State-of-the-art accuracy & ultra-fast inference:
-huggingface-cli download deepdml/faster-whisper-large-v3-turbo --local-dir Models/faster-whisper-large-v3-turbo
-
-# Standard Large-v3 (~3.1 GB) — Maximum multi-lingual fidelity:
-huggingface-cli download Systran/faster-whisper-large-v3 --local-dir Models/faster-whisper-large-v3
-
-# Medium (~1.5 GB) — Optimized for 4GB VRAM GPUs:
-huggingface-cli download Systran/faster-whisper-medium --local-dir Models/faster-whisper-medium
-
-# Small (~480 MB) — Lightweight for CPU-only inference:
-huggingface-cli download Systran/faster-whisper-small --local-dir Models/faster-whisper-small
-```
-
-#### Method 3 — High-Speed Download via `aria2c` / `curl` / `wget`
-* **🐧 Linux / 🍏 macOS:**
-  ```bash
-  mkdir -p Models/faster-whisper-large-v3-turbo
-  cd Models/faster-whisper-large-v3-turbo
-  BASE="https://huggingface.co/deepdml/faster-whisper-large-v3-turbo/resolve/main"
-  curl -L -O "$BASE/config.json"
-  curl -L -O "$BASE/model.bin"
-  curl -L -O "$BASE/preprocessor_config.json"
-  curl -L -O "$BASE/tokenizer.json"
-  curl -L -O "$BASE/vocabulary.json"
-  cd ../..
-  ```
-* **🪟 Windows (PowerShell):**
-  ```powershell
-  New-Item -ItemType Directory -Force -Path "Models\faster-whisper-large-v3-turbo"
-  cd "Models\faster-whisper-large-v3-turbo"
-  $base = "https://huggingface.co/deepdml/faster-whisper-large-v3-turbo/resolve/main"
-  Invoke-WebRequest -Uri "$base/config.json" -OutFile "config.json"
-  Invoke-WebRequest -Uri "$base/model.bin" -OutFile "model.bin"
-  Invoke-WebRequest -Uri "$base/preprocessor_config.json" -OutFile "preprocessor_config.json"
-  Invoke-WebRequest -Uri "$base/tokenizer.json" -OutFile "tokenizer.json"
-  Invoke-WebRequest -Uri "$base/vocabulary.json" -OutFile "vocabulary.json"
-  cd ..\..
-  ```
-
-#### Method 4 — Git LFS Clone
-```bash
-git lfs install
-git clone https://huggingface.co/deepdml/faster-whisper-large-v3-turbo Models/faster-whisper-large-v3-turbo
-```
-
-### 📊 Hardware Requirements & Comparison
-| Model | Disk Size | Recommended VRAM | Precision | Recommended Hardware |
-|---|---|---|---|---|
-| **`large-v3-turbo`** *(Default)* | **~1.6 GB** | **4GB - 6GB** | INT8 / FP16 | **NVIDIA RTX 20/30/40 Series, Apple M-Series, Fast CPU** |
-| **`large-v3`** | ~3.1 GB | 6GB - 8GB | INT8 / FP16 | NVIDIA RTX 3080/4080 or higher |
-| **`medium`** | ~1.5 GB | 3GB - 4GB | INT8 | GTX 1660 / RTX 3050 laptops |
-| **`small`** | ~480 MB | 2GB / CPU | INT8 | Low-spec laptops & CPU-only machines |
-
-### ⚙️ How to Configure faster-whisper in Zine Scraper
-1. Launch Zine Scraper (`python orchestrator.py` or `./"run me"/run.sh` or `run me\run.bat`).
-2. At the prompt, type **`settings`** and press **Enter**.
-3. Under the **`AI & Subtitles`** section:
-   - **AI Subtitles Mode**: Choose `Both` (Original + English Translated), `Target Only`, or `Original Only`.
-   - **Target Language**: Select your preferred language (e.g. `English`, `Japanese`, `Spanish`, `French`, `German`).
-   - **Model Path**: Confirm it points to your model (Default: `~/Models/faster-whisper-large-v3-turbo` or `Models/faster-whisper-large-v3-turbo`).
-   - **VRAM Target**: Select `6GB (INT8)` (recommended for speed/memory balance), `8GB (FP16)`, or `CPU`.
-
-### 🎬 How to Use the Subtitle Generator (`subs`)
-1. In the main Zine terminal prompt, run:
-   ```text
-   ❯ subs
-   ```
-2. Paste the file path of any downloaded video or audio file (`.mp4`, `.mkv`, `.flac`, `.mp3`).
-3. Zine will transcribe the audio track with millisecond timestamps, translate the dialogue, and output a clean `.srt` subtitle file directly next to the media file!
+> [!TIP]
+> Read the complete [**AI Models Installation Guide**](Models/README%20to%20downlode%20ai%20model.md) for HuggingFace CLI, aria2c/curl, and Git LFS instructions, plus model sizing comparisons (small, medium, large-v3-turbo).
 
 ---
 
-<a id="available-commands"></a>
-## 💬 Available Commands
+<a id="3-qwen-tts-audiobook-generator-tts"></a>
+### 3. Qwen-TTS Audiobook Generator (`tts`)
 
-Type any of these directly at the main `Paste URL:` prompt:
-
-| Command | Category | Description |
-|---|---|---|
-| `bake` | **Audio** | Launch the Audio Metadata & Cover Art Baking Engine |
-| `lyrs` | **Audio** | Search and download synced `.lrc` lyrics |
-| `sc-lyrics` | **Audio** | Batch scan folders and auto-sync missing `.lrc` lyrics |
-| `slice` | **Tools** | Manhua Image Slicer (splits tall webtoon strips into pages) |
-| `subs` | **AI Tools**| AI Subtitle Generator (faster-whisper GPU transcription — see [Models Guide](file:///home/valse-de-anshu/.config/zine%20scraper/Models/README.md)) |
-| `tts` | **AI Tools**| Audiobook Synthesizer (Text-To-Speech generation) |
-| `settings` | **System** | Open Settings Configurator (paths, themes, delays) |
-| `site` | **System** | Open the interactive Supported Site Database |
-| `batch` | **System** | Process queued URLs from `Batch URL.txt` |
-| `help` | **System** | Open full markdown documentation viewer |
-| `exit` / `q` | **System** | Exit Zine Scraper Suite cleanly |
+Converts any downloaded `.txt` novel or chapter into high-fidelity `.wav` audiobooks with synchronized `.srt` subtitles.
+* **Semantic Context Splitting**: Intelligently detects chapter headings, character dialogue, poetry, and narrative action to adjust vocal inflection.
+* **Auto-Resume Caching**: Caches intermediate chunks in temporary storage to prevent progress loss on network interruptions.
+* **ComfyUI Integration**: Seamlessly communicates with local or remote GPU servers running Qwen-TTS custom nodes.
 
 ---
 
-<a id="themes--browser-cookies"></a>
-## 🎨 Themes & Browser Cookies
+<a id="4-webtoon--manhua-image-slicer-slice"></a>
+### 4. Webtoon & Manhua Image Slicer (`slice`)
 
-### 80+ Built-In Color Themes
-Zine ships with 80+ custom themes selectable via `settings` → **Color Theme**:  
-*Tokyo Night Storm · Catppuccin · GitHub Dark · Dracula · Nord · One Dark · Rose Pine · Monokai Pro · Ayu Dark · Solarized Dark · Horizon · Oxocarbon*
-
-### Automatic Cookie Pass-Through
-Scrapers automatically extract session cookies from your default local browser (**Zen, Firefox, Chrome, Edge**) via `browser_cookie3` to bypass login walls, Cloudflare checks, or age restrictions seamlessly without requiring passwords.
+Automatically detects tall, unbroken vertical image strips and slices them into perfectly proportioned 2000px height pages (numbered `001.jpg`, `002.jpg`), leaving normal ratio pages untouched.
 
 ---
 
 <a id="supported-platforms"></a>
-## 🌐 Supported Platforms ( In future these sites may be taken down or shutdown )
+## 🌐 Supported Platforms
 
-### Manga / Webtoon / Comics
-| Site | Domains | Features |
+### 📖 Manga, Manhwa & Comics
+| Platform | Domains | Capabilities |
 |---|---|---|
-| Asura Scans | `asurascans.com`, `asuracomic.net` | Manhwa chapters & batch download |
-| Omega Scans | `omegascans.org` | Manhwa chapters |
-| Manhwa US | `manhwaus.net` | Manhwa chapters |
-| Weeb Central | `weebcentral.com` | Manga chapters |
-| Manhua Plus | `manhuaplus.org` | Manhua chapters |
-| Kunmanga | `kunmanga.co.uk` | Manga chapters |
-| Mangak | `mangak.io` | Manga chapters |
-| Project Suki | `projectsuki.com` | Manga chapters |
-| Fanfox | `fanfox.net` | Manga chapters |
+| **Asura Scans** | `asurascans.com`, `asuracomic.net` | Full chapter discovery, decimal parsing & batch download |
+| **Weeb Central** | `weebcentral.com` | Fast CDN extraction & high-res pages |
+| **Omega Scans** | `omegascans.org` | Full series archiving |
+| **Manhua Plus** | `manhuaplus.org` | High-resolution manhua chapters |
+| **Manhwa US** | `manhwaus.net` | Manhwa series scraping |
+| **Kunmanga** | `kunmanga.co.uk` | Multi-chapter batching |
+| **MangaK** | `mangak.io` | Manga chapters & cover extraction |
+| **Project Suki** | `projectsuki.com` | Webtoon & comic reading |
+| **Fanfox** | `fanfox.net` | Manga chapter archives |
 
-### Anime / Video
-| Site | Features |
+### 🎬 Anime & Video
+| Platform | Capabilities |
 |---|---|
-| HiAnime | Episode resolution selection + HLS extraction |
-| Anitaku | Anime stream downloading |
-| Anikai, Anikoto, Anineko | Alternate anime mirror scrapers |
-| Miruro | Anime stream scraping |
-| YouTube | Video/Playlist archiving via yt-dlp |
-| Pornhub | Adult video archiving via yt-dlp |
+| **YouTube** | High-speed video, playlist, and channel archiving via yt-dlp |
+| **HiAnime** | Multi-resolution selector (360p - 1080p) with direct HLS stream extraction |
+| **Anitaku** | Fast anime video stream downloading |
+| **Miruro** | Direct SSR payload extraction with AniList GraphQL fallback |
+| **Anikai / Anikoto / Anineko** | Resilient multi-mirror video stream extractors |
+| **Pornhub** | Full video & playlist archiving via yt-dlp |
 
-### Hentai / Adult
-| Site | Features |
+### 🎵 Music & Audio
+| Platform | Capabilities |
 |---|---|
-| Hanime.tv | HLS + JS token extraction (via Deno) |
-| Hanime.red | HLS extraction |
-| HentaiHaven / Hstream / Oppai | Native yt-dlp plugins |
-| NHentai / ASMHentai | Full gallery image archiving |
-| Hentai18 / Hentai20 / HentaiCity | Gallery & stream scrapers |
+| **YouTube Music** | Lossless FLAC, Vorbis tagging, embedded cover art, auto LRCLIB synced `.lrc` lyrics, 3-tier client rotation |
+| **SoundCloud** | Audio stream downloading with automated lyric synchronization |
+| **IDAGIO** | Classical music streaming archive & comprehensive metadata tagging |
 
-### Audio / Music / Books / Light Novels
-| Site | Features |
+### 📚 Light Novels & E-Books
+| Platform | Capabilities |
 |---|---|
-| YouTube Music | High-fidelity lossless FLAC audio, Vorbis metadata, cover art, synced `.lrc` lyrics, batch albums/playlists |
-| SoundCloud | Audio downloading + auto `.lrc` lyric sync |
-| IDAGIO | Classical music archiving + metadata tagging |
-| Project Gutenberg | Public domain e-book archiving |
-| Chikari | SvelteKit REST API chapter scraper + comic reader |
-| NovelBuddy | Next.js light novel metadata, clean text, and chapter indexing |
-| NovelFire | Multi-page pagination light novel reader with ad sanitization |
-| NovelPhoenix | Asian web novel and cultivation aggregator scraper |
-| NovelArchive | Direct REST API reader for web serials |
-| Light Novel World | Legacy light novel chapter scraper (deprecated/shutting down) |
+| **Chikari** | SvelteKit REST API chapter scraping + comic reader support |
+| **NovelBuddy** | Next.js API chapter discovery, clean text formatting & synopsis extraction |
+| **NovelFire** | Multi-page pagination scraper with aggressive ad element sanitization |
+| **NovelPhoenix** | Asian web novel & cultivation story aggregator |
+| **NovelArchive** | Direct REST API reader for web serials |
+| **Project Gutenberg** | Public domain e-book archiving |
+
+### 🔞 Adult & Hentai
+| Platform | Capabilities |
+|---|---|
+| **Hanime.tv** | HLS stream extraction + automated Deno JavaScript token decryption |
+| **Hanime.red** | Direct HLS stream extraction |
+| **NHentai / ASMHentai** | Full image gallery and tankōbon manga archiving |
+| **HentaiHaven / Hstream / Oppai** | Native yt-dlp plugin extractors |
+| **Hentai18 / Hentai20 / HentaiCity** | Gallery and streaming scrapers |
 
 ---
 
 <a id="behind-the-doors--underground-engineering"></a>
 ## 🧠 Behind The Doors — Underground Engineering
-
-Under the hood, Zine Scraper Suite implements low-level terminal cbreak processing and strict defensive sanitization:
 
 ```mermaid
 graph TD
@@ -407,7 +334,7 @@ graph TD
 
     subgraph Security & Crash Prevention [core/funnel.py]
         MainInput([Paste URL Prompt]) -->|Sanitizes Input| MarkupEscape[rich.markup.escape]
-        MarkupEscape -->|Safe Un-escaped Routing| EngineFactory[engine_factory.py]
+        MarkupEscape -->|Safe Routing| EngineFactory[engine_factory.py]
         EngineFactory -->|Instance Match| ScraperModule[scrapers/site/tui.py]
         EngineFactory -->|Invalid / Gibberish| WarningBanner[Warning Notice: Unsupported URL]
     end
@@ -419,153 +346,90 @@ graph TD
     end
 ```
 
-### 1. Single-Session Cbreak Event Processing (`_read_tty_chunk` & `_parse_input_chunk`)
-- **No Keystroke Locks**: Replaced per-keystroke `tty.setraw()` invocations with a single `tty.setcbreak()` session, eliminating stdin blocking locks and 30Hz loop latency.
-- **Zero ANSI Sequence Leaks**: Handles multi-byte escape sequences (`\x1b[A`, `\x1b[B`, `\x1b[C`, `\x1b[D`, `\x1b[H`, `\x1b[F`) cleanly. Arrow keys, `Backspace`, `Delete`, `Home`, `End`, and `ESC` navigate without spewing control characters (`^[[D`, `^[[C`, `^[`) into your terminal.
-- **Fallback Guarding**: All `termios` ioctl calls are wrapped in `try...except Exception` to prevent crashes in non-standard terminals, tmux sessions, or IDE windows.
-
-### 2. Universal URL Route & Rich Markup Sanitization (`rich.markup.escape`)
-- **Crash Prevention**: All user inputs, pasted URLs, and error tracebacks passed to `console.print()` are sanitized through `rich.markup.escape()`.
-- **Bracket & Gibberish Protection**: Pasting malformed URLs, random gibberish, closing tags like `[/]`, or strings with square brackets (`[test]`) can no longer trigger `rich.errors.MarkupError` or `UnboundLocalError`. The suite safely prints a formatted `[warning]Unsupported URL or command[/warning]` notice and returns to the menu.
-
-### 3. FFmpeg Metadata & Cover Art Baking Engine
-- Audio tag baking uses FFmpeg stream copying (`-c copy`) to inject metadata tags and attached picture streams (`attached_pic`) into MP3, FLAC, M4A, OGG, and OPUS files in-place with zero quality loss.
+1. **Single-Session cbreak Event Processing**: Replaced per-keystroke `tty.setraw()` invocations with a single persistent `tty.setcbreak()` session, eliminating stdin blocking locks and 30Hz loop latency.
+2. **Zero ANSI Sequence Leaks**: Multi-byte escape sequences (`\x1b[A`, `\x1b[B`, `\x1b[C`, `\x1b[D`) are cleanly buffered so arrow keys, `Backspace`, `Home`, and `End` never spew control characters into the terminal.
+3. **Universal Rich Markup Sanitization**: All pasted inputs and exception messages are passed through `rich.markup.escape()` to prevent syntax crashes from square brackets or URL tags.
+4. **Intermediate Temp Directory (`💩/`)**: All video fragments, image chunks, and tag buffers stay contained in temporary storage until validation is complete.
 
 ---
 
 <a id="project-architecture"></a>
 ## 🗂️ Project Architecture
 
-```
+```text
 zine-scraper/
 │
-├── orchestrator.py          ← Entry point — boots the suite
+├── orchestrator.py          ← Main entry point — launches the suite
 │
 ├── core/
-│   ├── funnel.py            ← Command dispatcher, URL router, sanitization
-│   ├── ui.py                ← Rich TUI primitives, raw TTY event parser, themes
+│   ├── funnel.py            ← Command router & input sanitization
+│   ├── ui.py                ← Rich TUI primitives & raw TTY event parser
 │   ├── bake_engine.py       ← Audio Metadata & Cover Art Baking Engine
-│   ├── lyrics_engine.py     ← LRCLIB Synced Lyrics Search & Auto-Sync Engine
-│   ├── settings_tui.py      ← Isolated Settings Configurator TUI
+│   ├── lyrics_engine.py     ← LRCLIB Synced Lyrics Search & Batch Sync Engine
+│   ├── subtitle_engine.py   ← Faster-Whisper GPU Subtitle Generator
+│   ├── settings_tui.py      ← Interactive Settings Configurator TUI
 │   ├── site_tui.py          ← Supported Sites Database TUI
-│   ├── image_slicer.py      ← Manhua/Webtoon image strip slicer tool
-│   ├── config.py            ← User preferences persistence
-│   ├── paths.py             ← Library filesystem authority
-│   ├── storage.py           ← File system & download history layer
-│   └── history.py           ← Download tracking
+│   ├── image_slicer.py      ← Manhua & Webtoon Image Strip Slicer Tool
+│   ├── config.py            ← Persistent configuration layer
+│   ├── paths.py             ← Filesystem authority & path resolution
+│   ├── storage.py           ← Low-level disk I/O layer
+│   └── history.py           ← Download registry & duplicate protection
 │
-├── scrapers/
-│   └── <site>/              ← Self-contained site scraper package
-│       ├── engine.py        ← Extraction & parsing logic
-│       ├── tui.py           ← Site TUI workflow
-│       └── workflow.py      ← Isolated download orchestrator
+├── scrapers/                ← Isolated site scraper packages
+│   └── <site>/
+│       ├── engine.py        ← Extraction logic & API queries
+│       ├── scraper.py       ← Scraper interface definition
+│       ├── tui.py           ← Site TUI entrypoint
+│       └── workflow.py      ← Multi-threaded download orchestrator
 │
-├── plugins/
-│   └── yt_dlp_plugins/      ← Custom yt-dlp extractors
-│
-├── Models/                  ← Local offline AI Speech-to-Text models (Whisper)
+├── Models/                  ← Local storage hub for offline AI models
 │   └── README to downlode ai model.md
 │
-├── preview/                 ← TUI screenshots & showcase previews
+├── Qween tts/               ← Qwen-TTS Audiobook Synthesizer Engine
+│   └── book_tts.py
 │
-├── theme/
-│   └── registry.py          ← 80+ color themes (Tokyo Night Storm, Catppuccin, etc.)
+├── preview/                 ← TUI screenshots & showcase gallery
 │
-├── docs/
-│   └── help.md              ← In-app documentation
+├── theme/                   ← 80+ custom Tokyo Night & Dark color palettes
+│   └── registry.py
 │
-└── run me/
-    ├── install.sh           ← Linux/macOS auto-installer
-    ├── install.bat          ← Windows auto-installer
-    ├── run.sh               ← Linux/macOS universal runner
-    └── run.bat              ← Windows universal runner
+├── docs/                    ← Comprehensive in-app guides
+│   └── help.md
+│
+└── run me/                  ← Cross-platform automated installers & runners
+    ├── install.sh           ← Linux / macOS installer
+    ├── install.bat          ← Windows installer
+    ├── run.sh               ← Linux / macOS launcher
+    └── run.bat              ← Windows launcher
 ```
 
 ---
 
-<a id="developer-guide--adding-a-new-site"></a>
-## 🛠️ Developer Guide — Adding a New Site
+<a id="message-from-the-creator--contribution"></a>
+## ✉️ Message From The Creator & Contribution
 
-Every scraper under `scrapers/<site>/` is **completely isolated**. Adding a new platform requires zero changes to core shared loops.
-
-### 1. Create the scraper directory
-```bash
-mkdir scrapers/mysite
-touch scrapers/mysite/__init__.py
-touch scrapers/mysite/engine.py
-touch scrapers/mysite/tui.py
-```
-
-### 2. Implement `engine.py`
-```python
-# scrapers/mysite/engine.py
-
-class MySiteEngine:
-    def __init__(self, url: str):
-        self.url = url
-
-    def fetch_media(self) -> list:
-        ...
-```
-
-### 3. Implement `tui.py`
-```python
-# scrapers/mysite/tui.py
-
-from core.ui import console, Selector, set_active_live
-
-def handle_tui(url, hist_layer, store_layer, scraper, batch_path=None, is_batch=False):
-    if not is_batch and sys.stdin.isatty():
-        # Interactive mode
-        ...
-    else:
-        # Headless batch mode
-        ...
-```
-
-### 4. Register in `core/site_map.py`
-```python
-SITE_MAP = {
-    "mysite.com": "mysite",
-}
-```
-
----
-
-<a id="a-message-from-the-creator-anshu--valse"></a>
-## ✉️ A Message From The Creator (Anshu / Valse) & Contribution
-
-> [!IMPORTANT]
+> [!NOTE]
 > ### 📌 A Message From The Creator (Anshu / Valse)
 >
-> *"I am a 17-year-old developer, and I dedicated 3 full months of my life to building, refining, and perfecting Zine Scraper Suite. As I am currently preparing for competitive exams, Zine Scraper was my first and final passion project until I secure admission into my dream college.*
+> *"I am a 17-year-old developer, and I dedicated 3 full months of my life to building, refining, and perfecting Zine Scraper Suite. As I am currently preparing for my competitive exams, this project was my first and last passionate project for now. I will start releasing bangers again after I achieve my dream college! Till then enjoy, use Zine, and share your experience with everyone!"*
 >
-> *Due to time limitations, I have tested Zine Scraper thoroughly on my machine and a few other systems, and in my experience, it worked smoothly across all of them. However, if you happen to find any flaw, error, or bug:*<br><br>
-> 1. **Join our Discord Group**: [https://discord.gg/suJD5xtFj](https://discord.gg/suJD5xtFj)<br>
-> 2. **Report or explain the issue in the group**: When I have free time, I will jump in to fix it!<br>
-> 3. **Or do the heavy lifting yourself**: If you are a developer and want to contribute or fix issues on your own — welcome to the family!<br><br>
-> *"After dedicating myself to perfecting this TUI software, I am stepping back to focus on something crucial for my life and future. Once I accomplish this milestone, I will be back with even crazier, bigger projects in the future!"*
->
-> ```
-> ┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐
-> │ 3 Months of Dedication │ ──► │ Zine Scraper Suite TUI │ ──► │  Competitive Exam Prep │ ──► │ Future Crazy Projects  │
-> │   (Building & Coding)  │     │   (Perfected & Built)  │     │     (Focusing Now)     │     │      (Will Return!)    │
-> └────────────────────────┘     └────────────────────────┘     └────────────────────────┘     └────────────────────────┘
-> ```
+> 1. **Join our Discord Community**: [https://discord.gg/suJD5xtFj](https://discord.gg/suJD5xtFj)
+> 2. **Email Me Directly**: [valsedeanshu@gmail.com](mailto:valsedeanshu@gmail.com)
+> 3. **Contribute**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) to add features or new scrapers!
 
 ---
 
 <a id="credits--acknowledgments"></a>
 ## ❤️ Credits & Acknowledgments
 
-```
+```text
   ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
   │ ❖ CREDITS & ACKNOWLEDGMENTS                                                                                     │
   ├───────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┤
   │ Contributor       │ Role & Primary Contributions                                                                │
   ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
   │ Anshu / Valse     │ Creator, Lead Architect & Solo Core Developer                                               │
-  │                   │ • Designed & built 100% of all scraping logic, engines, and 23+ site scrapers from scratch. │
+  │                   │ • Designed & built 100% of all scraping logic, engines, and 34+ site scrapers from scratch. │
   │                   │ • Engineered the core architecture, Rich TUI framework, funnel router, and settings suite.  │
   │                   │ • Dedicated 3 months of solo engineering to create and perfect the Zine Scraper Suite.      │
   ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -577,3 +441,8 @@ SITE_MAP = {
 ```
 
 ---
+
+<p align="center">
+  Licensed under <a href="LICENSE">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)</a>.<br>
+  Strictly for personal, non-commercial archival use. Commercial resale or unauthorized rebranding is strictly prohibited.
+</p>

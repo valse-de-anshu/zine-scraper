@@ -1,0 +1,30 @@
+# ==============================================================================
+# Zine Scraper Suite — Git Attributes & Line Ending Normalization
+# ==============================================================================
+
+# Auto-detect text files and normalize line endings to LF on commit
+* text=auto
+
+# Python, JSON, Markdown, YAML and shell scripts must always have LF line endings
+*.py text eol=lf
+*.sh text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+
+# Windows batch files must always have CRLF line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary file formats
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.bin binary
+*.safetensors binary
