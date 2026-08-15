@@ -1,0 +1,10 @@
+{
+  "name": "Hanime Red",
+  "primary_domain": "hanime.red",
+  "aliases": [],
+  "display_name": "Hanime Red",
+  "api_base_url": "https://hanime.red",
+  "patterns": {
+    "slug_from_url": "([^/]+)/?$"
+  }
+}

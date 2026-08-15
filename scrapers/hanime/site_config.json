@@ -1,0 +1,13 @@
+{
+  "name": "Hanime.tv",
+  "primary_domain": "hanime.tv.disabled",
+  "aliases": [],
+  "base_url": "https://{domain}",
+  "api_base_url": "https://guest.freeanimehentai.net",
+  "api": {
+    "video": "/api/v8/video?id={slug}"
+  },
+  "patterns": {
+    "slug_from_url": "([^/]+)/?$"
+  }
+}

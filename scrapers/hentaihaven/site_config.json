@@ -1,0 +1,17 @@
+{
+  "name": "HentaiHaven",
+  "primary_domain": "hentaihaven.xxx",
+  "aliases": ["hentaihaven.io", "hentaihaven.red", "hentaihaven.online", "hentaihaven.ws", "hentaihaven.club", "hentaihaven.me", "hentaihaven.com", "nhentaihaven.org", "hentaihaven.icu"],
+  "base_url": "https://{domain}",
+  "selectors": {
+    "title": ".post-title h1",
+    "description": ".summary__content",
+    "episode_list": "li.wp-manga-chapter a",
+    "cover_url": ".summary_image img",
+    "video_iframe": "iframe.videolayer",
+    "video_source": "source[src]"
+  },
+  "patterns": {
+    "slug_from_url": "([^/]+)/?$"
+  }
+}

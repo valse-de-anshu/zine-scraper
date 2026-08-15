@@ -1,0 +1,424 @@
+"""
+scrapers/hanime/engine.py
+--------------------------
+Hanime download engine — extends core VideoEngine with Hanime-specific
+quality selection (1080p priority), avatar/cover downloading, and metadata.json.
+
+Key fixes (v2):
+  - All string fields are html.unescape() decoded before writing to JSON
+  - metadata.json uses real video IDs (viewkeys) as keys, not array indices
+  - history.json date format is YYYY-MM-DD (from yt-dlp upload_date YYYYMMDD)
+  - most_viewed / top_rated / latest / longest all use real fetched metadata
+  - Geo-block detection with clear user message
+"""
+
+import re
+import json
+import html as html_module
+import logging
+import subprocess
+import tempfile
+import os
+import requests
+from pathlib import Path
+from typing import Dict, Any, Callable, Optional, List
+from core.video_engine import VideoEngine
+
+logger = logging.getLogger(__name__)
+
+GEO_ERROR_PATTERNS = [
+    "403",
+    "451",
+    "not available in your country",
+    "geo",
+    "region",
+    "access denied",
+]
+
+
+def _is_geo_error(error_text: str) -> bool:
+    lower = error_text.lower()
+    return any(p in lower for p in GEO_ERROR_PATTERNS)
+
+
+def _decode(raw: str) -> str:
+    """Decode HTML entities + unescape backslash sequences."""
+    if not raw:
+        return raw
+    return html_module.unescape(raw).replace("\\/", "/").replace("\\u002F", "/")
+
+
+def _fmt_date(upload_date: str) -> str:
+    """
+    Convert yt-dlp upload_date (YYYYMMDD string) to YYYY-MM-DD.
+    Falls back to original string on any parse error.
+    """
+    if not upload_date:
+        return ""
+    d = str(upload_date).strip().replace("-", "")
+    if len(d) == 8 and d.isdigit():
+        return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+    return upload_date  # already formatted or unknown
+
+
+def _clean_title(raw: str) -> str:
+    """
+    Clean a video title:
+    - HTML-decode entities
+    - Remove trailing ' - <uploader>' suffix that PH often appends
+    """
+    t = _decode(raw or "")
+    # PH appends " - <model_name>" to titles — strip it
+    # Pattern: " - miulio" at the end
+    t = re.sub(r'\s*-\s*\w+\s*$', '', t).strip()
+    return t or raw or "Unknown"
+
+
+class HanimeEngine(VideoEngine):
+    """
+    Download engine for Hanime content.
+    Wraps yt-dlp with Hanime-specific format selection and cover logic.
+    """
+
+    def __init__(self):
+        super().__init__(headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept":          "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer":         "https://hanime.tv/",
+            "Origin":          "https://hanime.tv"
+        })
+
+    # ─── Single video info ────────────────────────────────────────────────
+
+    def extract_video_info(self, url: str) -> Dict[str, Any]:
+        """
+        Returns yt-dlp info dict for a single Hanime video.
+        Raises RuntimeError with a clear VPN message if geo-blocked.
+        """
+        import sys
+        import subprocess
+        import json
+        extractor_script = Path(__file__).parent.parent / "playwright_extractor.py"
+        import sys
+        from pathlib import Path
+        python_path = sys.executable
+        venv_python = Path(sys.executable)
+        if venv_python.exists():
+            python_path = str(venv_python)
+        try:
+            p = subprocess.run([python_path, str(extractor_script), url], capture_output=True, text=True)
+            if p.returncode != 0:
+                logger.error(f"[Hanime] Playwright extractor failed with exit code {p.returncode}")
+                if p.stderr:
+                    logger.error(f"[Hanime] Playwright stderr: {p.stderr.strip()}")
+            stdout = p.stdout.strip()
+            if "JSON_RESULT:" in stdout:
+                json_str = stdout.split("JSON_RESULT:")[1]
+            else:
+                json_str = stdout
+            data = json.loads(json_str)
+            return {
+                "id": url.split("/")[-1],
+                "title": data.get("title", "Unknown").replace(" - Hanime.tv", "").strip(),
+                "webpage_url": url,
+                "url": data.get("url", ""),
+                "upload_date": "20260101",
+                "view_count": 0,
+                "like_count": 0,
+                "duration": 0
+            }
+        except Exception as e:
+            err = str(e)
+            logger.error(f"[Hanime] Playwright extraction crashed: {e}", exc_info=True)
+            raise RuntimeError(
+                "🌐 Hanime's Cloudflare Protection or Geo-block is blocking the scraper.\n"
+                "   Zine's headless extractor could not bypass the Turnstile challenge.\n"
+                "   Try enabling a VPN to a different region (e.g., US, CA, GB) or try later."
+            ) from e
+
+    # ─── Avatar download ─────────────────────────────────────────────────
+
+    def download_avatar(self, avatar_url: str, dest: Path) -> bool:
+        """Downloads the model profile picture and saves as cover.png."""
+        if not avatar_url:
+            return False
+        try:
+            r = requests.get(avatar_url, headers=self.headers, timeout=20)
+            r.raise_for_status()
+            
+            ct = r.headers.get("Content-Type", "").lower().split(";")[0].strip()
+            mime_map = {
+                "image/jpeg": ".jpg", "image/jpg": ".jpg",
+                "image/png": ".png", "image/webp": ".webp",
+                "image/avif": ".avif", "image/gif": ".gif"
+            }
+            real_ext = mime_map.get(ct, dest.suffix or ".png")
+            if dest.suffix.lower() != real_ext:
+                dest = dest.with_suffix(real_ext)
+                
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(r.content)
+            logger.info(f"Hanime cover saved to {dest}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to download Hanime avatar from {avatar_url}: {e}")
+            return False
+
+    # ─── metadata.json writer ────────────────────────────────────────────
+
+    def save_metadata(
+        self,
+        root_dir: Path,
+        info: Dict[str, Any],
+        source: str,
+        model_name: str,
+        avatar_url: Optional[str] = None,
+        videos: Optional[List[Dict[str, Any]]] = None,
+        skip_cover: bool = False,
+        custom_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Writes .zine/metadata.json with:
+          - Clean model name (HTML decoded)
+          - sorted lists: most_viewed, top_rated, latest, longest
+          - All titles HTML decoded, no garbage
+        Also downloads cover.png if not already present.
+        """
+        zine_dir = root_dir / ".zine"
+        zine_dir.mkdir(parents=True, exist_ok=True)
+        meta_path = zine_dir / "metadata.json"
+
+        video_list = videos or []
+
+        # ── Sort lists (use real metadata, skip entries with zero values) ─
+        def _entry(v: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id":          v.get("id", ""),
+                "title":       _decode(v.get("title", "") or ""),
+                "upload_date": _fmt_date(v.get("upload_date", "") or ""),
+                "view_count":  v.get("view_count", 0) or 0,
+                "like_count":  v.get("like_count",  0) or 0,
+                "duration":    v.get("duration",    0) or 0,
+                "url":         v.get("url", ""),
+            }
+
+        all_entries = [_entry(v) for v in video_list]
+
+        # most_viewed — descending view_count (only entries that have counts)
+        most_viewed = sorted(
+            [e for e in all_entries if e["view_count"] > 0],
+            key=lambda e: e["view_count"], reverse=True
+        )[:10] or all_entries[:10]
+
+        # top_rated — descending like_count
+        top_rated = sorted(
+            [e for e in all_entries if e["like_count"] > 0],
+            key=lambda e: e["like_count"], reverse=True
+        )[:10] or all_entries[:10]
+
+        # latest — descending upload_date (ISO string, lexicographic sort works)
+        latest = sorted(
+            [e for e in all_entries if e["upload_date"]],
+            key=lambda e: e["upload_date"], reverse=True
+        )[:10]
+
+        # longest — descending duration in seconds
+        longest = sorted(
+            [e for e in all_entries if e["duration"] > 0],
+            key=lambda e: e["duration"], reverse=True
+        )[:10] or all_entries[:10]
+
+        # ── Build clean metadata dict ─────────────────────────────────
+        url = ""
+        if custom_metadata and "URL" in custom_metadata:
+            url = custom_metadata["URL"]
+        if not url:
+            url = info.get("webpage_url") or info.get("original_url") or info.get("url") or ""
+
+        if custom_metadata:
+            metadata_content = {
+                "Series":       custom_metadata.get("Channel/Series", _decode(model_name)),
+                "Source":       source,
+                "URL":          url,
+                "Total Videos": len(video_list),
+                "Studio":       custom_metadata.get("Studio", ""),
+                "Tags":         custom_metadata.get("Tags", ""),
+                "Summary":      custom_metadata.get("Description", ""),
+                "videos":       all_entries
+            }
+        else:
+            metadata_content = {
+                "model_name":   _decode(model_name),
+                "source":       source,
+                "url":          url,
+                "total_videos": len(video_list),
+                "most_viewed":  most_viewed,
+                "top_rated":    top_rated,
+                "latest":       latest,
+                "longest":      longest,
+                "videos":       all_entries
+            }
+
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata_content, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Hanime metadata saved to {meta_path}")
+
+        # ── Download cover.png ────────────────────────────────────────
+        if not skip_cover:
+            cover_path = root_dir / "cover.png"
+            if not cover_path.exists() and avatar_url:
+                self.download_avatar(avatar_url, cover_path)
+
+    # ─── Video download ──────────────────────────────────────────────────
+
+    def download_hanime_video(
+        self,
+        url: str,
+        output_dir: Path,
+        progress_hook: Callable[[Dict[str, Any]], None] = None,
+        quality: str = "1080p",
+        fixed_title: Optional[str] = None,
+        session=None,
+    ) -> bool:
+        """
+        Downloads a single Hanime video using yt-dlp subprocess.
+        Quality preference: 1080p → 720p → 480p → best available.
+        Returns True on success.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if fixed_title:
+            # Use the pre-cleaned title (no HTML entities, no garbage chars)
+            clean_title = "".join(
+                c for c in fixed_title if c.isalnum() or c in " .-_()'"
+            ).strip()
+            # Final safety: replace illegal filesystem chars
+            clean_title = re.sub(r'[<>:"/\\|?*]', '', clean_title).strip()
+            if not clean_title:
+                clean_title = "video"
+        else:
+            clean_title = "%(title)s [%(id)s]"
+
+        outtmpl = str(output_dir / f"{clean_title}.%(ext)s")
+
+        # Format string: prefer mp4 at target height
+        height_map = {"1080p": "1080", "720p": "720", "480p": "480", "360p": "360"}
+        h = height_map.get(quality, "1080")
+        fmt = (
+            f"bestvideo[height<={h}][ext=mp4]+bestaudio/"
+            f"bestvideo[height<={h}]+bestaudio/"
+            f"best[height<={h}]/"
+            f"best"
+        )
+
+        temp_batch = tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".txt", encoding="utf-8"
+        )
+        try:
+            # Dynamically resolve python and yt-dlp to support any environment
+            import sys
+            import shutil
+            import subprocess
+            import requests
+            import time
+            import json
+
+            python_path = sys.executable
+            yt_dlp_path = shutil.which("yt-dlp")
+            if not yt_dlp_path:
+                raise RuntimeError("yt-dlp not found in PATH or virtual environment")
+
+            stream_url = ""
+            
+            # 2) Extract stream URL using Playwright
+            if not stream_url:
+                if progress_hook:
+                    progress_hook({"status": "Fetching stream manifest...", "baking": False, "done": False, "total_bytes": 0, "downloaded_bytes": 0, "retry": 0})
+                
+                try:
+                    extractor_script = Path(__file__).parent.parent / "playwright_extractor.py"
+                    p = subprocess.run([python_path, str(extractor_script), url], capture_output=True, text=True)
+                    if p.returncode != 0:
+                        logger.error(f"[Hanime Download] Playwright extractor failed with exit code {p.returncode}")
+                        if p.stderr:
+                            logger.error(f"[Hanime Download] Playwright stderr: {p.stderr.strip()}")
+                    stdout = p.stdout.strip()
+                    if "JSON_RESULT:" in stdout:
+                        json_str = stdout.split("JSON_RESULT:")[1]
+                        data = json.loads(json_str)
+                        stream_url = data.get("url", "")
+                except Exception as e:
+                    logger.error(f"Playwright stream extraction failed: {e}")
+
+            if not stream_url or "http" not in stream_url:
+                if progress_hook:
+                    progress_hook({"status": "Failed to extract manifest. Falling back to default engine...", "baking": False, "done": False, "total_bytes": 0, "downloaded_bytes": 0, "retry": 0})
+                stream_url = url
+                
+            if ".m3u8" in stream_url or "hanime.tv/hls/" in stream_url:
+                result_path = output_dir / f"{clean_title}.mp4" if fixed_title else output_dir / "downloaded.mp4"
+                cover_path = output_dir / "cover.png"
+                
+                def baking_cb():
+                    progress_hook({"status": "baking", "baking": True, "done": False, "total_bytes": 1, "downloaded_bytes": 1})
+                
+                return self._download_custom_hls(
+                    playlist_url=stream_url,
+                    tmp_path=result_path,
+                    progress_hook=progress_hook,
+                    fixed_title=fixed_title,
+                    custom_thumbnail=None,
+                    baking_callback=baking_cb
+                )
+
+            temp_batch.write(stream_url + "\n")
+            temp_batch.close()
+
+            cmd = [
+                yt_dlp_path,
+                "--plugin-dirs", str(Path(__file__).parent.parent.parent / "plugins"),
+                "--batch-file", temp_batch.name,
+                "-o", outtmpl,
+                "-f", fmt,
+                "--merge-output-format", "mp4",
+                "--no-playlist",
+                "--all-subs",
+                "--embed-subs",
+                "--embed-metadata",
+                "--retries", "10",
+                "--fragment-retries", "10",
+                "--concurrent-fragments", "4",
+                "--no-check-certificate",
+                "--no-warnings",
+                "--socket-timeout", "10",
+            ]
+            for k, v in self.headers.items():
+                cmd.extend(["--add-header", f"{k}:{v}"])
+
+            result_path = output_dir / f"{clean_title}.mp4" if fixed_title else None
+            success = self._run_ytdlp_subprocess(
+                cmd, progress_hook, str(result_path) if result_path else str(output_dir)
+            )
+            
+            # Baking removed per user request (video and cover remain separate)
+            return success
+
+        except Exception as e:
+            err = str(e)
+            if _is_geo_error(err):
+                logger.error(
+                    "Hanime geo-block detected during download. "
+                    "Please enable a VPN and retry."
+                )
+            else:
+                logger.error(f"Hanime download failed for {url}: {e}")
+            return False
+        finally:
+            if os.path.exists(temp_batch.name):
+                try:
+                    os.unlink(temp_batch.name)
+                except Exception:
+                    pass

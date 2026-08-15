@@ -1,0 +1,6 @@
+{
+  "name": "HentaiHavenCo",
+  "primary_domain": "hentaihaven.co",
+  "aliases": [],
+  "base_url": "https://{domain}"
+}
