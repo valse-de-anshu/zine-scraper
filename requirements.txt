@@ -1,0 +1,46 @@
+# Zine Scraper Suite Requirements
+# This file tracks all Python dependencies for the Zine Scraper engines.
+# System dependencies (ffmpeg, aria2, atomicparsley) are handled by install.sh.
+
+beautifulsoup4>=4.12.3
+browser-cookie3>=0.20.1
+certifi>=2026.6.17
+cffi>=2.1.0
+charset-normalizer>=3.4.7
+cloudscraper>=1.2.71
+curl_cffi>=0.7.1
+greenlet>=3.5.3
+idna>=3.18
+instaloader>=4.15.2
+jeepney>=0.9.0
+lxml>=6.1.1
+lz4>=4.4.5
+m3u8>=6.0.0
+markdown-it-py>=4.2.0
+mdurl>=0.1.2
+mutagen>=1.47.0
+pexpect>=4.9.0
+Pillow>=10.0.0
+playwright>=1.43.0
+playwright-stealth>=2.0.3
+ptyprocess>=0.7.0
+pycparser>=3.0
+pycryptodome>=3.20.0
+pycryptodomex>=3.23.0
+pyee>=13.0.1
+Pygments>=2.20.0
+pyparsing>=3.3.2
+requests>=2.31.0
+requests-toolbelt>=1.0.0
+rich>=13.7.1
+soupsieve>=2.8.4
+tqdm>=4.66.0
+typing_extensions>=4.16.0
+urllib3>=2.7.0
+yt-dlp>=2024.04.09
+aiohttp
+deep-translator>=1.11.4
+psutil>=5.9.8
+faster-whisper>=1.0.0
+nvidia-cublas-cu12; platform_system == "Linux"
+nvidia-cudnn-cu12; platform_system == "Linux"
