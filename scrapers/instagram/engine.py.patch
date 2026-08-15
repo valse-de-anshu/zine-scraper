@@ -1,0 +1,19 @@
+--- scrapers/instagram/engine.py
++++ scrapers/instagram/engine.py
+@@ -699,6 +699,23 @@
+                         await asyncio.sleep(1.0)
+                         await page.keyboard.press("ArrowRight")
++                        
++                        # Try to get the active video/img from DOM!
++                        dom_media = await page.evaluate('''() => {
++                            let v = document.querySelector('video');
++                            if (v) return "VIDEO:" + v.src;
++                            // find the largest image or img in the story container
++                            let imgs = Array.from(document.querySelectorAll('img')).map(i => i.src);
++                            return "IMG:" + imgs.join(',');
++                        }''')
++                        if dom_media:
++                            logger.info(f"DOM MEDIA EXTRACTED: {dom_media[:200]}")
++
+                         
+                         # Check if we've been stuck without new media
