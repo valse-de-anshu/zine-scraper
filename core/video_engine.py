@@ -82,7 +82,7 @@ class VideoEngine:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
 
-    def download_video(self, url: str, output_dir: Path, progress_hook: Callable, raw_stream_url: str = None, is_audio: bool = False, custom_thumbnail: Path = None, fixed_title: str = None, fixed_artist: str = None, format_override: str = None, baking_callback: Callable = None) -> bool:
+    def download_video(self, url: str, output_dir: Path, progress_hook: Callable, raw_stream_url: str = None, is_audio: bool = False, custom_thumbnail: Path = None, fixed_title: str = None, fixed_artist: str = None, fixed_album: str = None, format_override: str = None, baking_callback: Callable = None, **kwargs) -> bool:
         """
         Downloads a video/audio.
         """
@@ -220,7 +220,7 @@ class VideoEngine:
                     shutil.move(str(generated), str(real_final_dest))
                     
                     if custom_thumbnail and custom_thumbnail.exists():
-                        self._apply_custom_metadata(real_final_dest, custom_thumbnail, is_audio, fixed_title, fixed_artist)
+                        self._apply_custom_metadata(real_final_dest, custom_thumbnail, is_audio, fixed_title, fixed_artist, fixed_album)
                     
                     # ── Lyrics: always use real embedded metadata from the downloaded file ──
                     # The parallel pre-fetch thread warmed the disk cache.
@@ -452,8 +452,8 @@ class VideoEngine:
                 
         return False
 
-    def _apply_custom_metadata(self, media_path: Path, cover_path: Path, is_audio: bool, title: str = None, artist: str = None):
-        """Uses ffmpeg to bake the custom cover AND forced metadata into the media file."""
+    def _apply_custom_metadata(self, media_path: Path, cover_path: Path, is_audio: bool, title: str = None, artist: str = None, album: str = None):
+        """Uses ffmpeg to bake the custom cover AND forced metadata (Title, Artist, Album) into the media file."""
         import subprocess
         try:
             tmp_path = media_path.with_suffix(".meta.tmp" + media_path.suffix)
@@ -480,6 +480,8 @@ class VideoEngine:
                 cmd.extend(["-metadata", f"title={title}"])
             if artist:
                 cmd.extend(["-metadata", f"artist={artist}"])
+            if album:
+                cmd.extend(["-metadata", f"album={album}"])
 
             # Cover disposition
             if cover_path and cover_path.exists():

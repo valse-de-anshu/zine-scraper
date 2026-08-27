@@ -71,10 +71,12 @@ class YoutubeMusicScraper:
         return cleaned
 
     def _clean_album_title(self, raw_title: Optional[str]) -> str:
-        """Removes 'Album - ' or 'Playlist - ' prefixes added by YouTube Music."""
+        """Removes 'Album - ' or 'Playlist - ' prefixes and trailing ' - EP' / ' - Single' suffixes."""
         if not raw_title:
             return "YouTube Music"
         cleaned = re.sub(r'^(Album|Playlist|EP|Single)\s*-\s*', '', raw_title.strip(), flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r'(?i)\s*[-–—]\s*(?:EP|Single|LP)$', '', cleaned).strip()
+        cleaned = re.sub(r'(?i)\s*[\(\[](?:EP|Single|LP)[\)\]]$', '', cleaned).strip()
         return cleaned or "YouTube Music"
 
     def _scrape_googleusercontent_artwork(self, page_url: str) -> Optional[str]:
@@ -136,7 +138,14 @@ class YoutubeMusicScraper:
             clean_artist = self._clean_artist_name(raw_artist) or "Unknown Artist"
             raw_title = info.get("track") or info.get("title") or "Unknown Track"
             title = self._clean_album_title(raw_title)
-            raw_album = info.get("album") or "Single"
+            raw_album = info.get("album")
+            if not raw_album or raw_album.lower() == "single":
+                try:
+                    from scrapers.youtube.engine import search_album_waterfall
+                    rec_album = search_album_waterfall(title, clean_artist)
+                    raw_album = rec_album or raw_album or "Single"
+                except Exception:
+                    raw_album = raw_album or "Single"
             album = self._clean_album_title(raw_album)
 
             vid_id = info.get("id")

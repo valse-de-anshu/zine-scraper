@@ -8,6 +8,7 @@ Handles only user selections and settings configuration, conforming to the decou
 import time
 import logging
 import sys
+import html
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -234,17 +235,23 @@ def handle_youtube_tui(
     mode_label = None
     quality = None
     audio_format = None
+    sub_choice = "yes"
     custom_thumb_path = None
     target_root = None
 
     def draw_yt_header():
         startup_clear()
         print_banner()
+        import html
         console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu_label}[/site]")
         console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]")
-        console.print(f"[menu]{'Channel':<12}:[/menu] [title]{channel_name}[/title]")
+        console.print(f"[menu]{'Channel':<12}:[/menu] [title]{html.unescape(channel_name)}[/title]")
         if "Playlist" in metadata:
-            console.print(f"[menu]{'Playlist':<12}:[/menu] [title]{metadata['Playlist']}[/title]")
+            console.print(f"[menu]{'Playlist':<12}:[/menu] [title]{html.unescape(metadata['Playlist'])}[/title]")
+        if mode and "music" in mode:
+            album_name = metadata.get("Album")
+            if album_name and album_name != "Single" and album_name != metadata.get("Playlist") and not album_name.endswith(" - Single"):
+                console.print(f"[menu]{'Album':<12}:[/menu] [title]{html.unescape(album_name)}[/title]")
 
     while True:
         if state == 0:
@@ -312,8 +319,40 @@ def handle_youtube_tui(
                 console.print(f"[menu]{'Format':<12}:[/menu] [site]{audio_format}[/site]")
                 
             state = 2
-            
+
         elif state == 2:
+            draw_yt_header()
+            console.print(f"[menu]{'Type':<12}:[/menu] [site]{mode_label}[/site]")
+            if quality:
+                console.print(f"[menu]{'Quality':<12}:[/menu] [site]{quality}[/site]")
+            if audio_format:
+                console.print(f"[menu]{'Format':<12}:[/menu] [site]{audio_format}[/site]")
+
+            sub_label_name = "Lyrics" if (mode and "music" in mode) else "Subtitle"
+            subtitle_options = [
+                ("Yes", "yes"),
+                ("No",  "no"),
+                ("Back", "BACK")
+            ]
+            if is_batch or not sys.stdin.isatty():
+                sub_choice = "yes"
+            else:
+                sub_choice = Selector(subtitle_options, sub_label_name, vertical=False, align_width=12).select()
+
+            if sub_choice == "BACK":
+                state = 1
+                continue
+            if sub_choice == "toggle":
+                is_multi = not is_multi
+                scraper.is_playlist = is_multi
+                menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_multi else "Quick Grab")
+                continue
+
+            console.print(f"[menu]{sub_label_name:<12}:[/menu] [site]{'Yes' if sub_choice == 'yes' else 'No'}[/site]")
+            state = 3
+            
+        elif state == 3:
+            sub_label_name = "Lyrics" if (mode and "music" in mode) else "Subtitle"
             if "custom" in mode:
                 draw_yt_header()
                 console.print(f"[menu]{'Type':<12}:[/menu] [site]{mode_label}[/site]")
@@ -321,43 +360,44 @@ def handle_youtube_tui(
                     console.print(f"[menu]{'Quality':<12}:[/menu] [site]{quality}[/site]")
                 if audio_format:
                     console.print(f"[menu]{'Format':<12}:[/menu] [site]{audio_format}[/site]")
+                console.print(f"[menu]{sub_label_name:<12}:[/menu] [site]{'Yes' if sub_choice == 'yes' else 'No'}[/site]")
                 
                 console.print("[menu]Paste Picture Path (Empty to go back): [/menu]", end="")
                 if is_batch or not sys.stdin.isatty():
                     path_str = ""
                 else:
                     sys.stdout.write(get_theme_input_ansi())
-                    pass
                     try:
                         path_str = input().strip()
                     except EOFError:
                         path_str = ""
                     sys.stdout.write("\033[0m")
-                    pass
                 
                 if not path_str:
-                    state = 1
+                    state = 2
                     continue
                 
                 p_path = Path(path_str)
                 if p_path.exists() and p_path.is_file():
                     custom_thumb_path = p_path
-                    state = 3
+                    state = 4
                 else:
                     console.print("[error]File does not exist or is not a file.[/error]")
                     time.sleep(1.5)
                     continue
             else:
                 custom_thumb_path = None
-                state = 3
+                state = 4
                 
-        elif state == 3:
+        elif state == 4:
+            sub_label_name = "Lyrics" if (mode and "music" in mode) else "Subtitle"
             draw_yt_header()
             console.print(f"[menu]{'Type':<12}:[/menu] [site]{mode_label}[/site]")
             if quality:
                 console.print(f"[menu]{'Quality':<12}:[/menu] [site]{quality}[/site]")
             if audio_format:
                 console.print(f"[menu]{'Format':<12}:[/menu] [site]{audio_format}[/site]")
+            console.print(f"[menu]{sub_label_name:<12}:[/menu] [site]{'Yes' if sub_choice == 'yes' else 'No'}[/site]")
             if custom_thumb_path:
                 console.print(f"[menu]{'Thumbnail':<12}:[/menu] [site]{custom_thumb_path.name}[/site]")
                 
@@ -370,7 +410,7 @@ def handle_youtube_tui(
                 target_root = get_save_path(url, scraper, is_batch_mode, batch_path, default_container, storage_layer)
                 
             if not target_root:
-                state = 2 if "custom" in mode else 1
+                state = 3 if "custom" in mode else 2
                 continue
                 
             if target_root == "toggle":
@@ -385,6 +425,7 @@ def handle_youtube_tui(
     run_workflow(
         url, tracker, target_root, metadata, videos, info, scraper,
         mode, custom_thumb_path, quality=quality, audio_format=audio_format,
+        download_subs=(sub_choice == "yes"),
         is_multi=is_multi, is_batch_mode=is_batch_mode
     )
     

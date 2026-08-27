@@ -1,3 +1,23 @@
+# Progress Report - August 27, 2026 (Concurrent Subtitles/Lyrics Download, Single Format Enforcement & Precision Sync)
+
+- **Strict Single-Format Output Enforcement (`scrapers/youtube/engine.py`):**
+  - Eliminated duplicate file creation:
+    - **For Video (`.mp4`)**: Exclusively generates **`.srt`** (SubRip standard for VLC, MPV, IINA).
+    - **For Songs (`.flac`, `.mp3`, `.m4a`)**: Exclusively generates **`.lrc`** (karaoke lyrics format).
+    - Prevents cluttering the library with unwanted dual `.srt` + `.lrc` files.
+- **Concurrent Background Subtitle/Lyrics Fetching (`scrapers/youtube/engine.py`):**
+  - Spawns a background thread immediately when the download starts to fetch online database lyrics or YouTube auto-captions **in parallel with the media download**.
+  - Subtitles and lyrics are pre-fetched and ready to write to disk the exact millisecond the media download completes (0.0s post-download wait).
+- **Interactive Subtitle & Lyrics TUI Selector (`scrapers/youtube/tui.py`):**
+  - Added dedicated interactive `Subtitle` / `Lyrics` prompt step in YouTube TUI (`Yes` / `No` / `Back`).
+  - Automatically falls back from official lyrics databases to YouTube captions when enabled.
+- **HTML Entity Sanitization & UI Cleanliness (`scrapers/youtube/`):**
+  - Applied `html.unescape()` across all YouTube title scraping routines, fast HTTP page streaming parser, video entries, uploaders, and progress display to eliminate raw encoded entities (`&#39;` -> `'`, `&amp;` -> `&`, `&quot;` -> `"`).
+- **Precision Subtitle & Lyrics Timeline Synchronization (`scrapers/youtube/engine.py`):**
+  - Cleaned rolling ASR WebVTT to isolate active speech cues from static reading context, eliminating subtitle lag and duplicate text blocks.
+
+---
+
 # Progress Report - August 16, 2026 (Version 1.0 Release Preparation & Open-Source Hardening)
 
 - **Version 1.0.0 Open-Source Release Setup & Settings Protection:**

@@ -1,6 +1,7 @@
 import time
 import logging
 import sys
+import html
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from core.ui import (
@@ -29,6 +30,7 @@ def run_workflow(
     custom_thumb_path: Optional[Path] = None,
     quality: Optional[str] = None,
     audio_format: Optional[str] = None,
+    download_subs: bool = True,
     is_multi: bool = False,
     is_batch_mode: bool = False
 ):
@@ -176,10 +178,15 @@ def run_workflow(
         menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_multi else "Quick Grab")
         console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu_label}[/site]")
         console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]")
-        channel_name = metadata.get('Channel/Series', 'Unknown')
+        import html
+        channel_name = html.unescape(metadata.get('Channel/Series', 'Unknown'))
         console.print(f"[menu]{'Channel':<12}:[/menu] [title]{channel_name}[/title]")
         if "Playlist" in metadata:
-            console.print(f"[menu]{'Playlist':<12}:[/menu] [title]{metadata['Playlist']}[/title]")
+            console.print(f"[menu]{'Playlist':<12}:[/menu] [title]{html.unescape(metadata['Playlist'])}[/title]")
+        if is_music:
+            album_name = metadata.get('Album')
+            if album_name and album_name != "Single" and album_name != metadata.get('Playlist') and not album_name.endswith(" - Single"):
+                console.print(f"[menu]{'Album':<12}:[/menu] [title]{html.unescape(album_name)}[/title]")
             
         mode_options = [
             ("Video", "video"), ("Song", "music"),
@@ -192,6 +199,8 @@ def run_workflow(
             console.print(f"[menu]{'Quality':<12}:[/menu] [site]{quality}[/site]")
         if audio_format:
             console.print(f"[menu]{'Format':<12}:[/menu] [site]{audio_format}[/site]")
+        sub_label_name = "Lyrics" if is_music else "Subtitle"
+        console.print(f"[menu]{sub_label_name:<12}:[/menu] [site]{'Yes' if download_subs else 'No'}[/site]")
         if custom_thumb_path:
             console.print(f"[menu]{'Thumbnail':<12}:[/menu] [site]{custom_thumb_path.name}[/site]")
             
@@ -221,12 +230,12 @@ def run_workflow(
     console.print(" ")
     for idx, video in enumerate(videos, 1):
         vid_id    = video.get("id")
-        vid_title = video.get("title")
+        vid_title = html.unescape(video.get("title") or f"Video {idx}")
         vid_url   = video.get("url")
         current_sub = video.get("_target_folder", sub_folder)
 
         resolved_file_path, is_downloaded = tracker.resolve_download_path(current_sub, str(vid_id), vid_title, ext_str, date_str=video.get("upload_date"))
-        display_name = resolved_file_path.name
+        display_name = html.unescape(resolved_file_path.name)
 
         if is_downloaded:
             tracker.mark_downloaded(scraper.url, str(vid_id))
@@ -452,13 +461,26 @@ def run_workflow(
                             pass
                             
                     try:
+                        vid_artist = video.get("artist") or video.get("uploader") or title
+                        vid_album = video.get("album") or metadata.get("Album") or metadata.get("Playlist") or (f"{title} - Single" if is_music else title)
+                        if is_music and (not vid_album or vid_album.endswith(" - Single") or vid_album == title):
+                            try:
+                                from .engine import search_album_waterfall
+                                rec = search_album_waterfall(resolved_file_path.stem, vid_artist)
+                                if rec:
+                                    vid_album = rec
+                            except Exception:
+                                pass
                         success = scraper.engine.download_youtube(
                             vid_url, current_sub, active_hook,
                             mode=mode,
                             custom_thumbnail=custom_thumb_path,
                             quality=quality,
                             audio_format=audio_format,
-                            fixed_title=resolved_file_path.stem
+                            fixed_title=resolved_file_path.stem,
+                            fixed_artist=vid_artist,
+                            fixed_album=vid_album,
+                            download_subs=download_subs
                         )
                     finally:
                         live_active[0] = False
@@ -492,6 +514,25 @@ def run_workflow(
         hist_log = f"  [{res_color}]●[/{res_color}] [unselected]{display_name}[/unselected]"
         console.print(hist_log)
         completed_history.append(hist_log)
+
+        # ── YouTube Subtitles & Lyrics Automated Pipeline ──
+        if progress_data.get("success") and download_subs:
+            lrc_file = resolved_file_path.with_suffix(".lrc")
+            srt_file = resolved_file_path.with_suffix(".srt")
+            alt_lrc = resolved_file_path.parent / "lyrics" / f"{resolved_file_path.stem}.lrc"
+            target_sub = lrc_file if is_music else srt_file
+
+            if target_sub.exists() and target_sub.stat().st_size > 10:
+                console.print(f"  [success]✔ {'Lyrics' if is_music else 'Subtitles'} saved: {target_sub.name}[/success]")
+            elif alt_lrc.exists() and alt_lrc.stat().st_size > 10:
+                console.print(f"  [success]✔ Lyrics saved: {alt_lrc.name}[/success]")
+            else:
+                sub_path = scraper.engine.fetch_and_save_subtitles(vid_url, resolved_file_path, is_audio=is_music)
+                if sub_path and sub_path.exists():
+                    console.print(f"  [success]✔ {'Lyrics' if is_music else 'Subtitles'} saved: {sub_path.name}[/success]")
+                else:
+                    console.print(f"  [warning]● No subtitles or lyrics found for: [title]{vid_title}[/title][/warning]")
+
         time.sleep(0.5)
 
         import core.ui as ui

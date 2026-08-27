@@ -364,6 +364,19 @@ def run_workflow(
         console.print(hist_log)
         completed_history.append(hist_log)
 
+        # ── YouTube Subtitles & Lyrics Pipeline ──
+        if progress_data.get("success"):
+            lrc_file = resolved_file_path.with_suffix(".lrc")
+            has_lyrics = lrc_file.exists() and lrc_file.stat().st_size > 10
+
+            if not has_lyrics:
+                track_url = track.get("url") or f"https://www.youtube.com/watch?v={vid_id}"
+                sub_path = scraper.engine.fetch_and_save_subtitles(track_url, resolved_file_path)
+                if sub_path and sub_path.exists():
+                    console.print(f"  [success]✔ Synced lyrics saved: {sub_path.name}[/success]")
+                else:
+                    console.print(f"  [warning]● No subtitles or lyrics found for: [title]{vid_title}[/title][/warning]")
+
         # Global Revolt shutdown check
         import core.ui as ui
         if ui._REVOLT_ACTIVE:

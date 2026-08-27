@@ -1,4 +1,5 @@
 import logging
+import html
 from typing import Dict, Any, List, Tuple, Optional
 from .engine import YoutubeEngine
 
@@ -44,10 +45,15 @@ class YoutubeScraper:
             
             if not title:
                 m = re.search(r'<meta name="title"\s+content="([^"]+)"', html_so_far) or re.search(r'<title>([^<]+)</title>', html_so_far)
-                if m: title = m.group(1)
+                if m:
+                    import html
+                    raw_t = html.unescape(m.group(1).strip())
+                    title = re.sub(r'(?i)\s*-\s*YouTube$', '', raw_t).strip()
             if not author:
                 m = re.search(r'<link itemprop="name"\s+content="([^"]+)"', html_so_far) or re.search(r'"author"\s*:\s*"([^"]+)"', html_so_far)
-                if m: author = m.group(1)
+                if m:
+                    import html
+                    author = html.unescape(m.group(1).strip())
             if not thumb:
                 m = re.search(r'<link itemprop="thumbnailUrl"\s+href="([^"]+)"', html_so_far) or re.search(r'<meta property="og:image"\s+content="([^"]+)"', html_so_far)
                 if m: thumb = m.group(1)
@@ -134,16 +140,33 @@ class YoutubeScraper:
              if not avatar_url:
                  avatar_url = info['thumbnails'][-1].get('url')
 
-        channel_name = info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
+        import html
+        channel_name = html.unescape(info.get('uploader') or info.get('channel') or info.get('title') or "Unknown")
+        raw_album = info.get('album')
+        if not raw_album:
+            if self.is_playlist and self.get_link_type() == "playlist":
+                raw_album = html.unescape(info.get('title') or "Unknown Playlist")
+            elif self.get_link_type() == "channel":
+                raw_album = channel_name
+            else:
+                try:
+                    from .engine import search_album_waterfall
+                    video_title = html.unescape(info.get('title') or "")
+                    reconfirmed = search_album_waterfall(video_title, channel_name)
+                    raw_album = reconfirmed or f"{channel_name} - Single"
+                except Exception:
+                    raw_album = f"{channel_name} - Single"
+
         metadata = {
             "Channel/Series": channel_name,
             "Source": info.get('extractor_key') or "Unknown",
             "Total Videos": len(info.get('entries', [])) if self.is_playlist else 1,
             "ID": info.get('uploader_id') or info.get('channel_id') or info.get('id') or "Unknown",
-            "Thumbnail": avatar_url
+            "Thumbnail": avatar_url,
+            "Album": raw_album
         }
         if self.is_playlist and self.get_link_type() == "playlist":
-            metadata["Playlist"] = info.get('title') or "Unknown"
+            metadata["Playlist"] = html.unescape(info.get('title') or "Unknown")
         
         videos = []
         if self.is_playlist:
@@ -162,12 +185,16 @@ class YoutubeScraper:
                     else:
                         video_url = raw_url or ""
 
+                    raw_item_title = html.unescape(entry.get('title', f"Video {idx+1}"))
+                    raw_item_uploader = html.unescape(entry.get('uploader') or entry.get('channel') or channel_name)
                     videos.append({
                         "url": video_url,
                         "raw_url": str(raw_url),
-                        "title": entry.get('title', f"Video {idx+1}"),
+                        "title": raw_item_title,
                         "id": vid_id or str(idx),
-                        "uploader": entry.get('uploader') or entry.get('channel') or channel_name,
+                        "uploader": raw_item_uploader,
+                        "artist": html.unescape(entry.get('artist') or raw_item_uploader),
+                        "album": html.unescape(entry.get('album') or raw_album),
                         "thumbnail": track_thumb
                     })
         else:
@@ -175,11 +202,15 @@ class YoutubeScraper:
             if not track_thumb and info.get('thumbnails'):
                 track_thumb = info['thumbnails'][-1].get('url')
 
+            raw_item_title = html.unescape(info.get('title', "Unknown"))
+            raw_item_uploader = html.unescape(info.get('uploader') or info.get('channel') or channel_name)
             videos.append({
                 "url": info.get('webpage_url') or info.get('original_url') or self.url,
-                "title": info.get('title', "Unknown"),
+                "title": raw_item_title,
                 "id": info.get('id', "Unknown"),
-                "uploader": info.get('uploader') or info.get('channel') or channel_name,
+                "uploader": raw_item_uploader,
+                "artist": html.unescape(info.get('artist') or raw_item_uploader),
+                "album": html.unescape(info.get('album') or raw_album),
                 "thumbnail": track_thumb,
                 "upload_date": info.get('upload_date')
             })

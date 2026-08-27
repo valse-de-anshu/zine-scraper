@@ -439,3 +439,85 @@ class YoutubeMusicEngine:
             track_id=track_id or info.get("id"),
             cover_url=cover_url or info.get("thumbnail")
         )
+
+    def fetch_youtube_subtitles(self, url: str) -> List[Dict[str, Any]]:
+        """
+        Fetches official or AI auto-generated subtitles for a given YouTube Music track/URL.
+        Returns: [{'time': float, 'text': str}, ...]
+        """
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        poop_dir = project_root / "💩"
+        poop_dir.mkdir(parents=True, exist_ok=True)
+        token = f"ytm_sub_{os.getpid()}_{int(time.time() * 1000)}"
+        sub_dir = poop_dir / token
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        out_tmpl = str(sub_dir / "sub.%(ext)s")
+
+        ytdlp_bin = shutil.which("yt-dlp") or "yt-dlp"
+        cmd = [
+            ytdlp_bin,
+            "--no-warnings", "--quiet", "--no-playlist",
+            "--write-auto-sub", "--write-sub",
+            "--sub-format", "vtt/lrc/best",
+            "--sub-langs", "en,en.*,en-orig,en-US,en-GB,hi,hi.*,hin,hi-orig,all",
+            "--skip-download",
+            "-o", out_tmpl,
+            url
+        ]
+
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+
+            def _priority(f: str) -> int:
+                fl = f.lower()
+                if fl.endswith(".en.vtt") or fl.endswith(".en.lrc"): return 0
+                if ".en-orig" in fl or ".en" in fl or "english" in fl: return 1
+                if fl.endswith(".hi.vtt") or fl.endswith(".hi.lrc"): return 2
+                if ".hi-orig" in fl or ".hi" in fl or "hindi" in fl or "hin" in fl: return 3
+                return 4
+
+            from scrapers.youtube.engine import parse_vtt
+            files = sorted([f for f in os.listdir(sub_dir) if f.startswith("sub.")], key=_priority)
+            for fname in files:
+                fpath = sub_dir / fname
+                try:
+                    content = fpath.read_text(encoding="utf-8", errors="ignore")
+                    if fname.endswith(".vtt"):
+                        parsed = parse_vtt(content)
+                        if parsed:
+                            return parsed
+                    elif fname.endswith(".lrc"):
+                        from core.lyrics_engine import parse_lrc
+                        parsed = parse_lrc(content)
+                        if parsed:
+                            return parsed
+                except Exception as e:
+                    logger.debug(f"Error reading sub file {fname}: {e}")
+        except Exception as e:
+            logger.debug(f"yt-dlp subtitle fetch error: {e}")
+        finally:
+            try:
+                shutil.rmtree(sub_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+        return []
+
+    def fetch_and_save_subtitles(self, url: str, media_path: Path) -> Optional[Path]:
+        """
+        Fetches official/AI subtitles from YouTube and saves beside the audio file as synchronized lyrics (.lrc).
+        """
+        parsed = self.fetch_youtube_subtitles(url)
+        if not parsed:
+            return None
+
+        try:
+            from core.lyrics_engine import format_lrc
+            lrc_text = format_lrc(parsed)
+            out_lrc = media_path.with_suffix(".lrc")
+            out_lrc.parent.mkdir(parents=True, exist_ok=True)
+            out_lrc.write_text(lrc_text, encoding="utf-8")
+            return out_lrc
+        except Exception as e:
+            logger.error(f"Failed to save subtitles as LRC: {e}")
+            return None
