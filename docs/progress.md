@@ -1,5 +1,11 @@
 # Progress Report - August 27, 2026 (Concurrent Subtitles/Lyrics Download, Single Format Enforcement & Precision Sync)
 
+- **Subfolder Routing for Vacuum vs Quick Grab (`scrapers/youtube/engine.py`, `core/lyrics_engine.py`):**
+  - **Vacuum / Batch Mode**:
+    - Songs: Automatically places `.lrc` files into the `lyrics/` subfolder (e.g. `Vacuum/<Artist>/song/lyrics/<Track>.lrc`).
+    - Videos: Automatically places `.srt` files into the `subtitles/` subfolder (e.g. `Vacuum/<Channel>/video/subtitles/<Video>.srt`).
+  - **Quick Grab Mode**:
+    - Saves companion `.srt` (for video) or `.lrc` (for song) directly beside the single downloaded media file with no nested folders.
 - **Strict Single-Format Output Enforcement (`scrapers/youtube/engine.py`):**
   - Eliminated duplicate file creation:
     - **For Video (`.mp4`)**: Exclusively generates **`.srt`** (SubRip standard for VLC, MPV, IINA).

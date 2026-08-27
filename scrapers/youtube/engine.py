@@ -383,11 +383,29 @@ class YoutubeEngine(VideoEngine):
 
         return []
 
-    def fetch_and_save_subtitles(self, url: str, media_path: Path, is_audio: bool = True) -> Optional[Path]:
+def get_subtitle_save_path(media_path: Path, is_audio: bool = True, is_batch: bool = False) -> Path:
+    """
+    Computes the standard companion subtitle/lyrics save path:
+    - Quick Grab (single file): sibling file -> <media_path>.lrc or <media_path>.srt
+    - Vacuum / Batch (album/playlist/folder):
+        * For audio: <parent>/lyrics/<stem>.lrc
+        * For video: <parent>/subtitles/<stem>.srt
+    """
+    path_str = str(media_path)
+    is_quick_grab = "Quick grab" in path_str and not is_batch
+    if is_quick_grab:
+        return media_path.with_suffix(".lrc" if is_audio else ".srt")
+    else:
+        sub_folder_name = "lyrics" if is_audio else "subtitles"
+        ext = ".lrc" if is_audio else ".srt"
+        return media_path.parent / sub_folder_name / f"{media_path.stem}{ext}"
+
+
+    def fetch_and_save_subtitles(self, url: str, media_path: Path, is_audio: bool = True, is_batch: bool = False) -> Optional[Path]:
         """
-        Fetches official/AI subtitles from YouTube and saves beside the media file:
-        - For audio: saves as <stem>.lrc (synced lyrics).
-        - For video: saves as <stem>.srt (SubRip).
+        Fetches official/AI subtitles from YouTube and saves into the appropriate location:
+        - Quick Grab: sibling file -> <media_path>.lrc / <media_path>.srt
+        - Vacuum / Batch: inside lyrics/ or subtitles/ subfolder
         Returns path to the saved subtitle file if successful, else None.
         """
         parsed = self.fetch_youtube_subtitles(url)
@@ -395,19 +413,16 @@ class YoutubeEngine(VideoEngine):
             return None
 
         try:
+            save_path = get_subtitle_save_path(media_path, is_audio=is_audio, is_batch=is_batch)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
             if is_audio:
                 from core.lyrics_engine import format_lrc
                 lrc_text = format_lrc(parsed)
-                out_lrc = media_path.with_suffix(".lrc")
-                out_lrc.parent.mkdir(parents=True, exist_ok=True)
-                out_lrc.write_text(lrc_text, encoding="utf-8")
-                return out_lrc
+                save_path.write_text(lrc_text, encoding="utf-8")
             else:
                 srt_text = format_srt(parsed)
-                out_srt = media_path.with_suffix(".srt")
-                out_srt.parent.mkdir(parents=True, exist_ok=True)
-                out_srt.write_text(srt_text, encoding="utf-8")
-                return out_srt
+                save_path.write_text(srt_text, encoding="utf-8")
+            return save_path
         except Exception as e:
             logger.error(f"Failed to save subtitles: {e}")
             return None
@@ -702,15 +717,13 @@ class YoutubeEngine(VideoEngine):
                             try:
                                 subs_thread.join(timeout=10)
                                 if prefetched_cues:
+                                    save_p = get_subtitle_save_path(final_thumb_path, is_audio=is_music)
+                                    save_p.parent.mkdir(parents=True, exist_ok=True)
                                     if is_music:
                                         from core.lyrics_engine import format_lrc
-                                        lrc_p = final_thumb_path.with_suffix(".lrc")
-                                        lrc_p.parent.mkdir(parents=True, exist_ok=True)
-                                        lrc_p.write_text(format_lrc(prefetched_cues), encoding="utf-8")
+                                        save_p.write_text(format_lrc(prefetched_cues), encoding="utf-8")
                                     else:
-                                        srt_p = final_thumb_path.with_suffix(".srt")
-                                        srt_p.parent.mkdir(parents=True, exist_ok=True)
-                                        srt_p.write_text(format_srt(prefetched_cues), encoding="utf-8")
+                                        save_p.write_text(format_srt(prefetched_cues), encoding="utf-8")
                             except Exception as e:
                                 logger.debug(f"Prefetched subs write error: {e}")
 
@@ -725,15 +738,13 @@ class YoutubeEngine(VideoEngine):
                     try:
                         subs_thread.join(timeout=10)
                         if prefetched_cues:
+                            save_p = get_subtitle_save_path(final_path, is_audio=is_music)
+                            save_p.parent.mkdir(parents=True, exist_ok=True)
                             if is_music:
                                 from core.lyrics_engine import format_lrc
-                                lrc_p = final_path.with_suffix(".lrc")
-                                lrc_p.parent.mkdir(parents=True, exist_ok=True)
-                                lrc_p.write_text(format_lrc(prefetched_cues), encoding="utf-8")
+                                save_p.write_text(format_lrc(prefetched_cues), encoding="utf-8")
                             else:
-                                srt_p = final_path.with_suffix(".srt")
-                                srt_p.parent.mkdir(parents=True, exist_ok=True)
-                                srt_p.write_text(format_srt(prefetched_cues), encoding="utf-8")
+                                save_p.write_text(format_srt(prefetched_cues), encoding="utf-8")
                     except Exception as e:
                         logger.debug(f"Prefetched subs write error: {e}")
 

@@ -505,17 +505,19 @@ class YoutubeMusicEngine:
 
     def fetch_and_save_subtitles(self, url: str, media_path: Path) -> Optional[Path]:
         """
-        Fetches official/AI subtitles from YouTube and saves beside the audio file as synchronized lyrics (.lrc).
+        Fetches official/AI subtitles from YouTube and saves into the appropriate location:
+        - Quick Grab: sibling file -> <media_path>.lrc
+        - Vacuum / Batch: inside lyrics/ subfolder -> <parent>/lyrics/<stem>.lrc
         """
         parsed = self.fetch_youtube_subtitles(url)
         if not parsed:
             return None
 
         try:
-            from core.lyrics_engine import format_lrc
-            lrc_text = format_lrc(parsed)
-            out_lrc = media_path.with_suffix(".lrc")
+            from core.lyrics_engine import format_lrc, _lrc_save_path
+            out_lrc = _lrc_save_path(media_path)
             out_lrc.parent.mkdir(parents=True, exist_ok=True)
+            lrc_text = format_lrc(parsed)
             out_lrc.write_text(lrc_text, encoding="utf-8")
             return out_lrc
         except Exception as e:
