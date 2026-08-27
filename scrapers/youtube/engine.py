@@ -314,6 +314,24 @@ def _write_yt_lyrics(audio_path: Path, prefetched_lines: list, source: str) -> N
         logger.debug(f"_write_yt_lyrics error: {e}")
 
 
+def get_subtitle_save_path(media_path: Path, is_audio: bool = True, is_batch: bool = False) -> Path:
+    """
+    Computes the standard companion subtitle/lyrics save path:
+    - Quick Grab (single file): sibling file -> <media_path>.lrc or <media_path>.srt
+    - Vacuum / Batch (album/playlist/folder):
+        * For audio: <parent>/lyrics/<stem>.lrc
+        * For video: <parent>/subtitles/<stem>.srt
+    """
+    path_str = str(media_path)
+    is_quick_grab = "Quick grab" in path_str and not is_batch
+    if is_quick_grab:
+        return media_path.with_suffix(".lrc" if is_audio else ".srt")
+    else:
+        sub_folder_name = "lyrics" if is_audio else "subtitles"
+        ext = ".lrc" if is_audio else ".srt"
+        return media_path.parent / sub_folder_name / f"{media_path.stem}{ext}"
+
+
 class YoutubeEngine(VideoEngine):
     """
     Extended VideoEngine for YouTube with support for Music mode, Album Tagging,
@@ -382,24 +400,6 @@ class YoutubeEngine(VideoEngine):
                 pass
 
         return []
-
-def get_subtitle_save_path(media_path: Path, is_audio: bool = True, is_batch: bool = False) -> Path:
-    """
-    Computes the standard companion subtitle/lyrics save path:
-    - Quick Grab (single file): sibling file -> <media_path>.lrc or <media_path>.srt
-    - Vacuum / Batch (album/playlist/folder):
-        * For audio: <parent>/lyrics/<stem>.lrc
-        * For video: <parent>/subtitles/<stem>.srt
-    """
-    path_str = str(media_path)
-    is_quick_grab = "Quick grab" in path_str and not is_batch
-    if is_quick_grab:
-        return media_path.with_suffix(".lrc" if is_audio else ".srt")
-    else:
-        sub_folder_name = "lyrics" if is_audio else "subtitles"
-        ext = ".lrc" if is_audio else ".srt"
-        return media_path.parent / sub_folder_name / f"{media_path.stem}{ext}"
-
 
     def fetch_and_save_subtitles(self, url: str, media_path: Path, is_audio: bool = True, is_batch: bool = False) -> Optional[Path]:
         """
