@@ -201,7 +201,7 @@ def run_workflow(
         if hasattr(tracker, "resolve_download_path"):
             resolved_file_path, is_in_verified = tracker.resolve_download_path(folder, str(vid_id), vid_title, "flac")
         else:
-            filename = f"{track_num:02d}. {vid_title}.flac" if track_num else f"{vid_title}.flac"
+            filename = f"{vid_title}.flac"
             resolved_file_path = folder / filename
             is_in_verified = resolved_file_path.exists()
 

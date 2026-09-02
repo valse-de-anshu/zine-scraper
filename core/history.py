@@ -431,6 +431,8 @@ class HistoryLayer:
         if is_quick_grab:
             import html
             title = html.unescape(title)
+            # Never prepend or keep leading numbers in Quick Grab
+            title = re.sub(r'^\d+[\.\s\-]+\s*', '', title).strip() or title
             clean_title = "".join([c for c in title if c.isalnum() or c in " .-_()'"]).strip()
             clean_title = re.sub(r'\s{2,}', ' ', clean_title)
             if len(clean_title) > 150:
@@ -456,6 +458,9 @@ class HistoryLayer:
                 
         import html
         title = html.unescape(title)
+        # Never prepend or keep leading numbers for songs
+        if root_dir.name.lower() == "song" or "/song" in str(root_dir).lower():
+            title = re.sub(r'^\d+[\.\s\-]+\s*', '', title).strip() or title
         # Clean title for filename
         clean_title = "".join([c for c in title if c.isalnum() or c in " .-_()'"]).strip()
         clean_title = re.sub(r'\s{2,}', ' ', clean_title)

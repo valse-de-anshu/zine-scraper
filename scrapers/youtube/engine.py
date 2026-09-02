@@ -577,6 +577,9 @@ class YoutubeEngine(VideoEngine):
         
         if fixed_title:
             clean_title = "".join([c for c in fixed_title if c.isalnum() or c in " .-_()"]).strip()
+            # If song or quick grab, ensure no accidental leading index number
+            if is_music or ("Quick grab" in str(videos_dir)):
+                clean_title = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_title).strip() or clean_title
         else:
             clean_title = "downloaded_video"
 

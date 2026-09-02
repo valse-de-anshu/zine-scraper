@@ -53,12 +53,18 @@ def run_workflow(
         folder = target_root
         sub_folder = target_root
         sub_folder.mkdir(parents=True, exist_ok=True)
+        history_title = html.unescape((videos[0].get("title") if videos else None) or info.get("title") or title)
     else:
         target_root_cat = target_root
         platform_id = str(info.get("id") or info.get("channel_id") or scraper.url)
         from core.paths import resolve_folder_collision
         folder = resolve_folder_collision(target_root_cat, title, platform_id)
         folder.mkdir(parents=True, exist_ok=True)
+        history_title = html.unescape(metadata.get("Playlist") or metadata.get("Channel/Series") or title)
+
+    # Pipe the authentic TUI title directly down to Download History tracker
+    if history_title:
+        tracker.set_title(scraper.url, history_title)
 
         if is_shorts:
             sub_folder = folder / "short"
@@ -124,8 +130,19 @@ def run_workflow(
         if d1 and d2 and d1 > d2:
             videos.reverse()
             
+    # Numbering rules:
+    # 1. Songs: NEVER prepend numbers at first (clean titles needed for lyrics/metadata scripts).
+    # 2. Quick Grab (any content): NEVER prepend numbers at first.
+    # 3. Vacuum Videos (multi-video / channel / playlist): Prepend chronological numbers for series organization.
+    should_prefix_number = (not is_music) and is_multi and (len(videos) > 1)
     for idx, video in enumerate(videos, 1):
-        video["title"] = f"{idx}. {video.get('title', f'Video {idx}')}"
+        raw_t = video.get('title') or (f"Video {idx}" if should_prefix_number else "Video")
+        # Strip any existing leading "N. " prefix to prevent leftover or duplicate numbers
+        clean_raw_t = re.sub(r'^\d+[\.\s\-]+\s*', '', raw_t).strip() or raw_t
+        if should_prefix_number:
+            video["title"] = f"{idx}. {clean_raw_t}"
+        else:
+            video["title"] = clean_raw_t
 
     # Categorize videos into subfolders
     videos_by_folder = {}
@@ -238,7 +255,7 @@ def run_workflow(
         display_name = html.unescape(resolved_file_path.name)
 
         if is_downloaded:
-            tracker.mark_downloaded(scraper.url, str(vid_id))
+            tracker.mark_downloaded(scraper.url, str(vid_id), title=history_title)
             hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
             console.print(hist_log)
             completed_history.append(hist_log)
@@ -354,7 +371,7 @@ def run_workflow(
                                 found_unbaked.rename(resolved_file_path)
 
                         if success and resolved_file_path.exists():
-                            tracker.mark_downloaded(scraper.url, str(vid_id))
+                            tracker.mark_downloaded(scraper.url, str(vid_id), title=history_title)
                             progress_data["success"] = True
                             if unbaked_tmp.exists():
                                 try: unbaked_tmp.unlink()
@@ -487,7 +504,7 @@ def run_workflow(
                     
                 set_active_live(None)
                 if success:
-                    tracker.mark_downloaded(scraper.url, str(vid_id))
+                    tracker.mark_downloaded(scraper.url, str(vid_id), title=history_title)
                     progress_data["success"] = True
                     break
                 else:

@@ -1,26 +1,20 @@
-# Progress Report - August 27, 2026 (Concurrent Subtitles/Lyrics Download, Single Format Enforcement & Precision Sync)
+# Progress Report - September 03, 2026 (Song Numbering Elimination, History Title Piping & README Overhaul)
 
-- **Subfolder Routing for Vacuum vs Quick Grab (`scrapers/youtube/engine.py`, `core/lyrics_engine.py`):**
-  - **Vacuum / Batch Mode**:
-    - Songs: Automatically places `.lrc` files into the `lyrics/` subfolder (e.g. `Vacuum/<Artist>/song/lyrics/<Track>.lrc`).
-    - Videos: Automatically places `.srt` files into the `subtitles/` subfolder (e.g. `Vacuum/<Channel>/video/subtitles/<Video>.srt`).
-  - **Quick Grab Mode**:
-    - Saves companion `.srt` (for video) or `.lrc` (for song) directly beside the single downloaded media file with no nested folders.
-- **Strict Single-Format Output Enforcement (`scrapers/youtube/engine.py`):**
-  - Eliminated duplicate file creation:
-    - **For Video (`.mp4`)**: Exclusively generates **`.srt`** (SubRip standard for VLC, MPV, IINA).
-    - **For Songs (`.flac`, `.mp3`, `.m4a`)**: Exclusively generates **`.lrc`** (karaoke lyrics format).
-    - Prevents cluttering the library with unwanted dual `.srt` + `.lrc` files.
-- **Concurrent Background Subtitle/Lyrics Fetching (`scrapers/youtube/engine.py`):**
-  - Spawns a background thread immediately when the download starts to fetch online database lyrics or YouTube auto-captions **in parallel with the media download**.
-  - Subtitles and lyrics are pre-fetched and ready to write to disk the exact millisecond the media download completes (0.0s post-download wait).
-- **Interactive Subtitle & Lyrics TUI Selector (`scrapers/youtube/tui.py`):**
-  - Added dedicated interactive `Subtitle` / `Lyrics` prompt step in YouTube TUI (`Yes` / `No` / `Back`).
-  - Automatically falls back from official lyrics databases to YouTube captions when enabled.
-- **HTML Entity Sanitization & UI Cleanliness (`scrapers/youtube/`):**
-  - Applied `html.unescape()` across all YouTube title scraping routines, fast HTTP page streaming parser, video entries, uploaders, and progress display to eliminate raw encoded entities (`&#39;` -> `'`, `&amp;` -> `&`, `&quot;` -> `"`).
-- **Precision Subtitle & Lyrics Timeline Synchronization (`scrapers/youtube/engine.py`):**
-  - Cleaned rolling ASR WebVTT to isolate active speech cues from static reading context, eliminating subtitle lag and duplicate text blocks.
+- **Elimination of Index Numbers on Songs & Quick Grab Files (`core/history.py`, `scrapers/youtube/`, `scrapers/youtube/yt_music/`, `scrapers/pornhub/`):**
+  - **Songs (Audio Mode)**:
+    - Never prefix index numbers (`1. `, `01. `, etc.) to song filenames across both Vacuum and Quick Grab modes.
+    - Prevents breaking external scripts, tag readers, lyrics engines (LRCLIB, NetEase, Megalobiz), and music database lookups.
+    - Track numbers remain properly tagged inside metadata tags (`tracknumber` in FLAC/Vorbis comments and ID3 tags) without polluting the filename.
+  - **Quick Grab Mode (Single Videos & Songs)**:
+    - Never prepend `1. ` or index numbers to single downloads in `Quick grab/`.
+  - **Vacuum Videos (Multi-video series / channels / playlists)**:
+    - Preserves chronological numbering (`1. `, `2. `, ...) exclusively for multi-video organization.
+- **Authentic Title Piping to Download History (`scrapers/youtube/workflow.py`, `core/history.py`):**
+  - Directly piped extracted TUI titles into `tracker.set_title(scraper.url, history_title)` and `tracker.mark_downloaded(...)`, preventing fallback URL-slug generation (`"Watch"`, `"Videos"`).
+- **Streamlined and Centered Documentation (`README.md`):**
+  - Restructured README with high-impact, minimal flow: Centered Preview Showcase -> Quick Start -> Commands -> Complete 8-Category Supported Sites (synced with `core/site_tui.py`) -> Feature Toolkit -> Architecture -> Credits.
+  - Removed bloated sales copy and mermaid diagrams.
+  - Fixed preview image table centering on GitHub.
 
 ---
 

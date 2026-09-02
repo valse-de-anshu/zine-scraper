@@ -121,12 +121,16 @@ def run_workflow(
             # No/partial dates — PH is newest-first, so reverse → oldest first
             videos.reverse()
 
+    should_prefix_number = is_vacuum and (len(videos) > 1)
     for idx, video in enumerate(videos, 1):
-        raw_title = video.get("title") or f"Video {idx}"
+        raw_title = video.get("title") or (f"Video {idx}" if should_prefix_number else "Video")
         # Strip any existing leading "N. " prefix to avoid double-numbering on resume
         if raw_title and raw_title[0:1].isdigit() and ". " in raw_title[:6]:
             raw_title = raw_title.split(". ", 1)[-1]
-        video["title"] = f"{idx}. {raw_title}"
+        if should_prefix_number:
+            video["title"] = f"{idx}. {raw_title}"
+        else:
+            video["title"] = raw_title
 
 
     ext = "mp4"

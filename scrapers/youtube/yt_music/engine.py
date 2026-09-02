@@ -176,16 +176,16 @@ class YoutubeMusicEngine:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         clean_title = "".join([c for c in (fixed_title or "track") if c.isalnum() or c in " .-_()'"]).strip()
+        clean_title = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_title).strip() or clean_title
         if not clean_title:
             clean_title = "track"
         if len(clean_title) > 150:
             clean_title = clean_title[:150].strip()
 
-        # Filename format
-        if track_number is not None:
-            filename = f"{track_number:02d}. {clean_title}.flac"
-        elif fixed_artist and fixed_title:
+        # Filename format - songs must not have leading numbers
+        if fixed_artist and fixed_title and fixed_artist.lower() not in clean_title.lower():
             clean_artist = "".join([c for c in fixed_artist if c.isalnum() or c in " .-_()'"]).strip()
+            clean_artist = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_artist).strip() or clean_artist
             filename = f"{clean_artist} - {clean_title}.flac"
         else:
             filename = f"{clean_title}.flac"
