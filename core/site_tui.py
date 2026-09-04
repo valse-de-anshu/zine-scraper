@@ -105,6 +105,17 @@ SITE_CATEGORIES = [
         "tag": "SFW",
         "sites": [
             {
+                "name": "MangaDex",
+                "primary": "mangadex.org",
+                "alts": ["api.mangadex.org"],
+                "rating": "10/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Manga / Manhwa / Manhua / Webtoons",
+                "tags": "SFW · Manga · REST API · Scanlations · Multi-Lang",
+                "desc": "The internet's foremost community-driven open manga database. Hosts millions of chapters across hundreds of languages with clean high-resolution scans, zero ads, and official REST API integration."
+            },
+            {
                 "name": "Asura Scans",
                 "primary": "asurascans.com",
                 "alts": ["asuracomic.net", "asuratoon.com"],

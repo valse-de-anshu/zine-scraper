@@ -1,3 +1,32 @@
+# Progress Report - September 04, 2026 (MangaDex Scraper Integration, Folder Flattening & Language Selector)
+
+- **MangaDex Platform Scraper Integration (`scrapers/mangadex/`):**
+  - Built a completely isolated, modular scraper suite for MangaDex (`mangadex.org`) with official REST API v5 integration.
+  - **MangaDex@Home Distributed Image Delivery**: Implemented dynamic node resolution via `/at-home/server/{chapter_id}` with strict adherence to official security guidelines (no auth headers sent to image download domains).
+  - **Rate-Limit & Backoff Guards**: Enforced global $\le$ 5 req/s rate limits with automatic exponential backoff on HTTP 429.
+  - **Single Chapter & Series Title Support**: Supports both manga series (`/title/<uuid>`) and individual chapters (`/chapter/<uuid>`), resolving parent relationships automatically.
+  - **English Title Localization Prioritization**: Overhauled title resolution in `scraper.py` to check both primary `title` and `altTitles` specifically for `"en"` keys. Prevents falling back to romanized Korean (`"ko-ro"`) or Japanese (`"ja-ro"`) slugs when localized English titles exist (e.g. resolves `"Flowers of Allure"` instead of `"Kkot eun Mikkiya"`).
+  - **Multi-Scanlation Deduplication**: Deduplicates multiple scanlation releases for the same chapter, prioritizing the highest page count.
+  - **Single-Folder Destination Fix**: Fixed destination path resolution in `engine.py` (`dest_dir = folder if folder.name == f"Chapter{ch_num}" else (folder / f"Chapter{ch_num}")`), resolving duplicate nested folders (`Chapter1/Chapter1`) across both Quick Grab and Vacuum modes.
+  - **Interactive Language Selector**:
+    - Extracted all `availableTranslatedLanguages` from series metadata.
+    - Presented an interactive `Selector` prompt showing all available translated languages with friendly names and ISO codes (e.g. `English [en]`, `Portuguese (Brazil) [pt-br]`, `Spanish (LATAM) [es-la]`).
+    - Guarded with `is_batch` and `sys.stdin.isatty()` checks to cleanly default in headless or batch contexts.
+    - Added language tracking to `.zine/meta.json` and rendered the chosen language in the UI metadata tree (`render_completion_tree`).
+  - **Centralized Temp Directory (`💩/`)**: All page chunks, cover art, and slicing operations occur inside the centralized temp directory before atomic commit.
+  - **Safe Secrets & Credentials Manager (`core/secrets.py`, `secrets.json`)**:
+    - Created a dedicated secrets manager that resolves credentials dynamically from environment variables, local `secrets.json`, and `core/settings.json`.
+    - Automatically scaffolds `secrets.json` on launch via `core/library.py:scaffold_library()`.
+    - Permanently excluded `secrets.json`, `core/secrets.json`, `.env`, and `.env.*` in `.gitignore` to guarantee API keys are never accidentally committed or pushed.
+    - Updated `README.md` documentation and user guide.
+    - Completely decoupled hardcoded credentials from `scrapers/mangadex/engine.py`.
+  - **Site Catalog & Routing Registration**:
+    - Added `"mangadex.org": "mangadex"` to `core/site_map.py`.
+    - Added MangaDex to Category 2 (Manga) in `core/site_tui.py`.
+    - Updated `README.md` Supported Platforms table.
+
+---
+
 # Progress Report - September 03, 2026 (Song Numbering Elimination, History Title Piping & README Overhaul)
 
 - **Elimination of Index Numbers on Songs & Quick Grab Files (`core/history.py`, `scrapers/youtube/`, `scrapers/youtube/yt_music/`, `scrapers/pornhub/`):**

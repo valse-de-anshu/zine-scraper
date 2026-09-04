@@ -59,6 +59,7 @@ class PathAuthority:
         
         # Files
         self._config_file  = self._suite_root / "core" / "settings.json"
+        self._secrets_file = self._suite_root / "secrets.json"
         
         # Logs 
         self._logs_root = self._suite_root / "Logs"
@@ -89,6 +90,9 @@ class PathAuthority:
 
     def get_config_file(self) -> Path:
         return self._config_file
+
+    def get_secrets_file(self) -> Path:
+        return self._secrets_file
 
     def get_urls_file(self) -> Path:
         return self.get_batch_root() / "Batch URL.txt"

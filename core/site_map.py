@@ -26,6 +26,7 @@ SITE_MAP = {
     "fanfox.net": "fanfox",
     "nhentai.net": "nhentai",
     "weebcentral.com": "weebcentral",
+    "mangadex.org": "mangadex",
     "mangak.io": "mangak",
     "projectsuki.com": "projectsuki",
     "gutenberg.org": "gutenberg",

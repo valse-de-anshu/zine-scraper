@@ -102,6 +102,25 @@ cd "run me" && chmod +x install.sh run.sh && ./install.sh
 
 ---
 
+### 🔑 4. API Keys & Personal Credentials (`secrets.json`)
+
+Zine Scraper includes a built-in, secure credentials manager so personal API keys and client secrets are **never committed or leaked to Git**:
+
+* **Auto-Scaffolded on Launch**: On first startup, Zine automatically generates a gitignored `secrets.json` file in the project root:
+  ```json
+  {
+      "mangadex": {
+          "client_id": "personal-client-your-uuid",
+          "client_secret": "your-client-secret"
+      }
+  }
+  ```
+* **Git Safe**: `secrets.json`, `core/secrets.json`, and `.env` are permanently excluded in `.gitignore`. You can safely push, pull, or share your repository without exposing credentials.
+* **Environment Variables**: You can also optionally provide keys as system environment variables (e.g. `MANGADEX_CLIENT_ID` and `MANGADEX_CLIENT_SECRET`).
+* **Complete Guide**: See [`docs/ManaDex.md`](docs/ManaDex.md) for a comprehensive step-by-step walkthrough on generating API keys, language selection, and library management.
+
+---
+
 ## 💬 Available Commands
 
 Type any of these commands directly into the main `Paste URL:` prompt:
@@ -124,7 +143,7 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 ## 🌐 Supported Platforms
 
-Zine natively supports 34+ platforms across 8 dedicated categories, with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
+Zine natively supports 44+ platforms across 8 dedicated categories, with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
 
 ### 📺 1. Anime (SFW)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
@@ -138,6 +157,7 @@ Zine natively supports 34+ platforms across 8 dedicated categories, with automat
 ### 📖 2. Manga & Manhwa (SFW)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
+| **MangaDex** | `mangadex.org` | `api.mangadex.org` | Official REST API v5, MangaDex@Home, multi-language, decimal parsing ([Guide](docs/ManaDex.md)) |
 | **Asura Scans** | `asurascans.com` | `asuracomic.net`, `asuratoon.com` | Manhwa/Webtoons, decimal chapter resolution |
 | **Weeb Central** | `weebcentral.com` | — | High-speed CDN reader scans, series archiving |
 | **Project Suki** | `projectsuki.com` | — | Clean ad-free comic scans and chapter batches |
@@ -198,6 +218,8 @@ Zine natively supports 34+ platforms across 8 dedicated categories, with automat
 | **Hentai8** | `hentai8.net` | — | Fast-loading translated Japanese doujinshi galleries |
 | **AsmHentai** | `asmhentai.com` | — | Curated doujinshi and adult comics with extensive tag matrix |
 | **Hentaicity** | `hentaicity.com` | — | Granular tag intersection search and chapter downloads |
+| **Hentai20** | `hentai20.io` | — | Western adult comics, webtoons, and doujinshi releases |
+| **ManhwaUS** | `manhwaus.net` | — | Adult Korean webtoons, romance & drama ongoing manhwa |
 
 ---
 

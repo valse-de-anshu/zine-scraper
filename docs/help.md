@@ -55,7 +55,6 @@ You can type any of the following commands directly at the main prompt:
   - `video/` : Anime, Movies, Web Videos
   - `music/` : Songs, Albums, Audio Tracks
   - `book/` : Light Novels, E-books, PDFs
-  - `image/` : Wallpapers, Galleries, Artwork
 - **Duplicate Protection**: Downloaded files are automatically checked against `Logs/Download History.json` to prevent re-downloading existing media.
 - **Error Tracking**: Fatal crashes are natively logged to `Logs/💩/crash_trace.txt`.
 - **Site Isolation**: Each scraper platform runs as a self-contained module under `scrapers/<site>/`.

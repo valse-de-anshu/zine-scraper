@@ -40,6 +40,11 @@ ENV/
 # Run-Time Databases, Logs & User Settings
 Logs/
 core/settings.json
+core/secrets.json
+secrets.json
+.env
+.env.*
+!.env.example
 💩/
 cache/
 *.log

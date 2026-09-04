@@ -102,6 +102,10 @@ def scaffold_library(root: Path, storage) -> None:
     if not history_file.exists():
         storage.write_file(history_file, "{}")
 
+    # Secrets & API credentials file (strictly gitignored)
+    from core.secrets import ensure_secrets_file
+    ensure_secrets_file()
+
     logger.info(f"Zine library scaffold complete at: {root}")
 
 
