@@ -78,7 +78,14 @@ class HistoryLayer:
                 parts = [p for p in path.split("/") if p]
                 if parts:
                     last = parts[-1]
-                    if len(parts) > 1 and ("chapter" in last.lower() or "episode" in last.lower() or "season" in last.lower() or "read-" in last.lower()):
+                    generic_suffixes = ("videos", "video", "uploads", "photos", "posts", "reels", "all", "tracks", "discography")
+                    if len(parts) > 1 and (
+                        "chapter" in last.lower()
+                        or "episode" in last.lower()
+                        or "season" in last.lower()
+                        or "read-" in last.lower()
+                        or last.lower() in generic_suffixes
+                    ):
                         slug = parts[-2]
                     else:
                         slug = last
@@ -134,18 +141,67 @@ class HistoryLayer:
             return (1, str(item_id))
 
     def save_history(self):
-        """Serializes and writes history to disk atomically through StorageLayer."""
+        """Serializes and writes history to disk atomically through StorageLayer, merging with disk to preserve titles."""
+        disk_data = {}
+        if self._history_file.exists():
+            try:
+                raw_data = self._storage.read_file(self._history_file)
+                if raw_data.strip():
+                    disk_data = json.loads(raw_data)
+            except Exception:
+                pass
+
         data = {}
-        for url, entry in self._history.items():
-            dt = entry.get("date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            title = entry.get("title") or self._infer_title(url)
-            info_list = sorted(list(entry.get("info", set())), key=self._sort_key)
+        all_urls = list(dict.fromkeys(list(self._history.keys()) + list(disk_data.keys())))
+
+        def is_valid_title(t):
+            if not t:
+                return False
+            t_str = str(t).strip()
+            if not t_str or t_str.lower() in ("videos", "video", "unknown", "watch"):
+                return False
+            if t_str.startswith("PornHub Video ("):
+                return False
+            return True
+
+        for url in all_urls:
+            mem_entry = self._history.get(url, {})
+            disk_entry = disk_data.get(url, {})
+
+            mem_title = mem_entry.get("title")
+            disk_title = disk_entry.get("title")
+
+            if is_valid_title(mem_title):
+                chosen_title = mem_title
+            elif is_valid_title(disk_title):
+                chosen_title = disk_title
+            else:
+                chosen_title = mem_title or disk_title or self._infer_title(url)
+
+            dt = mem_entry.get("date") or disk_entry.get("date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            mem_info = mem_entry.get("info", set())
+            if isinstance(mem_info, list):
+                mem_info = set(str(x) for x in mem_info)
+            else:
+                mem_info = set(str(x) for x in mem_info)
+
+            disk_info = set(str(x) for x in disk_entry.get("info", []))
+            combined_info = mem_info | disk_info
+
             data[url] = {
-                "title": title,
+                "title": chosen_title,
                 "link": url,
                 "date": dt,
-                "info": info_list
+                "info": sorted(list(combined_info), key=self._sort_key)
             }
+            self._history[url] = {
+                "title": chosen_title,
+                "link": url,
+                "date": dt,
+                "info": combined_info
+            }
+
         raw_data = json.dumps(data, indent=4, ensure_ascii=False)
         self._storage.write_file(self._history_file, raw_data)
 
@@ -209,21 +265,23 @@ class HistoryLayer:
         dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         item_id_str = str(item_id)
         if site_url not in self._history:
-            self._history[site_url] = {
-                "title": title or self._infer_title(site_url),
-                "link": site_url,
-                "date": dt,
-                "info": set()
-            }
+            disk_history = self._load_history()
+            if site_url in disk_history:
+                self._history[site_url] = disk_history[site_url]
+            else:
+                self._history[site_url] = {
+                    "title": title or self._infer_title(site_url),
+                    "link": site_url,
+                    "date": dt,
+                    "info": set()
+                }
         
         entry = self._history[site_url]
         if title:
             entry["title"] = title
+        entry.setdefault("info", set()).add(item_id_str)
         entry["date"] = dt
-
-        if item_id_str not in entry["info"]:
-            entry["info"].add(item_id_str)
-            self.save_history()
+        self.save_history()
 
         # Global Revolt shutdown check
         import core.ui as ui

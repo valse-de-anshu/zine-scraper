@@ -20,6 +20,11 @@
     - Permanently excluded `secrets.json`, `core/secrets.json`, `.env`, and `.env.*` in `.gitignore` to guarantee API keys are never accidentally committed or pushed.
     - Updated `README.md` documentation and user guide.
     - Completely decoupled hardcoded credentials from `scrapers/mangadex/engine.py`.
+  - **Download History Title Preservation Overhaul (`core/history.py`, `core/funnel.py`, `scrapers/pornhub/`):**
+    - Resolved root cause where authentic titles were overwritten with generic slugs (`"Videos"`, `"PornHub Video (...)"`, or URL slugs) inside `Download History.json`.
+    - Made `save_history` perform a non-destructive merge with disk, protecting authentic titles from being clobbered by stale in-memory states or generic fallback inferences.
+    - Updated `_infer_title` to inspect parent path segments when trailing slugs are generic (`/videos`, `/photos`, `/posts`, etc.), correctly extracting channel and model names (e.g. `Baby Ri` instead of `Videos`).
+    - Added global post-TUI title synchronization in `core/funnel.py:route_url`, automatically registering `scraper.title` into `hist_layer` for all scrapers across the suite.
   - **Site Catalog & Routing Registration**:
     - Added `"mangadex.org": "mangadex"` to `core/site_map.py`.
     - Added MangaDex to Category 2 (Manga) in `core/site_tui.py`.

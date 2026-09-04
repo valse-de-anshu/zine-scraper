@@ -222,6 +222,12 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             scraper._batch_quick_grab = batch_quick_grab
             tui_module.handle_tui(url, hist_layer, store_layer, scraper, batch_path=batch_path, is_batch=is_batch)
             fire_notification() # In case it's batch mode and didn't call input
+            try:
+                final_title = getattr(scraper, "title", None)
+                if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
+                    hist_layer.set_title(url, str(final_title).strip())
+            except Exception:
+                pass
         finally:
             console.input = original_input
             console.print = original_print
