@@ -141,9 +141,46 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 ---
 
+### ⌨️ Keybindings & Hotkeys Reference
+
+| Key | Context | Action |
+|---|---|---|
+| **`Ctrl + R`** | **Any Active Download** | **Global Revolt Mode** — Interactively halt downloads after current file (`0`) or `N` more files. Exits cleanly and dispatches an OS completion notification. |
+| **`Ctrl + C`** | **Global** | **Force Clean Exit** — Immediately cancels active operations, restores terminal cursor & raw mode, and unloads AI models from VRAM. |
+| **`↑` / `↓`** | **Menus & Prompt** | Navigate menu items, selector options, and cycle through previous URL command history. |
+| **`←` / `→`** | **Input & Menus** | Move cursor left/right within input prompts and switch between horizontal menu buttons. |
+| **`Home` / `End`** | **Input Prompt** | Instantly jump the cursor to the beginning or end of the pasted URL or command. |
+| **`Tab`** | **Input Prompt** | Auto-complete inline command suggestions and previous URL history matches. |
+| **`Space`** | **Multi-Selectors** | Toggle item selection on/off in multi-select prompts (e.g. MangaDex multi-language selection, Archive.org asset lists). |
+| **`Enter`** | **Global** | Confirm selection, submit URL, or save setting value. |
+| **`Esc`** | **Modals & Revolt** | Cancel current modal dialog, dismiss Revolt prompt, or return to the main menu. |
+
+---
+
+### 🏷️ Smart URL Flags & Chapter Continuation
+
+You can append smart flags directly to URLs at the main prompt or inside `Batch URL.txt`:
+
+* **`--0` (Quick Grab Mode)**:
+  * Forces the download directly into the `Quick grab/` directory, bypassing series indexing and vacuum directory creation.
+  * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664/chapter/211 --0`
+* **`--<N>` (Sequential Continuation Limit)**:
+  * Continues from where you last left off in `Download History.json` and downloads exactly **`N`** chapters in systematic order (e.g. `--2`, `--4`, `--5`, `--10`).
+  * Seamlessly processes decimal chapters (e.g. `Chapter 2.5`) in proper sequence without annoying confirmation prompts.
+  * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5` *(downloads the next 5 unread chapters sequentially).*
+* **Flag Combinations in Batch Mode**:
+  * Flags can be mixed freely inside `Batch URL.txt` per-line:
+    ```text
+    https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5
+    https://omegascans.org/series/my-lewd-college-friends/chapter-58 --0
+    https://mangadex.org/title/a1c7c817-4e59-43b7-9365-09675a149a6f --3
+    ```
+
+---
+
 ## 🌐 Supported Platforms
 
-Zine natively supports 44+ platforms across 8 dedicated categories, with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
+Zine natively supports 47+ platforms across 8 dedicated categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
 
 ### 📺 1. Anime (SFW)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
@@ -252,6 +289,26 @@ Zine natively supports 44+ platforms across 8 dedicated categories, with automat
 ### 5. Automated Batch Pipeline (`batch`)
 * Drop any combination of URLs (manga, anime, songs, channels, playlists, e-books) into `Batch URL.txt`.
 * Run `batch` (or launch in headless mode). Zine iterates through the queue sequentially with automatic error recovery and zero manual intervention.
+* **Dual History Logging & State Checkpointing**: Atomically updates `Batch URL.txt` by checking off finished items, while writing dual-target JSON history records to `Logs/Batch History.json` and `Logs/💩/batch_history.json` so you can safely resume interrupted batches.
+
+### 6. Global Revolt Mode (`Ctrl + R`)
+* Universal graceful download limiter and emergency stop integrated across all 47 scrapers.
+* Press **`Ctrl + R`** during active downloads to trigger the inline Revolt prompt:
+  * Enter **`0`** to finish the active file/chapter and immediately shut down.
+  * Enter **`N`** (e.g. `2`, `5`) to download $N$ more items sequentially before exiting.
+  * Press **`Esc`** or submit an empty input to cancel Revolt mode.
+* **Native Desktop Notification**: Automatically triggers a cross-platform OS notification (`Zine Scraper — Revolt`) upon completion with series title context.
+* Restores terminal cursor visibility (`\033[?25h`) and raw mode settings without lingering listener threads.
+
+### 7. MangaDex Multi-Language Archiving
+* Full integration with official MangaDex REST API v5 and MangaDex@Home CDN infrastructure.
+* **Interactive Multi-Language Selector**: Use **`Space`** in the `MultiSelector` prompt to choose multiple language translations at once.
+* **Isolated Folder Architecture**: Automatically routes distinct translations into separated directories (e.g. `MangaDex/Title [en]`, `MangaDex/Title [ja]`) with per-language history tracking.
+* **Smooth 12Hz Braille Spinners**: Rotating braille animations (`⠋`, `⠙`, `⠹`, `⠸`...) during stream loading and metadata baking.
+
+### 8. Butler Whistleblower & Network Auto-Recovery
+* Continuous background network connection monitor running alongside the download engine.
+* Automatically pauses active queues upon internet dropouts and seamlessly resumes downloading as soon as connectivity returns, preventing corrupted chunks or broken files.
 
 ---
 
@@ -263,7 +320,7 @@ zine-scraper/
 ├── orchestrator.py          ← Main entry point — launches the suite
 ├── core/
 │   ├── funnel.py            ← Command router & input sanitization
-│   ├── ui.py                ← Rich TUI primitives & persistent raw cbreak TTY loop
+│   ├── ui.py                ← Rich TUI primitives, revolt listener & raw cbreak TTY loop
 │   ├── bake_engine.py       ← Audio Metadata & Cover Art Baking Engine
 │   ├── lyrics_engine.py     ← Multi-tier Synced Lyrics Search & Batch Sync
 │   ├── subtitle_engine.py   ← Faster-Whisper GPU Subtitle Generator
@@ -274,7 +331,7 @@ zine-scraper/
 │   ├── paths.py             ← Filesystem authority & path routing (Vacuum vs Quick Grab)
 │   ├── storage.py           ← Atomic disk I/O layer
 │   └── history.py           ← Download registry & duplicate protection
-├── scrapers/                ← 34+ isolated site scraper packages
+├── scrapers/                ← 47+ isolated site scraper packages (80+ domains)
 │   └── <category>/<site>/
 │       ├── engine.py        ← Extraction logic & API queries
 │       ├── scraper.py       ← Scraper interface definition

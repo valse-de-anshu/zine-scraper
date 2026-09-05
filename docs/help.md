@@ -45,15 +45,32 @@ You can type any of the following commands directly at the main prompt:
 
 ## ⌨️ TUI Navigation & Shortcuts
 
-| Key | Action |
-|---|---|
-| **`↑` / `↓`** | Navigate between menu items and selection lists |
-| **`Tab`** | Toggle edit mode or switch field focus |
-| **`Enter`** | Select option, save edit, or launch selected action |
-| **`Esc`** | Exit current modal / return to main menu |
-| **`Backspace`** | Delete character in text edit fields |
-| **`Ctrl + C`** | Cancel active task, cleanly exit, and flush AI models from VRAM |
-| **`Ctrl + R`** | (TTS Only) Bail out of audiobook generation early, merge current chunks, and free memory |
+| Key | Context | Action |
+|---|---|---|
+| **`Ctrl + R`** | **Any Active Download** | **Global Revolt Mode**: Interactively halt downloads after current file (`0`) or `N` more files. Exits cleanly and dispatches an OS notification |
+| **`Ctrl + C`** | **Global** | **Force Clean Exit**: Immediately cancel active task, cleanly exit, restore terminal, and flush AI models from VRAM |
+| **`↑` / `↓`** | **Menus & Prompt** | Navigate between menu items, selector options, or cycle command history |
+| **`←` / `→`** | **Input & Menus** | Move cursor within input text or switch horizontal selector options |
+| **`Home` / `End`** | **Input Prompt** | Instantly jump the cursor to the beginning or end of input text |
+| **`Tab`** | **Input Prompt** | Auto-complete inline command suggestions or toggle field edit mode |
+| **`Space`** | **Multi-Selectors** | Toggle item selection on/off in multi-select prompts (e.g. MangaDex multi-language) |
+| **`Enter`** | **Global** | Select option, save edit, or launch selected action |
+| **`Esc`** | **Modals & Revolt** | Exit current modal dialog, dismiss Revolt prompt, or return to main menu |
+| **`Backspace`** | **Text Input** | Delete character in text edit fields or revolt input buffer |
+
+---
+
+## 🏷️ Smart URL Flags
+
+You can append flags directly to URLs at the main prompt or inside `Batch URL.txt`:
+
+- **`--0`** (Quick Grab Mode):
+  Forces the download directly into the `Quick grab/` directory, bypassing series indexing.
+  *Example:* `https://asurascans.com/comics/my-series/chapter-1 --0`
+
+- **`--<N>`** (Sequential Chapter Limit):
+  Continues from where you left off in `Download History.json` and downloads exactly `N` chapters in systematic order (e.g. `--2`, `--5`, `--10`). Automatically handles decimal chapters without prompting.
+  *Example:* `https://asurascans.com/comics/my-series --5`
 
 ---
 
@@ -65,7 +82,7 @@ You can type any of the following commands directly at the main prompt:
   - `music/` : Songs, Albums, Audio Tracks
   - `book/` : Light Novels, E-books, PDFs
 - **Duplicate Protection**: Downloaded files are automatically checked against `Logs/Download History.json` to prevent re-downloading existing media.
-- **Error Tracking**: Fatal crashes are natively logged to `Logs/💩/crash_trace.txt`.
+- **Batch History & Resume**: Batch operations maintain atomic check-offs in `Batch URL.txt` and dual logs in `Logs/Batch History.json` and `Logs/💩/batch_history.json`.
 - **Site Isolation**: Each scraper platform runs as a self-contained module under `scrapers/<site>/`.
 
 ---
