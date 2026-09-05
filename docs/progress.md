@@ -1580,6 +1580,17 @@ The scraper architecture is split into 3 distinct stages:
   - Updated `Selector._render()` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py) so that vertical lists display the title cleanly on its own line (`title:\n`) and indent choices by standard 2 spaces (`indent = "  "`), achieving natural alignment across all vertical menus.
   - Removed redundant `align_width=29` argument from `filter_subchapters()`.
 
+***
+
+# Progress Report - September 2026 (MangaDex Multi-Language Crash Resolution)
+
+## 1. MangaDex Multi-Language `NameError: lang_code` Fix
+- **Root Cause**: In [`scrapers/mangadex/workflow.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/mangadex/workflow.py), line 379 invoked `check_revolt(title=f"{title} [{lang_code}]")`. However, the loop variable iterating over selected languages was named `chosen_lang`, not `lang_code`. As soon as the first language finished downloading its first chapter, Python raised `NameError: name 'lang_code' is not defined`, aborting the chapter loop and terminating the language sequence before subsequent languages could start.
+- **Resolution**:
+  - Updated line 379 in [`scrapers/mangadex/workflow.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/mangadex/workflow.py) to reference `chosen_lang` (`check_revolt(title=f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title)`).
+  - Verified multi-language downloading end-to-end with multiple selected languages (e.g., English and Vietnamese), confirming both languages download sequentially with zero errors.
+
+
 
 
 

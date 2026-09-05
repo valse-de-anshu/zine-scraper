@@ -376,7 +376,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 console.print(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
                 completed_history.append(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
                 from core.ui import check_revolt
-                if check_revolt(title=f"{title} [{lang_code}]"):
+                if check_revolt(title=f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title):
                     return
                 time.sleep(CHAPTER_DELAY)
 
