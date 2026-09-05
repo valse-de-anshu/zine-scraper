@@ -137,7 +137,7 @@ def run_workflow(
         console.print(f"[warning]No tracks found for {url}[/warning]")
         return
 
-    choice, selected_videos = get_track_selection(videos, is_vacuum=is_vacuum, is_batch=is_batch)
+    choice, selected_videos = get_track_selection(videos, is_vacuum=is_vacuum, is_batch=is_batch, verified_ids=verified_ids)
     if choice == "BACK":
         return
 

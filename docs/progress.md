@@ -12,6 +12,13 @@
     - Converted `multi_options` in `scrapers/youtube/yt_music/tui.py` to dictionary format with `"name"`, `"desc"`, `"right_text"`, `"video"` payload, and a `"Back"` option.
     - Hardened `MultiSelector.__init__` in `core/ui.py` with automatic tuple-to-dict normalization, making `MultiSelector` crash-proof against tuple options across the entire codebase.
 
+- **YouTube Music Track Range & Count Selection (`scrapers/youtube/yt_music/tui.py`, `scrapers/youtube/yt_music/workflow.py`):**
+  - **Identified Problem**: In "Select Range", entering a single number (e.g. `2`) was treated as picking index 2 (`videos[1]`), downloading only 1 track instead of 2 songs.
+  - **Resolution**:
+    - Upgraded range parser to interpret a single number `N` as count: selects the next `N` un-downloaded tracks (or first `N` tracks if fresh).
+    - Preserved explicit range slicing (`1-3`, `2-4`) and added comma-separated track selection (`1, 3, 5`).
+    - Passed `verified_ids` into `get_track_selection` so count selections skip already existing files on disk and accurately download the desired number of tracks.
+
 - **Eliminated Missing `time` Imports Across All Scrapers (`scrapers/youtube/yt_music/engine.py`, `scrapers/pinterest/engine.py`, `scrapers/kunmanga/scraper.py`, `scrapers/oppai_stream/engine.py`):**
   - Added missing `import time` across `yt_music/engine.py` (crashed in `fetch_youtube_subtitles`), `pinterest/engine.py` (crashed in `time.sleep` retries), `kunmanga/scraper.py` (crashed in `time.sleep` retries), and `oppai_stream/engine.py` (crashed in `time.sleep` retries).
   - Verified via full repository AST parse that 0 missing `time` imports remain across all modules.
