@@ -70,11 +70,24 @@ def run_workflow(
     folder_name = getattr(scraper, '_folder_name', None) or title
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
 
+    ext = "mp4"
+
     if is_vacuum:
         # Vacuum: create creator subfolder using SAFE folder name (no HTML entities, no illegal chars)
         creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
         creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root
+        sub_folder = creator_root / "video"
+        sub_folder.mkdir(parents=True, exist_ok=True)
+
+        # Migrate any legacy files sitting directly in creator_root to video/
+        try:
+            import shutil
+            for legacy_file in creator_root.glob(f"*.{ext}"):
+                dest_file = sub_folder / legacy_file.name
+                if not dest_file.exists():
+                    shutil.move(str(legacy_file), str(dest_file))
+        except Exception:
+            pass
     else:
         # Quick grab: dump directly into target_root, no creator subfolder
         creator_root = target_root
@@ -176,15 +189,18 @@ def run_workflow(
         clean_title = re.sub(r'[<>:"/\\|?*]', '', clean_title).strip() or vid_id
 
         if getattr(scraper, "is_playlist", False) or is_vacuum:
-            if getattr(scraper, "franchise_structure", "flat") == "nested":
-                sub_folder = creator_root / clean_title
-                sub_folder.mkdir(parents=True, exist_ok=True)
-            else:
-                sub_folder = creator_root
+            sub_folder = creator_root / "video"
+        else:
+            sub_folder = target_root
+
+        target_vid_title = vid_title
+        series_name = metadata.get("Channel/Series", "")
+        if not is_vacuum and series_name and series_name != "Unknown" and not vid_title.lower().startswith(series_name.lower()):
+            target_vid_title = f"{series_name} - {vid_title}"
 
         # Resolve target file path (collision-free title → id)
         resolved_file_path, is_downloaded = tracker.resolve_download_path(
-            sub_folder, vid_id, vid_title, ext,
+            sub_folder, vid_id, target_vid_title, ext,
             date_str=video.get("upload_date")
         )
         display_name = resolved_file_path.name

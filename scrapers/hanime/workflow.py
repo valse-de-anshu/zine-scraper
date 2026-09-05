@@ -72,11 +72,24 @@ def run_workflow(
     folder_name = getattr(scraper, '_folder_name', None) or title
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
 
+    ext = "mp4"
+
     if is_vacuum:
         # Vacuum: create creator subfolder using SAFE folder name (no HTML entities, no illegal chars)
         creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
         creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root
+        sub_folder = creator_root / "video"
+        sub_folder.mkdir(parents=True, exist_ok=True)
+
+        # Migrate any legacy files sitting directly in creator_root to video/
+        try:
+            import shutil
+            for legacy_file in creator_root.glob(f"*.{ext}"):
+                dest_file = sub_folder / legacy_file.name
+                if not dest_file.exists():
+                    shutil.move(str(legacy_file), str(dest_file))
+        except Exception:
+            pass
     else:
         # Quick grab: dump directly into target_root, no creator subfolder
         creator_root = target_root
@@ -97,7 +110,7 @@ def run_workflow(
                 model_name=title,
                 avatar_url=avatar_url,
                 videos=videos,
-                skip_cover=(getattr(scraper, "franchise_structure", "nested") == "nested"),
+                skip_cover=False,
                 custom_metadata=metadata,
             )
         except Exception as e:
@@ -106,44 +119,12 @@ def run_workflow(
     # ── Part cleaner (remove leftover .part / format-chunk files) ────────
     try:
         from butler.part_cleaner import clean_part_files
-        if is_vacuum:
-            import re
-            for video in videos:
-                vid_id = str(video.get("id"))
-                vid_title = video.get("title") or vid_id
-                clean_vid_title = "".join(c for c in vid_title if c.isalnum() or c in " .-_()'")
-                clean_vid_title = re.sub(r'[<>:"/\\|?*]', '', clean_vid_title).strip() or vid_id
-                
-                if getattr(scraper, "franchise_structure", "nested") == "nested":
-                    vid_sub_folder = creator_root / clean_vid_title
-                else:
-                    vid_sub_folder = creator_root
-                    
-                clean_part_files(vid_sub_folder, [video], tracker, scraper.url)
-        else:
-            clean_part_files(sub_folder, videos, tracker, scraper.url)
+        clean_part_files(sub_folder, videos, tracker, scraper.url)
     except Exception as e:
         logger.error(f"Failed to run butler part cleaner: {e}")
 
     # ── Two-step verification (history + disk) ───────────────────────────
-    ext = "mp4"
-    verified_ids = []
-    if is_vacuum:
-        import re
-        for video in videos:
-            vid_id = str(video.get("id"))
-            vid_title = video.get("title") or vid_id
-            clean_vid_title = "".join(c for c in vid_title if c.isalnum() or c in " .-_()'")
-            clean_vid_title = re.sub(r'[<>:"/\\|?*]', '', clean_vid_title).strip() or vid_id
-            
-            if getattr(scraper, "franchise_structure", "nested") == "nested":
-                vid_sub_folder = creator_root / clean_vid_title
-            else:
-                vid_sub_folder = creator_root
-                
-            verified_ids.extend(verify_videos(vid_sub_folder, [video], ext, scraper.url, tracker))
-    else:
-        verified_ids = verify_videos(sub_folder, videos, ext, scraper.url, tracker)
+    verified_ids = verify_videos(sub_folder, videos, ext, scraper.url, tracker)
 
 
 
@@ -207,38 +188,16 @@ def run_workflow(
             logger.warning(f"Skipping video {idx} — no URL")
             continue
 
-        if is_vacuum:
-            import re
-            clean_vid_title = "".join(c for c in vid_title if c.isalnum() or c in " .-_()'")
-            clean_vid_title = re.sub(r'[<>:"/\\|?*]', '', clean_vid_title).strip() or vid_id
-            
-            if getattr(scraper, "franchise_structure", "nested") == "nested":
-                vid_sub_folder = creator_root / clean_vid_title
-                vid_sub_folder.mkdir(parents=True, exist_ok=True)
-                
-                vid_info = info.copy()
-                vid_info["title"] = vid_title
-                vid_info["id"] = vid_id
-                try:
-                    scraper.engine.save_metadata(
-                        root_dir=vid_sub_folder,
-                        info=vid_info,
-                        source="Hanime",
-                        model_name=vid_title,
-                        avatar_url=video.get("thumbnail") or "",
-                        videos=[video],
-                        skip_cover=False,
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to save video metadata: {e}")
-            else:
-                vid_sub_folder = creator_root
-        else:
-            vid_sub_folder = sub_folder
+        vid_sub_folder = sub_folder
+
+        target_vid_title = vid_title
+        series_name = metadata.get("Channel/Series", "")
+        if not is_vacuum and series_name and series_name != "Unknown" and not vid_title.lower().startswith(series_name.lower()):
+            target_vid_title = f"{series_name} - {vid_title}"
 
         # Resolve target file path (collision-free title → id)
         resolved_file_path, is_downloaded = tracker.resolve_download_path(
-            vid_sub_folder, vid_id, vid_title, ext,
+            vid_sub_folder, vid_id, target_vid_title, ext,
             date_str=video.get("upload_date")
         )
         display_name = resolved_file_path.name

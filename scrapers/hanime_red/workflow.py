@@ -75,11 +75,24 @@ def run_workflow(
     folder_name = getattr(scraper, '_folder_name', None) or series_name
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
 
+    ext = "mp4"
+
     if is_vacuum:
         # Vacuum: create creator subfolder using SAFE folder name (no HTML entities, no illegal chars)
         creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
         creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root
+        sub_folder = creator_root / "video"
+        sub_folder.mkdir(parents=True, exist_ok=True)
+
+        # Migrate any legacy files sitting directly in creator_root to video/
+        try:
+            import shutil
+            for legacy_file in creator_root.glob(f"*.{ext}"):
+                dest_file = sub_folder / legacy_file.name
+                if not dest_file.exists():
+                    shutil.move(str(legacy_file), str(dest_file))
+        except Exception:
+            pass
     else:
         # Quick grab: dump directly into target_root, no creator subfolder
         creator_root = target_root
@@ -182,11 +195,9 @@ def run_workflow(
         # Resolve target file path (collision-free title → id)
         # ── Step 1 + 2 check: already done? ─────────────────────────────
         if is_vacuum:
-            if getattr(scraper, "franchise_structure", "flat") == "nested":
-                sub_folder = creator_root / clean_title
-                sub_folder.mkdir(parents=True, exist_ok=True)
-            else:
-                sub_folder = creator_root
+            sub_folder = creator_root / "video"
+        else:
+            sub_folder = target_root
                 
         target_vid_title = vid_title
         if not is_vacuum and series_name and series_name != "Unknown" and not vid_title.lower().startswith(series_name.lower()):

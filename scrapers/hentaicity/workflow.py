@@ -60,7 +60,20 @@ def run_workflow(
         clean = re.sub(r'[<>:"/\\|?*]', "", series_title).strip() or "Series"
         creator_root = target_root / clean
         creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root
+        if content_type == "video":
+            sub_folder = creator_root / "video"
+            sub_folder.mkdir(parents=True, exist_ok=True)
+            # Migrate any legacy files sitting directly in creator_root to video/
+            try:
+                import shutil
+                for legacy_file in creator_root.glob(f"*.{ext}"):
+                    dest_file = sub_folder / legacy_file.name
+                    if not dest_file.exists():
+                        shutil.move(str(legacy_file), str(dest_file))
+            except Exception:
+                pass
+        else:
+            sub_folder = creator_root
     else:
         target_root.mkdir(parents=True, exist_ok=True)
         sub_folder = target_root
@@ -142,15 +155,14 @@ def run_workflow(
         if not vid_url:
             continue
 
-        # Resolve output path
         vid_sub_folder = sub_folder
-        if is_vacuum and getattr(scraper, "franchise_structure", "flat") == "nested":
-            clean_title = re.sub(r'[<>:"/\\|?*]', "", vid_title).strip() or vid_id
-            vid_sub_folder = creator_root / clean_title
-            vid_sub_folder.mkdir(parents=True, exist_ok=True)
+
+        target_vid_title = vid_title
+        if not is_vacuum and series_title and series_title != "Series" and not vid_title.lower().startswith(series_title.lower()):
+            target_vid_title = f"{series_title} - {vid_title}"
 
         resolved_path, is_done = tracker.resolve_download_path(
-            vid_sub_folder, vid_id, vid_title, ext
+            vid_sub_folder, vid_id, target_vid_title, ext
         )
         display_name = resolved_path.name
 

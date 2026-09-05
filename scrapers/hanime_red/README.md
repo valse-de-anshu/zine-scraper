@@ -72,3 +72,6 @@ The overarching orchestration file:
 3. Calls the engine to save `metadata.json` and download the `cover.jpg` image.
 4. Loops over every episode, invokes `verify_videos`, and executes the download using a dynamic `rich.progress` bar.
 5. Provides a `tui_reconstruct` callback to seamlessly restore the terminal UI in the event of an internet reconnect.
+
+
+- you might need to use subs cmd to get a proper subtitle , cause our scrar cannot downlode subtitle due to site level internal paywall api !

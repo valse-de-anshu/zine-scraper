@@ -1,3 +1,21 @@
+# Progress Report - September 05, 2026 (Hentai Video Platform Folder Architecture & TUI Simplification)
+
+- **Standardized Video Folder Routing Across All 9 Hentai Platforms (`scrapers/hanime/`, `scrapers/hanime_red/`, `scrapers/hentaihaven/`, `scrapers/hentaihaven_co/`, `scrapers/hentaicity/`, `scrapers/hstream/`, `scrapers/oppai_stream/`, `scrapers/hentaimama/`, `scrapers/ohentai/`):**
+  - **Identified Problem**:
+    - Vacuum downloads saved episode `.mp4` video files directly in the root of the series folder alongside `cover.jpg` and `.zine/metadata.json`.
+    - TUI presented confusing options: `Single Episode`, `Whole Franchise (Flat Folder)`, and `Whole Franchise (Nested Subfolders)`.
+  - **Resolution**:
+    - **Clean 2-Option TUI Selection**: Simplified options across all 9 platforms to:
+      1. `Single Episode`: Quick grab directly to `Quick grab/` (with series title prefix to avoid name collisions).
+      2. `Whole Franchise`: Vacuum mode downloading all episodes into `<series folder>/video/`.
+    - **Dedicated `video/` Subfolder Architecture**:
+      - Root folder (`creator_root/`): Contains `cover.jpg` (so Linux file managers like Nautilus/Dolphin render series thumbnails immediately) and `.zine/metadata.json`.
+      - Episode video files (`creator_root/video/`): Contains all episode `.mp4` video files and `.zine/history.json`.
+    - **Automatic Legacy Migration**: On workflow startup, any legacy `.mp4` video files previously saved directly in `creator_root` are automatically migrated into `video/`, preventing duplicate re-downloads and reorganizing existing folders cleanly.
+  - **Verification**: Verified via test suite across all 9 hentai platforms and full regression suite across all 46 scrapers and 81 domains.
+
+---
+
 # Progress Report - September 05, 2026 (HanimeRed Series & NoneType Metadata Crash Resolution)
 
 - **HanimeRed Series & Metadata Loading Resolution (`scrapers/hanime_red/scraper.py`, `plugins/yt_dlp_plugins/.../hanimered.py`, `scrapers/hanime_red/tui.py`, `scrapers/hanime_red/workflow.py`, `scrapers/hanime_red/location.py`):**
