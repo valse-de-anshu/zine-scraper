@@ -172,9 +172,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 pass
         cover_status_ui = cover_exists
             
-    if getattr(scraper, '_batch_quick_grab', False):
-        chapters = chapters[:1]
+    from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.url)
+    to_process = apply_chapter_limit(to_process, scraper)
     
     lang_display = f"{LANGUAGE_NAMES.get(chosen_lang, chosen_lang.upper())} [{chosen_lang}]"
 

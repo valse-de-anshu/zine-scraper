@@ -89,9 +89,12 @@ def save_url_to_file(url: str, title: str, silent: bool = False):
     Delegates URL tracking to HistoryLayer instead of polluting the Batch file.
     """
     try:
+        from core.history import HistoryLayer
+        if HistoryLayer._active_instance:
+            HistoryLayer._active_instance.mark_url_tracked(url, title=title)
+            return
         from core.paths import PathAuthority
         from core.storage import StorageLayer
-        from core.history import HistoryLayer
         paths = PathAuthority()
         storage = StorageLayer()
         hist = HistoryLayer(paths, storage)

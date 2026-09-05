@@ -207,4 +207,6 @@ class HianimeScraper:
             "Total Videos":   len(episodes_raw),
         }
 
+        self.title = title
+        self.metadata = metadata
         return metadata, episodes_raw, {"server_items": server_items}

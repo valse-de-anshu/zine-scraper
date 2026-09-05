@@ -34,6 +34,10 @@ def run_workflow(
     for board_idx, board in enumerate(selected_boards, 1):
         board_url   = board["url"]
         board_title = board.get("name") or board.get("title", "Unknown Board")
+        if hasattr(tracker, "set_title") and board_title and board_title != "Unknown Board":
+            tracker.set_title(board_url, board_title)
+            if hasattr(scraper, "url") and scraper.url:
+                tracker.set_title(scraper.url, f"{profile_name} - {board_title}" if profile_name else board_title)
 
         is_single_pin = getattr(scraper, "get_link_type", lambda: "")() in ("single", "pin")
         if is_single_pin:
@@ -185,7 +189,7 @@ def run_workflow(
             filename = pin_path.name
 
             if is_downloaded:
-                tracker.mark_downloaded(board_url, str(pin_id))
+                tracker.mark_downloaded(board_url, str(pin_id), title=board_title)
                 console.print(f"  [unselected]File exists: {filename}[/unselected]")
                 continue
 
@@ -227,7 +231,7 @@ def run_workflow(
                 try:
                     success = scraper.download_asset(pin_url, str(pin_path), stats_callback=stats_hook, is_video=is_video)
                     if success:
-                        tracker.mark_downloaded(board_url, str(pin_id))
+                        tracker.mark_downloaded(board_url, str(pin_id), title=board_title)
                         state["progress"]["success"] = True
                         state["pins_downloaded"] += 1
                 except Exception as e:

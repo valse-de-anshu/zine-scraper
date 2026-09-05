@@ -93,4 +93,6 @@ class AnitakuScraper:
         if videos:
             metadata["Total Videos"] = len(videos)
             
+        self.title = title
+        self.metadata = metadata
         return metadata, videos, {}

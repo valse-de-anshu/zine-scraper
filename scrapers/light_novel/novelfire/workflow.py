@@ -35,6 +35,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     with active_status("[info]Metadata...[/info]", spinner="dots"):
         try:
             title, chapters = scraper.get_title_and_chapters()
+            scraper.title = title
+            if hasattr(tracker, "set_title") and title:
+                tracker.set_title(getattr(scraper, "series_url", scraper.url), title)
+                tracker.set_title(scraper.url, title)
             
             _is_chapter = False
             if not chapters:
@@ -170,8 +174,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
     cover_status_ui = None if is_quick_grab else cover_exists
 
-    # ── Verify existing chapters ─────────────────────────────────────────────
+    from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.series_url)
+    to_process = apply_chapter_limit(to_process, scraper)
 
     # ── Initial TUI header ───────────────────────────────────────────────────
     startup_clear()
@@ -205,7 +210,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     for ch_num, ch_url in to_process:
         res = scraper.process_chapter(ch_url, folder, ch_num)
         if res.get("success"):
-            tracker.mark_downloaded(scraper.series_url, ch_num)
+            tracker.mark_downloaded(scraper.series_url, ch_num, title=title)
             verified_nums.append(ch_num)
             processed += 1
             words_info = f"({res.get('words', 0)} words)" if res.get("words") else ""

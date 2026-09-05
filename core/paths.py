@@ -64,6 +64,7 @@ class PathAuthority:
         # Logs 
         self._logs_root = self._suite_root / "Logs"
         self._history_file = self._logs_root / "Download History.json"
+        self._batch_history_file = self._logs_root / "Batch History.json"
         self._url_history_file = self._logs_root / "URL History.txt"
 
     # ── Core paths ──────────────────────────────────────────────────────────
@@ -87,6 +88,12 @@ class PathAuthority:
 
     def get_history_file(self) -> Path:
         return self._history_file
+
+    def get_batch_history_file(self) -> Path:
+        return self._batch_history_file
+
+    def get_batch_poop_log(self) -> Path:
+        return self._logs_root / "💩" / "batch_history.json"
 
     def get_config_file(self) -> Path:
         return self._config_file
@@ -262,10 +269,15 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
         site_folder = get_site_folder(url) or "generic"
         category = get_category_for_scraper(site_folder, scraper=scraper)
         if category == "toon":
+            is_chapter_link = False
             if hasattr(scraper, "is_chapter_link"):
-                is_chapter_link = scraper.is_chapter_link()
-            else:
-                is_chapter_link = any(x in url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
+                try:
+                    is_chapter_link = bool(scraper.is_chapter_link())
+                except Exception:
+                    is_chapter_link = False
+            if not is_chapter_link:
+                raw_u = getattr(scraper, "original_url", None) or getattr(scraper, "raw_url", None) or url
+                is_chapter_link = any(x in str(raw_u).lower() or x in str(url).lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
             if not is_chapter_link:
                 is_vacuum = True
         else:

@@ -31,6 +31,10 @@ def run_workflow(
 ):
     """Orchestrates the high-level workflow download loop for Idagio tracks."""
     title = metadata.get("Channel/Series", "Unknown")
+    scraper.title = title
+    scraper.metadata = metadata
+    if hasattr(tracker, "set_title") and title and title != "Unknown":
+        tracker.set_title(scraper.url, title)
     
     try:
         save_url_to_file(url, title, silent=True)
@@ -142,7 +146,7 @@ def run_workflow(
                         fixed_artist=video.get('upload_date') if is_music else None
                     )
                     if success:
-                        tracker.mark_downloaded(scraper.url, str(vid_id))
+                        tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                         progress_data["success"] = True
                         success_count += 1
                 except Exception as e:

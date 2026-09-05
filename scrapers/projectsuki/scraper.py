@@ -5,6 +5,10 @@ from bs4 import BeautifulSoup
 from .engine import BaseScraper, urljoin
 
 class ProjectSukiScraper(BaseScraper):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.series_url = None
+
     def is_chapter_link(self) -> bool:
         return any(x in self.url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
 
@@ -91,7 +95,11 @@ class ProjectSukiScraper(BaseScraper):
                 seen_nums.add(str_num)
         
         if ch_num_from_title and not final_chapters:
-            final_chapters.append((float(ch_num_from_title), ch_num_from_title, self.url))
+            original_url = self.url
+            m_book = re.search(r"/read/(\d+)", original_url)
+            if m_book:
+                self.series_url = f"https://projectsuki.com/book/{m_book.group(1)}"
+            final_chapters.append((float(ch_num_from_title), ch_num_from_title, original_url))
 
         final_chapters.sort(key=lambda x: x[0])
         self.title = title

@@ -1587,7 +1587,21 @@ except ImportError:
 
 
 
-def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is_batch: bool = False) -> List[Tuple[str, str]]:
+def apply_chapter_limit(to_process: List[Tuple[str, str]], scraper: Any) -> List[Tuple[str, str]]:
+    """
+    Limits the un-downloaded items/chapters according to active flags.
+    --<N> (e.g. --2, --5) downloads the next N un-downloaded items in systematic order.
+    --0 (Quick grab) downloads the single next item.
+    """
+    chapter_limit = getattr(scraper, '_chapter_limit', None)
+    if chapter_limit is not None and chapter_limit > 0:
+        return to_process[:chapter_limit]
+    if getattr(scraper, '_batch_quick_grab', False):
+        return to_process[:1]
+    return to_process
+
+
+def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is_batch: bool = False, scraper: Any = None) -> List[Tuple[str, str]]:
     has_subchapters = False
     for ch_str, _ in chapters:
         try:
@@ -1602,7 +1616,28 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
         return chapters
 
     import sys
+    import re
     if is_batch or not sys.stdin.isatty():
+        return chapters
+
+    # Never prompt if any flags, batch flags, or chapter limits are active
+    has_flags = False
+    if scraper:
+        if getattr(scraper, "_chapter_limit", None) is not None:
+            has_flags = True
+        if getattr(scraper, "_batch_quick_grab", False):
+            has_flags = True
+        if getattr(scraper, "_batch_flags", None):
+            has_flags = True
+
+    from core.history import HistoryLayer
+    if getattr(HistoryLayer, "_active_instance", None) and getattr(HistoryLayer._active_instance, "_active_batch_flags", None):
+        has_flags = True
+
+    if re.search(r"--\d+\b", url):
+        has_flags = True
+
+    if has_flags:
         return chapters
 
     startup_clear()

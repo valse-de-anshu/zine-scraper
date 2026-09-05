@@ -55,7 +55,7 @@ def _download_item(item, board_folder, board_url, scraper, tracker, state, stora
     filename = item_path.name
 
     if is_downloaded:
-        tracker.mark_downloaded(board_url, str(item_id))
+        tracker.mark_downloaded(board_url, str(item_id), title=state.get("board_title", clean_title))
         console.print(f"  [unselected]File exists: {filename}[/unselected]")
         return False
 
@@ -92,7 +92,7 @@ def _download_item(item, board_folder, board_url, scraper, tracker, state, stora
             state["progress"]["done"] = True
             state["progress"]["success"] = ok
             if ok:
-                tracker.mark_downloaded(board_url, str(item_id))
+                tracker.mark_downloaded(board_url, str(item_id), title=state.get("board_title", clean_title))
                 state["pins_downloaded"] += 1
                 return True
             else:
@@ -126,6 +126,10 @@ def run_workflow(
     for idx, board in enumerate(boards, start=1):
         board_url = board["url"]
         raw_board_title = board["title"]
+        if hasattr(tracker, "set_title") and raw_board_title:
+            tracker.set_title(board_url, raw_board_title)
+            if hasattr(scraper, "url") and scraper.url:
+                tracker.set_title(scraper.url, f"{profile_name} - {raw_board_title}" if profile_name else raw_board_title)
 
         clean_title = _safe_folder_name(raw_board_title)
         board_folder = target_root / profile_name / clean_title

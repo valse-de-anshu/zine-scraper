@@ -101,4 +101,6 @@ class HstreamScraper:
         }
         
         info = {"Total Videos": len(videos)}
+        self.title = title
+        self.metadata = meta
         return meta, videos, info

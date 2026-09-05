@@ -142,6 +142,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         try:
             metadata, videos, info = scraper.get_metadata_and_videos()
             title = metadata.get("Channel/Series", "Unknown")
+            scraper.title = title
+            scraper.metadata = metadata
+            if hasattr(tracker, "set_title") and title and title != "Unknown":
+                tracker.set_title(scraper.url, title)
         except KeyboardInterrupt:
             from core.ui import clean_exit
             clean_exit(forceful=True)
@@ -455,7 +459,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             if not has_subs and is_single_episode:
                 console.print(f"  [info]Video exists, fetching missing subtitles...[/info]")
             else:
-                tracker.mark_downloaded(scraper.url, str(vid_id))
+                tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                 console.print(f"  [unselected]File exists: {display_name}[/unselected]")
                 skipped_count += 1
                 continue
@@ -654,7 +658,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                     if is_in_verified:
                         progress_data["success"] = True
                         progress_data["done"] = True
-                        tracker.mark_downloaded(scraper.url, str(vid_id))
+                        tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                         domain_success = True
                         continue
 
@@ -674,7 +678,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                                 baking_callback=baking_callback,
                             )
                             if success:
-                                tracker.mark_downloaded(scraper.url, str(vid_id))
+                                tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                                 progress_data["success"] = True
                                 progress_data["done"]    = True
                                 success_count += 1
@@ -726,7 +730,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                 )
                 
                 if web_success:
-                    tracker.mark_downloaded(scraper.url, str(vid_id))
+                    tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                     progress_data["success"] = True
                     success_count += 1
                 else:

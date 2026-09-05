@@ -17,6 +17,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         try:
             pre_metadata, pre_assets = scraper.get_metadata_and_assets()
             title = pre_metadata.get("Title", "Unknown")
+            scraper.title = title
+            scraper.metadata = pre_metadata
+            if hasattr(tracker, "set_title") and title and title != "Unknown":
+                tracker.set_title(scraper.url, title)
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
@@ -112,7 +116,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             
         if file_exists:
             if not is_in_history:
-                tracker.mark_downloaded(scraper.url, asset_id)
+                tracker.mark_downloaded(scraper.url, asset_id, title=title)
             console.print(f"  [unselected]File exists: {filename}[/unselected]")
             continue
             
@@ -187,7 +191,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 while True:
                     success = scraper.download_file(link, chapter_path, stats_callback=stats_callback)
                     if success:
-                        tracker.mark_downloaded(scraper.url, asset_id)
+                        tracker.mark_downloaded(scraper.url, asset_id, title=title)
                         progress_data["success"] = True
                         break
                     else:

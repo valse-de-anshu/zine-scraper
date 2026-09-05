@@ -1,3 +1,41 @@
+# Progress Report - September 05, 2026 (Batch History Logging, Flag Tracking & Revolt-Resilient Checkpointing)
+
+- **Structural Batch Logging & Dual-Log Synchronization (`core/history.py`, `core/paths.py`, `core/library.py`):**
+  - **Structured JSON Architecture**: Implemented `BatchHistoryManager` providing a dedicated schema for all batch download runs:
+    ```json
+    {
+        "https://domain.com/series-url": {
+            "title": "Series Name",
+            "url": "https://domain.com/series-url",
+            "raw_input": "https://domain.com/series-url --0",
+            "flags": ["--0"],
+            "mode": "Quick grab",
+            "status": "completed",
+            "start_date": "2026-09-05 10:15:00",
+            "finish_date": "2026-09-05 10:16:30",
+            "date": "2026-09-05 10:16:30",
+            "info": ["1", "2", "3"]
+        }
+    }
+    ```
+  - **Dual Log Synchronization**: Automatically synchronizes state across both `Logs/Batch History.json` and `Logs/💩/batch_history.json` on every item update.
+  - **Automatic Scaffolding**: Registered `Logs/Batch History.json` in `core/library.py:scaffold_library()` and added `get_batch_history_file()` / `get_batch_poop_log()` to `PathAuthority`.
+- **Batch Flag Parsing & Download History Integration (`core/history.py`, `core/funnel.py`):**
+  - **Batch Flag Support**: Recognizes line-level flags in `Batch URL.txt` (such as `--0` for Quick grab mode).
+  - **Propagated Flag Tracking**: Bound `_active_batch_flags` during `route_url` execution so both `Download History.json` and `Batch History.json` record `"flags": ["--0"]` without breaking polymorphic method signatures across scrapers.
+- **Atomic Per-Item Checkpointing & Revolt Resilience (`core/funnel.py`, `core/history.py`):**
+  - **Atomic Checkpointing**: Replaced delayed batch-end rewriting with immediate per-item rewriting. As soon as a URL finishes, it is pruned from `Batch URL.txt`.
+  - **Interruption & Revolt Resilience (`Ctrl+R`)**: If a user hits `Ctrl+R` or terminates mid-batch, completed URLs remain removed from `Batch URL.txt`. Unfinished URLs retain their downloaded chapters in `Download History.json` and `info: [...]` in `Batch History.json`.
+  - **Non-Destructive Resume**: Re-running batch never destroys previous folder structures or metadata. `HistoryLayer` and scraper verification checks skip previously downloaded chapters and seamlessly download only the remaining chapters before marking the series completed.
+
+- **Chapter URL Quick Grab Routing & State Optimization (`core/paths.py`, `core/funnel.py`, `scrapers/omegascans/`, `scrapers/asurascans/`, `scrapers/projectsuki/`, `scrapers/manhuaplus/`, `scrapers/mangak/`):**
+  - **Git History Audit & Root Cause**: In commit `04d7359`, `scraper.url` was preserved as the input URL and `is_chapter_link()` operated purely on `self.url`. However, a subsequent change attempted to normalize history by directly mutating `scraper.url` to the series root during metadata extraction. This caused dynamic `is_chapter_link()` calls to check the newly-shortened URL and return `False`, misclassifying single chapters as playlists/series and routing them to `Vacuum` mode (prompting for SFW/NSFW).
+  - **Immutable `scraper.url` & `self.series_url`**: Scrapers never mutate `self.url`. When fetching parent series metadata for a chapter, scrapers populate `self.series_url` separately. `is_chapter_link()` remains clean, accurate, and predictable.
+  - **Defensive Container Root Resolution (`core/paths.py`)**: `get_container_root()` now defensively verifies chapter endpoints across `scraper.is_chapter_link()`, `scraper.series_url`, and the passed `url` for chapter keywords (`chapter`, `/c/`, `/read/`, `/ch-`), guaranteeing single chapter URLs always route directly to `Quick grab/`.
+  - **Centralized Normalization**: `HistoryLayer.normalize_url()` centrally converts chapter URLs to canonical series roots, preserving authentic titles in `Download History.json` without requiring scrapers to mutate their own URLs.
+
+---
+
 # Progress Report - September 04, 2026 (MangaDex Scraper Integration, Folder Flattening & Language Selector)
 
 - **MangaDex Platform Scraper Integration (`scrapers/mangadex/`):**
@@ -20,11 +58,21 @@
     - Permanently excluded `secrets.json`, `core/secrets.json`, `.env`, and `.env.*` in `.gitignore` to guarantee API keys are never accidentally committed or pushed.
     - Updated `README.md` documentation and user guide.
     - Completely decoupled hardcoded credentials from `scrapers/mangadex/engine.py`.
-  - **Download History Title Preservation Overhaul (`core/history.py`, `core/funnel.py`, `scrapers/pornhub/`):**
-    - Resolved root cause where authentic titles were overwritten with generic slugs (`"Videos"`, `"PornHub Video (...)"`, or URL slugs) inside `Download History.json`.
-    - Made `save_history` perform a non-destructive merge with disk, protecting authentic titles from being clobbered by stale in-memory states or generic fallback inferences.
-    - Updated `_infer_title` to inspect parent path segments when trailing slugs are generic (`/videos`, `/photos`, `/posts`, etc.), correctly extracting channel and model names (e.g. `Baby Ri` instead of `Videos`).
-    - Added global post-TUI title synchronization in `core/funnel.py:route_url`, automatically registering `scraper.title` into `hist_layer` for all scrapers across the suite.
+  - **Download History Title Preservation Overhaul (`core/history.py`, `core/funnel.py`, `core/cache.py`, `scrapers/`):**
+    - **Suite-Wide Metadata Extractor Funneling**: Audited all 47 scrapers across the suite. Every platform's extracted metadata (title, series name, channel name, book title, board title) from its interactive TUI metadata extractor is now directly funneled into `scraper.title`, `tracker.set_title()`, and `tracker.mark_downloaded(..., title=title)`.
+    - **Active Instance Sync (`core/history.py`, `core/cache.py`)**: Bound active `HistoryLayer` instances via `HistoryLayer._active_instance`, ensuring helper functions like `save_url_to_file()` immediately update and synchronize the active tracker in memory without desyncing.
+    - **Single Video & Quick Grab Accuracy**: Single videos (PornHub, YouTube, AniTaku, Hentaimama, etc.) now correctly register authentic video titles instead of falling back to uploaders or URL slugs in `Download History.json`.
+    - **Disk Merge & Protection**: `save_history()` performs an atomic non-destructive merge with disk, protecting authentic titles from being overwritten by generic fallback inferences.
+  - **Download History Deduplication & Canonical URL Normalization (`core/history.py`, `core/funnel.py`):**
+    - **URL Canonicalization (`normalize_url`)**: Enforced static URL normalization across all history layer operations (`_load_history`, `save_history`, `is_downloaded`, `set_title`, `mark_url_tracked`, `mark_downloaded`, `sync_local_history`), stripping redundant trailing slashes (`/`), trimming whitespace, lowercasing schemes and hostnames, and collapsing single chapter/reader endpoints into their canonical parent series root (AsuraScans, OmegaScans, ProjectSuki, ManhuaPlus, MangaK, ManhwaUS).
+    - **Chapter URL vs. Series Unification**: Single chapter downloads in Quick Grab now resolve their authentic parent series URL and title, unifying chapter numbers (`info: ["1", "2", "211"]`) into a single series entry rather than splitting into fragmented chapter entries.
+    - **AsuraScans Chapter Page Title Fix (`scrapers/asurascans/scraper.py`)**: Fixed missing `<h1>` tags on Asura chapter reader pages causing `"Unknown"` titles in Quick Grab by resolving chapter links (`/comics/{slug}/chapter/{num}`) to the canonical series endpoint, falling back to `<meta property="og:title">`, `<title>`, and slug parsing.
+    - **Trailing Slash Deduplication**: Completely eliminated duplicate entry pairs in `Download History.json` (e.g. `nhentai.net/g/...` vs `nhentai.net/g/.../`, `hentai20.io/.../` vs `hentai20.io/...`).
+    - **Ghost Entry Pruning**: Automatic pruning in `save_history()` for empty entries where no items were downloaded (`info: []`), preventing orphaned chapter URLs from polluting the registry when redirected to canonical series endpoints.
+    - **Redundant Link Field Removal**: Removed redundant nested `"link"` field inside entries in `Download History.json`, keeping only clean, canonical top-level keys.
+  - **Quick Guide & Help Documentation Alphabetization (`core/funnel.py`, `docs/help.md`):**
+    - Standardized all CLI commands alphabetically across both the TUI interactive guide panel and `docs/help.md`: `bake`, `batch`, `exit`, `help`, `lyrs`, `sc-lyrics`, `settings`, `site`, `slice`, `subs`, `tts`.
+    - Added missing documentation for audio manipulation commands (`slice`, `bake`, `lyrs`, `sc-lyrics`).
   - **Site Catalog & Routing Registration**:
     - Added `"mangadex.org": "mangadex"` to `core/site_map.py`.
     - Added MangaDex to Category 2 (Manga) in `core/site_tui.py`.

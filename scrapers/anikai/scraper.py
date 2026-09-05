@@ -102,4 +102,6 @@ class AnikaiScraper:
         
         info = {"server_items": server_items}
 
+        self.title = title_text
+        self.metadata = metadata
         return metadata, videos, info

@@ -5,6 +5,10 @@ from bs4 import BeautifulSoup
 from .engine import BaseScraper, urljoin
 
 class ManhuaPlusScraper(BaseScraper):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.series_url = None
+
     def is_chapter_link(self) -> bool:
         return any(x in self.url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
 
@@ -89,6 +93,16 @@ class ManhuaPlusScraper(BaseScraper):
             elif "tag" in href:
                 if text not in self.tags: self.tags.append(text)
 
+        if not final_chapters and self.is_chapter_link():
+            original_url = self.url
+            m_series = re.match(r"(https?://[^/]+/manga/[^/]+)", original_url)
+            if m_series:
+                self.series_url = m_series.group(1)
+            title = re.sub(r"(?i)\s*-\s*chapter\s*[\d.]+", "", title).strip()
+            self.title = title
+            m = re.search(r"chapter-([\d]+(?:[\.-][\d]+)?)", original_url.lower())
+            num = m.group(1).replace("-", ".") if m else "1"
+            return title, [(num, original_url)]
 
         return title, [(n, u) for _, n, u in final_chapters]
 

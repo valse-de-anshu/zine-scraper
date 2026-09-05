@@ -6,6 +6,10 @@ from .engine import BaseScraper, urljoin
 class MangaKScraper(BaseScraper):
     scraper_type = "toon"
 
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.series_url = None
+
     def is_chapter_link(self) -> bool:
         return any(x in self.url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
 
@@ -46,6 +50,11 @@ class MangaKScraper(BaseScraper):
         if self.is_chapter_link():
             m = re.search(r"(?:chapter|ch)-([\d.]+)", self.url, re.IGNORECASE)
             num = m.group(1) if m else "1"
+            slug = manga.get("slug")
+            if slug:
+                self.series_url = f"https://mangak.io/{slug}"
+            else:
+                self.series_url = re.sub(r"/(?:chapter|ch)-.*$", "", self.url)
             self.title = title
             return title, [(num, self.url)]
         

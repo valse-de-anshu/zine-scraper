@@ -46,6 +46,8 @@ def run_workflow(
             title = metadata.get("Title") or metadata.get("Album") or metadata.get("Channel/Series", "YouTube Music")
             scraper.metadata = metadata
             scraper.title = title
+            if hasattr(tracker, "set_title") and title and title != "YouTube Music":
+                tracker.set_title(scraper.url, title)
         except Exception as e:
             metadata_error = e
 

@@ -62,6 +62,12 @@ def run_workflow(
     from core.paths import resolve_folder_collision
 
     title = metadata.get("Channel/Series", "Unknown")
+    if not is_vacuum and videos and videos[0].get("title"):
+        title = videos[0]["title"]
+    if title and title != "Unknown":
+        tracker.set_title(scraper.url, title)
+    scraper.title = title
+    scraper.metadata = metadata
     # Use the safe filesystem name (apostrophes/entities cleaned) if available
     folder_name = getattr(scraper, '_folder_name', None) or title
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
@@ -239,7 +245,7 @@ def run_workflow(
 
         # ── Step 1 + 2 check: already done? ─────────────────────────────
         if is_downloaded:
-            tracker.mark_downloaded(scraper.url, vid_id)
+            tracker.mark_downloaded(scraper.url, vid_id, title=title)
             hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
             console.print(hist_log)
             completed_history.append(hist_log)
@@ -410,7 +416,7 @@ def run_workflow(
                 set_active_live(None)
 
                 if success:
-                    tracker.mark_downloaded(scraper.url, vid_id)
+                    tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
                     break
                 else:

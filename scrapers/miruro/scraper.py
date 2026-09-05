@@ -192,6 +192,8 @@ class MiruroScraper:
             "thumbnail": cover,
         }
 
+        self.title = title
+        self.metadata = metadata
         return metadata, videos, info
 
     def resolve_episode_stream(self, episode: Dict[str, Any], force_domain: Optional[str] = None) -> Optional[Dict[str, Any]]:

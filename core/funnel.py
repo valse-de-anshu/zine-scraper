@@ -110,30 +110,68 @@ def handle_batch(hist_layer, store_layer):
         if not global_path:
             return
 
-    successful_urls = []
-    for raw_url in urls:
-        url = raw_url
+    from core.paths import PathAuthority
+    from core.history import BatchHistoryManager
+    batch_mgr = BatchHistoryManager(PathAuthority(), store_layer)
+
+    # Process each URL sequentially with atomic per-item persistence and resume checkpointing
+    for raw_url in list(urls):
+        raw_url_clean = raw_url.strip()
+        if not raw_url_clean:
+            continue
+
+        url = raw_url_clean
+        flags = []
         batch_quick_grab = False
-        if url.endswith("--0"):
-            url = url[:-3].strip()
-            batch_quick_grab = True
-            
-        if route_url(url, hist_layer, store_layer, batch_path=global_path, is_batch=True, batch_quick_grab=batch_quick_grab):
-            successful_urls.append(raw_url)
-            
-    if successful_urls:
-        try:
-            current_urls = load_urls()
-            remaining = [u for u in current_urls if u not in successful_urls]
-            content = "\n".join(remaining) + ("\n" if remaining else "")
-            store_layer.write_file(URLS_FILE, content)
-            console.print(f"\n[success]Cleaned up {len(successful_urls)} completed URLs from Batch URL.txt[/success]")
-        except Exception:
-            pass
-            
+        chapter_limit = None
+        
+        # Parse flags: --0 (Quick grab), --<N> (chapter limit e.g. --2, --4, --5)
+        flag_matches = re.findall(r"--(\d+)\b", url)
+        for num_str in flag_matches:
+            val = int(num_str)
+            if val == 0:
+                batch_quick_grab = True
+                flags.append("--0")
+            else:
+                chapter_limit = val
+                flags.append(f"--{val}")
+        url = re.sub(r"\s*--\d+\b", "", url).strip()
+
+        mode = "Quick grab" if batch_quick_grab else "Vacuum"
+        canonical_url = HistoryLayer.normalize_url(url)
+
+        # Record start in Batch History (both Logs/Batch History.json and Logs/💩/batch_history.json)
+        batch_mgr.record_start(raw_input=raw_url_clean, url=canonical_url, flags=flags, mode=mode)
+
+        success = route_url(
+            url,
+            hist_layer,
+            store_layer,
+            batch_path=global_path,
+            is_batch=True,
+            batch_quick_grab=batch_quick_grab,
+            flags=flags,
+            chapter_limit=chapter_limit
+        )
+
+        if success:
+            batch_mgr.record_finish(canonical_url, status="completed")
+            # Immediately remove completed URL from Batch URL.txt so a Revolt exit or crash can safely resume
+            try:
+                current_urls = load_urls()
+                remaining = [u for u in current_urls if u.strip() != raw_url_clean]
+                content = "\n".join(remaining) + ("\n" if remaining else "")
+                store_layer.write_file(URLS_FILE, content)
+                console.print(f"[success]✔ Completed & checked off: {raw_url_clean}[/success]")
+            except Exception as e:
+                logging.error(f"Failed to update Batch URL.txt: {e}")
+        else:
+            batch_mgr.record_finish(canonical_url, status="failed")
+            console.print(f"[error]✘ Incomplete or failed: {raw_url_clean}[/error]")
+
     console.input("\n[info]Batch finished. Press Enter to return to menu...[/info]")
 
-def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False) -> bool:
+def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
     if not is_batch:
         startup_clear()
         print_banner()
@@ -181,11 +219,25 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             time.sleep(1.5)
         return False
 
-
+    try:
+        tui_module = importlib.import_module(f"scrapers.{site_folder}.tui")
+    except Exception as e:
+        logging.error(f"Failed to import TUI module for {site_folder}: {e}")
+        console.print(f"[error]Site handler error for {site_folder}[/error]")
+        if not is_batch:
+            if sys.stdin.isatty():
+                try:
+                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
+                    sys.stdout.flush()
+                    input()
+                except (EOFError, KeyboardInterrupt):
+                    pass
+        else:
+            time.sleep(1.5)
+        return False
 
     try:
         logging.info(f"Passing control to TUI for site: {site_folder} with scraper: {scraper.__class__.__name__}")
-        tui_module = importlib.import_module(f"scrapers.{site_folder}.tui")
         
         notification_fired = False
         def fire_notification():
@@ -193,9 +245,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             if not notification_fired:
                 try:
                     from butler.notify import send_os_notification
-                    from urllib.parse import urlparse
-                    domain = urlparse(url).netloc.replace("www.", "")
-                    send_os_notification(f"Zine Scraper: {domain}", "Successfully finished scraping job!", is_success=True)
+                    t = getattr(scraper, "title", None) or url
+                    send_os_notification("Zine Scraper", f"Finished downloading: {t}", is_success=True)
                 except Exception as e:
                     logging.error(f"Notification failed: {e}")
                 notification_fired = True
@@ -220,15 +271,23 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         console.print = patched_print
         try:
             scraper._batch_quick_grab = batch_quick_grab
+            scraper._batch_flags = flags or []
+            scraper._chapter_limit = chapter_limit
+            hist_layer._active_batch_flags = flags or []
             tui_module.handle_tui(url, hist_layer, store_layer, scraper, batch_path=batch_path, is_batch=is_batch)
             fire_notification() # In case it's batch mode and didn't call input
             try:
                 final_title = getattr(scraper, "title", None)
                 if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
-                    hist_layer.set_title(url, str(final_title).strip())
+                    target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
+                    hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
+                    from core.history import BatchHistoryManager
+                    if BatchHistoryManager._instance:
+                        BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
             except Exception:
                 pass
         finally:
+            hist_layer._active_batch_flags = []
             console.input = original_input
             console.print = original_print
             
@@ -504,7 +563,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["settings", "exit", "help", "batch", "batch test", "site", "slice", "subs", "tts", "lyrs", "bake", "sc-lyrics"]
+        commands = ["bake", "batch", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -566,13 +625,18 @@ class MainPrompt:
             tip_text = Text()
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
-            tip_text.append("exit", style="warning")
-            tip_text.append(" to quit.\n", style="info")
+            tip_text.append("bake", style="warning")
+            tip_text.append(" to edit & embed audio metadata/cover art.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
-            tip_text.append("settings", style="warning")
-            tip_text.append(" to configure.\n", style="info")
+            tip_text.append("batch", style="warning")
+            tip_text.append(" to download all from Batch URL.txt.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("exit", style="warning")
+            tip_text.append(" to quit.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -581,13 +645,28 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
-            tip_text.append("batch", style="warning")
-            tip_text.append(" to download all from Batch URL.txt\n", style="info")
+            tip_text.append("lyrs", style="warning")
+            tip_text.append(" to search & download synced lyrics (.lrc).\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("sc-lyrics", style="warning")
+            tip_text.append(" to batch auto-sync missing .lrc files.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("settings", style="warning")
+            tip_text.append(" to configure.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
             tip_text.append("site", style="warning")
             tip_text.append(" to view supported site database.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("slice", style="warning")
+            tip_text.append(" to slice webtoon/manhua vertical strips.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -598,21 +677,6 @@ class MainPrompt:
             tip_text.append("Type ", style="info")
             tip_text.append("tts", style="warning")
             tip_text.append(" to generate Audiobooks.\n", style="info")
-            
-            tip_text.append("● ", style="success")
-            tip_text.append("Type ", style="info")
-            tip_text.append("lyrs", style="warning")
-            tip_text.append(" to search & download synced lyrics (.lrc).\n", style="info")
-            
-            tip_text.append("● ", style="success")
-            tip_text.append("Type ", style="info")
-            tip_text.append("bake", style="warning")
-            tip_text.append(" to edit & embed audio metadata/cover art.\n", style="info")
-            
-            tip_text.append("● ", style="success")
-            tip_text.append("Type ", style="info")
-            tip_text.append("sc-lyrics", style="warning")
-            tip_text.append(" to batch auto-sync missing .lrc files.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Paste any supported URL to archive.\n", style="info")
@@ -757,7 +821,21 @@ def main():
                 from core.lyrics_engine import run_batch_lyrics_tui
                 run_batch_lyrics_tui()
             else:
-                route_url(url, history, storage)
+                url_input = url.strip()
+                flags = []
+                batch_quick_grab = False
+                chapter_limit = None
+                flag_matches = re.findall(r"--(\d+)\b", url_input)
+                for num_str in flag_matches:
+                    val = int(num_str)
+                    if val == 0:
+                        batch_quick_grab = True
+                        flags.append("--0")
+                    else:
+                        chapter_limit = val
+                        flags.append(f"--{val}")
+                clean_url = re.sub(r"\s*--\d+\b", "", url_input).strip()
+                route_url(clean_url, history, storage, batch_quick_grab=batch_quick_grab, flags=flags, chapter_limit=chapter_limit)
                 
         except KeyboardInterrupt:
             clean_exit(forceful=True)

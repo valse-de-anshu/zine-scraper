@@ -63,4 +63,6 @@ class YtDlpScraper:
                 "thumbnail": track_thumb
             })
             
+        self.title = (videos[0].get("title") if videos and len(videos)==1 else metadata.get("Channel/Series", "Unknown"))
+        self.metadata = metadata
         return metadata, videos, info

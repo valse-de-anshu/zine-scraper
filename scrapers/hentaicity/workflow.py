@@ -46,6 +46,12 @@ def run_workflow(
     engine: HentaicityEngine = scraper.engine
     content_type = metadata.get("Content Type", "video")
     series_title = metadata.get("Channel/Series", "Unknown")
+    if not is_vacuum and videos and videos[0].get("title"):
+        series_title = videos[0]["title"]
+    if series_title and series_title != "Unknown":
+        tracker.set_title(url, series_title)
+    scraper.title = series_title
+    scraper.metadata = metadata
 
     ext = "mp4" if content_type == "video" else "jpg"
 
@@ -149,7 +155,7 @@ def run_workflow(
         display_name = resolved_path.name
 
         if is_done:
-            tracker.mark_downloaded(url, vid_id)
+            tracker.mark_downloaded(url, vid_id, title=series_title)
             hist = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
             console.print(hist)
             completed_history.append(hist)
@@ -280,7 +286,7 @@ def run_workflow(
         _LIVE_INSTANCE = None
 
         if success:
-            tracker.mark_downloaded(url, vid_id)
+            tracker.mark_downloaded(url, vid_id, title=series_title)
             hist = f"  [success]●[/success] {display_name}"
         else:
             hist = f"  [error]●[/error] {display_name}"

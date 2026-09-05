@@ -8,29 +8,38 @@ Welcome to the **Zine Scraper Suite** help console! Zine is a high-performance, 
 
 You can type any of the following commands directly at the main prompt:
 
-- **`settings`** or **`/settings`**
-  Open the interactive Settings Configurator to adjust Library Root Path, Music Quick-Grab Path, Chapter Download Delay, Connection Check Delay, AI Subtitles (Whisper), Qwen TTS logic, and Visual Color Themes.
-
-- **`site`** or **`/site`** or **`sites`**
-  Open the interactive Supported Site Database TUI to view all 34+ supported platforms, domain aliases, categories, and direct extraction capability.
-
-- **`slice`** or **`/slice`** or **`slicer`**
-  Launch the Manhua & Webtoon Image Slicer Tool. Automatically splits long vertical image strips into perfectly proportioned 2000px height pages (numbered `001.jpg`, `002.jpg`), leaving normal ratio images untouched.
+- **`bake`** or **`/bake`**
+  Launch the Audio Metadata & Cover Art Baking Engine. Edit tags, inject hi-res covers, and embed standard metadata into audio files via FFmpeg / Mutagen.
 
 - **`batch`** or **`/batch`**
   Process all queued URLs listed inside your `Batch URL.txt` file automatically.
 
+- **`exit`** or **`quit`** or **`q`**
+  Gracefully exit the Zine Scraper Suite and instantly flush all active AI models from system memory.
+
 - **`help`** or **`/help`**
   Display this comprehensive user guide and keyboard shortcut reference.
 
-- **`subs`** or **`/subs`**
+- **`lyrs`** or **`/lyrs`** or **`lyrics`**
+  Search, fetch, and download synchronized `.lrc` lyrics for any song via a 6-tier waterfall (LRCLIB, NetEase, Megalobiz).
+
+- **`sc-lyrics`** or **`/sc-lyrics`** or **`sclyrs`**
+  Batch scanner for your music library. Automatically finds missing `.lrc` lyrics files and fetches synced lyrics across all tracks.
+
+- **`settings`** or **`/settings`**
+  Open the interactive Settings Configurator to adjust Library Root Path, Music Quick-Grab Path, Chapter Download Delay, Connection Check Delay, AI Subtitles (Whisper), Qwen TTS logic, and Visual Color Themes.
+
+- **`site`** or **`/site`** or **`sites`**
+  Open the interactive Supported Site Database TUI to view all 44+ supported platforms, domain aliases, categories, and direct extraction capability.
+
+- **`slice`** or **`/slice`** or **`slicer`**
+  Launch the Manhua & Webtoon Image Slicer Tool. Automatically splits long vertical image strips into perfectly proportioned 2000px height pages (numbered `001.jpg`, `002.jpg`), leaving normal ratio images untouched.
+
+- **`subs`** or **`/subs`** or **`subtitles`**
   Launch the built-in AI Subtitle Generator. Uses `faster-whisper` and `deep-translator` to run fully offline on your GPU (or CPU) to generate and translate `.srt` subtitles (e.g. from JP to EN) for any downloaded video.
 
-- **`tts`** or **`/tts`** or **`qween`**
+- **`tts`** or **`/tts`** or **`audiobook`**
   Launch the Qwen-TTS Audiobook Generator. Converts any downloaded `.txt` novel chapter into a high-quality, expressive audiobook with built-in character acting, custom voice cloning, and perfectly synced `.srt` subtitles. Includes auto-resume chunk tracking.
-
-- **`exit`** or **`quit`** or **`q`**
-  Gracefully exit the Zine Scraper Suite and instantly flush all active AI models from system memory.
 
 ---
 

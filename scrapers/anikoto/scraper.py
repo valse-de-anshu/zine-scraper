@@ -131,6 +131,8 @@ class AnikotoScraper:
             "thumbnail": cover,
         }
 
+        self.title = title
+        self.metadata = metadata
         return metadata, videos, info
 
     def resolve_episode_stream(self, episode: Dict[str, Any]) -> Optional[Dict[str, Any]]:

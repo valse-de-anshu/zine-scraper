@@ -141,6 +141,10 @@ def run_workflow(
         try:
             metadata, videos, _info = scraper.get_metadata_and_videos()
             title = metadata.get("Channel/Series", "Unknown")
+            scraper.title = title
+            scraper.metadata = metadata
+            if hasattr(tracker, "set_title") and title and title != "Unknown":
+                tracker.set_title(scraper.url, title)
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
@@ -368,7 +372,7 @@ def run_workflow(
         display_name = resolved_file_path.name
 
         if is_in_verified:
-            tracker.mark_downloaded(scraper.url, str(vid_id))
+            tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
             console.print(f"  [unselected]File exists: {display_name}[/unselected]")
             skipped_count += 1
             continue
@@ -558,7 +562,7 @@ def run_workflow(
                             baking_callback=baking_callback,
                         )
                         if success:
-                            tracker.mark_downloaded(scraper.url, str(vid_id))
+                            tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                             progress_data["success"] = True
                             progress_data["done"]    = True
                             success_count  += 1

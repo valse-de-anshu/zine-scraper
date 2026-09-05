@@ -29,6 +29,7 @@ class OmegaScansScraper:
 
     def __init__(self, url: str):
         self.url     = url.rstrip("/")
+        self.series_url: Optional[str] = None
         self.domain  = "omegascans.org"
         self.session = make_api_session()
 
@@ -53,19 +54,20 @@ class OmegaScansScraper:
 
     # ── URL inspection ────────────────────────────────────────────────────────
 
-    def _parse_url(self) -> Tuple[str, Optional[str]]:
+    def _parse_url(self, target_url: Optional[str] = None) -> Tuple[str, Optional[str]]:
         """
-        Returns (series_slug, chapter_slug_or_None) from self.url.
+        Returns (series_slug, chapter_slug_or_None) from target_url or self.url.
         Handles both:
           https://omegascans.org/series/{series_slug}
           https://omegascans.org/series/{series_slug}/{chapter_slug}
         """
-        parts = [p for p in self.url.split("/") if p]
+        u = target_url or self.url
+        parts = [p for p in u.split("/") if p]
         if "series" not in parts:
-            raise ValueError(f"Not an OmegaScans series URL: {self.url}")
+            raise ValueError(f"Not an OmegaScans series URL: {u}")
         idx = parts.index("series")
         if idx + 1 >= len(parts):
-            raise ValueError(f"Missing series slug in: {self.url}")
+            raise ValueError(f"Missing series slug in: {u}")
         series_slug  = parts[idx + 1]
         chapter_slug = parts[idx + 2] if idx + 2 < len(parts) else None
         return series_slug, chapter_slug
@@ -82,6 +84,7 @@ class OmegaScansScraper:
         If the URL points directly at a chapter, returns only that chapter.
         """
         series_slug, chapter_slug = self._parse_url()
+        self.series_url = f"https://omegascans.org/series/{series_slug}"
 
         # If URL is already a specific chapter, skip the full chapter list
         if chapter_slug:
