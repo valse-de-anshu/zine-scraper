@@ -51,6 +51,39 @@ def handle_pornhub_tui(
     is_vacuum = (link_type == "model")
     menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_vacuum else "Quick Grab")
 
+    # ── Stage 0: Pre-flight VPN verification ──────────────────────────────
+    if not is_batch_mode and sys.stdin.isatty():
+        console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu_label}[/site]")
+        console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]\n")
+        vpn_options = [
+            ("Yes", "YES"),
+            ("No", "NO"),
+        ]
+        vpn_choice = Selector(vpn_options, "VPN active?", vertical=False, align_width=12).select()
+        if vpn_choice != "YES":
+            msg = "turn the vpn on then come back once u are equiped with vpn "
+            logger.warning(msg)
+            console.show_cursor(True)
+            import os
+            sys.stdout.write("\033[?25h\033[0m\n")
+            sys.stdout.flush()
+            if os.name != 'nt':
+                try:
+                    import termios
+                    fd = sys.stdin.fileno()
+                    attrs = termios.tcgetattr(fd)
+                    attrs[3] = attrs[3] | termios.ICANON | termios.ECHO
+                    attrs[1] = attrs[1] | termios.OPOST
+                    termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+                except Exception:
+                    pass
+            console.print(f"\n[warning]{msg}[/warning]\n")
+            sys.stdout.flush()
+            os._exit(0)
+
+        startup_clear()
+        print_banner()
+
     # ── Stage 1: Fetch metadata ──────────────────────────────────────────
     metadata, videos, info = None, None, None
 

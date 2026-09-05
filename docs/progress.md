@@ -1,3 +1,16 @@
+# Progress Report - September 06, 2026 (PornHub Pre-Flight VPN Prompt & Revolt Exit)
+
+- **PornHub Pre-Flight VPN Verification & Clean Revolt Exit (`scrapers/pornhub/tui.py`):**
+  - **Identified Problem**:
+    - When a user inputs a PornHub URL without an active VPN in restricted regions, the scraper immediately initiates network queries during Stage 1 metadata fetching, resulting in abrupt geo-blocking runtime exceptions or timeouts.
+  - **Resolution**:
+    - **Stage 0 Pre-Flight Prompt**: Integrated an immediate interactive `Selector` prompt (`VPN active? [Yes] [No]`) before initiating any metadata loading or network requests.
+    - **Normal Flow on Confirmation**: Selecting `Yes` proceeds directly to normal interactive TUI metadata extraction, quality selection, and download routing.
+    - **Revolt-Style Clean Exit on Deferral**: Selecting `No` (or cancelling) logs and outputs `turn the vpn on then come back once u are equiped with vpn `, restores the terminal cursor and canonical modes, and executes an immediate quiet exit (`os._exit(0)`).
+    - **Guarded for Batch & TTY**: Guarded by `sys.stdin.isatty()` and `not is_batch_mode` to prevent hanging automated or headless batch runs.
+
+---
+
 # Progress Report - September 06, 2026 (AniNeko & AniKai Stream Resolution Typo & Multi-Server Waterfall)
 
 - **AniNeko & AniKai Stream Resolution Fix & Multi-Server Waterfall (`scrapers/anineko/`, `scrapers/anikai/`):**
