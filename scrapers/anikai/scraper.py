@@ -84,10 +84,12 @@ class AnikaiScraper:
             
             parts = el.text.strip().split('\n')
             ep_title = parts[-1].strip() if parts else "Episode"
+            m = re.search(r'(?:Episode|EP)\s*(\d+)', ep_title, re.IGNORECASE)
+            prefix = f"EP {m.group(1)}" if m else ep_title
             
             videos.append({
                 "id": ep_url,
-                "title": f"{title_text} - {ep_title}",
+                "title": f"{prefix} - {title_text}",
                 "url": ep_url,
                 "duration": None
             })

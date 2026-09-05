@@ -191,9 +191,11 @@ class AninekoScraper:
 
         title = meta_raw["title"]
 
-        # Step 5 – attach the series title to each episode dict
+        # Step 5 – attach the series title to each episode dict (EP <num> - <Series>)
         for ep in episodes_raw:
-            ep["title"] = f"{title} - {ep['_ep_label']}"
+            ep_num = ep.get("_ep_num", "")
+            prefix = f"EP {ep_num}" if ep_num and ep_num != "?" else ep.get("_ep_label", "EP")
+            ep["title"] = f"{prefix} - {title}"
 
         # Step 6 – extract server info
         server_items = []

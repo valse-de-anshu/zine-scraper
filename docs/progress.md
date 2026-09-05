@@ -14,6 +14,7 @@
     - **Headers Typo Resolution**: Fixed undefined `headers=h` -> `headers=HEADERS` across all watch page and embed extraction calls in both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py`.
     - **Multi-Server Candidate Discovery (`resolve_episode_streams`)**: Added multi-stream candidate discovery in both engines, discovering both `HD-2` and `HD-1` mirrors with direct regex stream extraction (`bibiemb`, `vibe`, `vivibebe`, `vidstreaming`).
     - **Multi-Server Waterfall (`workflow.py`)**: Updated `run_workflow` in both `scrapers/anineko/workflow.py` and `scrapers/anikai/workflow.py` to seamlessly waterfall across all candidate streams.
+    - **Episode Title Numbering Alignment (`scrapers/anineko/scraper.py`, `scrapers/anikai/scraper.py`)**: Standardized episode filename formatting from `{Series} - Episode {num}` to `EP {num} - {Series}` (e.g. `EP 1 - Gals Can't Be Kind to Otaku!?`), matching Anitaku, Miruro, and HiAnime conventions for clean natural sorting.
     - **Verification**: Verified live on `https://anineko.to/watch/gals-cant-be-kind-to-otaku/ep-1`, successfully discovering 4 valid candidate m3u8 streams across HD-2 and HD-1 mirrors.
 
 ---
