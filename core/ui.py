@@ -1001,8 +1001,18 @@ def align_header(label: str, value: Any) -> str:
 
 class MultiSelector:
     """A multi-selector for file assets (like yazi/nnn) with scrolling support."""
-    def __init__(self, options: List[dict], title: str = "Select Files"):
-        self.options = options
+    def __init__(self, options: List[Any], title: str = "Select Files"):
+        normalized = []
+        for opt in options:
+            if isinstance(opt, dict):
+                normalized.append(opt)
+            elif isinstance(opt, tuple):
+                label = str(opt[0])
+                val = opt[1] if len(opt) > 1 else opt[0]
+                normalized.append({"name": label, "value": val, "size_bytes": 0})
+            else:
+                normalized.append({"name": str(opt), "value": opt, "size_bytes": 0})
+        self.options = normalized
         self.title = title
         self.index = 0
         self.selected = set()

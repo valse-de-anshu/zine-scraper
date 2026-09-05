@@ -1,3 +1,23 @@
+# Progress Report - September 05, 2026 (YouTube Music Isolation, MultiSelector Tuple Resilience & Site-Wide Time Imports)
+
+- **YouTube Music Folder Resolution & Collision Prevention (`core/paths.py`, `scrapers/youtube/yt_music/location.py`):**
+  - **Identified Problem**: Dotted site identifiers like `"youtube.yt_music"` were reduced to `parts[0].title()` (`"Youtube"`), causing YouTube Music albums and playlists to dump into `Vacuum/Youtube` alongside video downloads instead of `Vacuum/YouTube Music`.
+  - **Resolution**:
+    - Added explicit routing in `core/paths.py:get_container_root` mapping `"youtube.yt_music"` and `"yt_music"` to `container_root / "YouTube Music"`.
+    - Added safety guard in `scrapers/youtube/yt_music/location.py` ensuring `base.parent / "YouTube Music"` is resolved if `base.name.lower() == "youtube"`.
+
+- **MultiSelector Tuple Normalization & Track Selection Fix (`core/ui.py`, `scrapers/youtube/yt_music/tui.py`):**
+  - **Identified Problem**: In `scrapers/youtube/yt_music/tui.py`, selecting individual tracks passed a list of tuples `[(label, video), ...]` to `MultiSelector`, crashing with `AttributeError: 'tuple' object has no attribute 'get'`.
+  - **Resolution**:
+    - Converted `multi_options` in `scrapers/youtube/yt_music/tui.py` to dictionary format with `"name"`, `"desc"`, `"right_text"`, `"video"` payload, and a `"Back"` option.
+    - Hardened `MultiSelector.__init__` in `core/ui.py` with automatic tuple-to-dict normalization, making `MultiSelector` crash-proof against tuple options across the entire codebase.
+
+- **Eliminated Missing `time` Imports Across All Scrapers (`scrapers/youtube/yt_music/engine.py`, `scrapers/pinterest/engine.py`, `scrapers/kunmanga/scraper.py`, `scrapers/oppai_stream/engine.py`):**
+  - Added missing `import time` across `yt_music/engine.py` (crashed in `fetch_youtube_subtitles`), `pinterest/engine.py` (crashed in `time.sleep` retries), `kunmanga/scraper.py` (crashed in `time.sleep` retries), and `oppai_stream/engine.py` (crashed in `time.sleep` retries).
+  - Verified via full repository AST parse that 0 missing `time` imports remain across all modules.
+
+---
+
 # Progress Report - September 05, 2026 (Decommissioned Defunct LightNovelWorld Platform)
 
 - **Complete Decommissioning of Defunct `lightnovelworld.org` Platform:**

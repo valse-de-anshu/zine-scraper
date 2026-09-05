@@ -327,7 +327,11 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
     if site_folder.startswith("light_novel."):
         sub_folder = site_folder.split(".")[1]
         return container_root / "Light Novel" / sub_folder
-        
+
+    # Explicit routing for YouTube Music to prevent collision with YouTube video
+    if site_folder.lower() in ["youtube.yt_music", "yt_music"]:
+        return container_root / "YouTube Music"
+
     # If the site folder is nested like "oppai_stream.oppai_stream_toon", clean it up
     if "." in site_folder:
         parts = site_folder.split(".")
@@ -337,7 +341,7 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
             site_folder = hentai_map[parent.lower()]
         else:
             site_folder = parent.title()
-            
+
     # Also clean up standard "oppai_stream_toon" just in case
     if site_folder == "oppai_stream_toon":
         site_folder = "OppaiStream"

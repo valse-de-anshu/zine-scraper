@@ -81,13 +81,32 @@ def get_track_selection(videos: List[Dict[str, Any]], is_vacuum: bool = False, i
             return "ALL", videos
 
     if choice == "MULTI":
-        multi_options = [
-            (f"{v.get('track_number', i+1):02d}. {v.get('title', 'Track')[:45]} ({v.get('artist', '')[:20]})", v)
-            for i, v in enumerate(videos)
-        ]
+        multi_options = []
+        for i, v in enumerate(videos):
+            track_num = v.get("track_number", i + 1)
+            title = v.get("title", "Track")
+            artist = v.get("artist", "")
+            duration = v.get("duration_string") or ""
+            multi_options.append({
+                "name": f"{track_num:02d}. {title}",
+                "desc": artist,
+                "right_text": duration,
+                "video": v,
+                "size_bytes": 0,
+            })
+        multi_options.append({
+            "name": "Back",
+            "desc": "Cancel selection",
+            "right_text": "",
+            "is_action": True,
+            "action": "BACK"
+        })
         selected_items = MultiSelector(multi_options, "Select Tracks").select()
-        if not selected_items:
+        if not selected_items or any(item.get("action") == "BACK" for item in selected_items):
             return "BACK", []
-        return "MULTI", selected_items
+        chosen_videos = [item["video"] for item in selected_items if "video" in item]
+        if not chosen_videos:
+            return "BACK", []
+        return "MULTI", chosen_videos
 
     return "ALL", videos

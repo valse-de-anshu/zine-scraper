@@ -1,4 +1,5 @@
 import re
+import time
 import logging
 from bs4 import BeautifulSoup
 from .engine import BaseScraper, urljoin
