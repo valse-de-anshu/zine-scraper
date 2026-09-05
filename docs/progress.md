@@ -1570,6 +1570,17 @@ The scraper architecture is split into 3 distinct stages:
   - Stripped `ColorHandler(sys.stdout)` and root logger manipulation from all remaining 10 scraper engines (`hentai18`, `hentai20`, `kunmanga`, `projectsuki`, `asurascans`, `oppai_stream_toon`, `manhwaus`, `mangak`, `manhuaplus`, `fanfox`) as well as `nhentai`, `weebcentral`, and `asmhentai`.
   - Verified that zero console noise is produced during notification dispatch or scraper engine execution across all 44+ site TUIs.
 
+***
+
+# Progress Report - September 2026 (Vertical Selector Alignment & Subchapters UI Fix)
+
+## 1. Vertical Selector Misalignment Fix
+- **Root Cause**: In [`core/ui.py:Selector._render()`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py), the `vertical=True` branch computed `indent = " " * (self.align_width + 2)`. When `filter_subchapters()` called `Selector(..., title="Download subchapters as well?", vertical=True, align_width=29)`, `align_width=29` generated an excessive indentation of 31 spaces on every option line below the title, pushing the options far to the right.
+- **Resolution**:
+  - Updated `Selector._render()` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py) so that vertical lists display the title cleanly on its own line (`title:\n`) and indent choices by standard 2 spaces (`indent = "  "`), achieving natural alignment across all vertical menus.
+  - Removed redundant `align_width=29` argument from `filter_subchapters()`.
+
+
 
 
 

@@ -943,9 +943,9 @@ class Selector:
     def _render(self) -> Text:
         full_text = Text()
         if self.vertical:
-            title_prefix = f"{self.title:<{self.align_width}}: \n"
-            full_text.append(title_prefix, style="menu")
-            indent = " " * (self.align_width + 2)
+            if self.title:
+                full_text.append(f"{self.title}:\n", style="menu")
+            indent = "  "
             for i, (label, _) in enumerate(self.options):
                 is_last = (i == len(self.options) - 1)
                 newline = "" if is_last else "\n"
@@ -1816,7 +1816,6 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
         [("Yes, download subchapters", True), ("No, skip them", False)],
         title="Download subchapters as well?",
         vertical=True,
-        align_width=29
     ).select()
     
     if ans:
