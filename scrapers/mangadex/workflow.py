@@ -3,6 +3,7 @@ import json
 import html
 from pathlib import Path
 from typing import Optional, Tuple, List, Any
+from rich.markup import escape
 from core.ui import (
     console, startup_clear, print_banner, Selector, MultiSelector,
     active_status, set_active_live, apply_chapter_limit, filter_subchapters
@@ -79,8 +80,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
             cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
             console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
-            console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
-            console.print(f"[menu]Manga[/menu]        : [title]{title}[/title]")
+            console.print(f"[menu]Folder[/menu]       : [sexy_pink]{escape(str(target_path.resolve()))}[/sexy_pink]")
+            console.print(f"[menu]Manga[/menu]        : [title]{escape(title)}[/title]")
             console.print("")
 
             other_langs = [l for l in available_langs if l != "en"]
@@ -223,23 +224,19 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             tree_title = f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title
             tree_lang = f"{lang_display} ({lang_idx}/{len(chosen_langs)})" if len(chosen_langs) > 1 else lang_display
 
-            if lang_idx == 1:
-                startup_clear()
-                print_banner()
-                if is_batch:
-                    console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
-                console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
-                cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
-                console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
-                if len(chosen_langs) > 1:
-                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
-                    console.print(f"[menu]Languages[/menu]    : [site]{all_langs_str}[/site] ({len(chosen_langs)} selected)")
-                else:
-                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{folder.resolve()}[/sexy_pink]")
-                console.print("")
+            startup_clear()
+            print_banner()
+            if is_batch:
+                console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+            console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+            cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
+            console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
+            if len(chosen_langs) > 1:
+                console.print(f"[menu]Folder[/menu]       : [sexy_pink]{escape(str(folder.resolve()))}[/sexy_pink]")
+                console.print(f"[menu]Languages[/menu]    : [site]{all_langs_str}[/site] ({len(chosen_langs)} selected)")
             else:
-                console.print(f"\n[site]{'─' * 60}[/site]")
-                console.print(f"[site]◆ Language [{lang_idx}/{len(chosen_langs)}]: {lang_display_name} [{chosen_lang}][/site]\n")
+                console.print(f"[menu]Folder[/menu]       : [sexy_pink]{escape(str(folder.resolve()))}[/sexy_pink]")
+            console.print("")
             
             render_completion_tree(tree_title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui, language=tree_lang)
             
@@ -257,10 +254,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 cat_disp = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
                 console.print(f"[menu]Category[/menu]     : [info]{cat_disp}[/info]")
                 if len(chosen_langs) > 1:
-                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{escape(str(folder.resolve()))}[/sexy_pink]")
                     console.print(f"[menu]Languages[/menu]    : [site]{all_langs_str}[/site] ({len(chosen_langs)} selected)")
                 else:
-                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{folder.resolve()}[/sexy_pink]")
+                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{escape(str(folder.resolve()))}[/sexy_pink]")
                 console.print("")
                 render_completion_tree(tree_title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui, language=tree_lang)
                 for hist in completed_history:
@@ -437,6 +434,18 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 console.print(f"\n[error]✘[/error] Failed: No chapters saved for {lang_display_name}\n")
 
         if len(chosen_langs) > 1 and multilang_summary:
+            startup_clear()
+            print_banner()
+            if is_batch:
+                console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+            console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+            cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
+            console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
+            console.print(f"[menu]Folder[/menu]       : [sexy_pink]{escape(str(target_path.resolve()))}[/sexy_pink]")
+            console.print(f"[menu]Manga[/menu]        : [title]{escape(title)}[/title]")
+            console.print(f"[menu]Languages[/menu]    : [site]{all_langs_str}[/site] ({len(chosen_langs)} selected)")
+            console.print("")
+
             from rich.table import Table
             summary_table = Table(
                 title="◆ Multi-Language Download Summary",
