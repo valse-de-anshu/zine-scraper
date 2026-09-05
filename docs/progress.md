@@ -1,3 +1,26 @@
+# Progress Report - September 06, 2026 (YouTube Album Waterfall Hardening & Quick Grab Isolation)
+
+- **YouTube Music Album Waterfall Hardening & Quick Grab Directory Isolation (`scrapers/youtube/engine.py`, `scrapers/youtube/workflow.py`, `scrapers/youtube/tui.py`):**
+  - **Identified Problem**:
+    - When downloading a YouTube video as a song via Quick Grab (e.g. `https://youtu.be/DvRGtH6b_ls` - `OMORI - afterword` by `carrot113`), the TUI and terminal logs showed strange, mismatched data:
+      - `Album : Is It Wrong to Try to Pick Up Girls in a Dungeon?, Vol. 1` (a completely unrelated light novel audiobook!).
+      - `Location : /mnt/storage/portable_music/song` (unwanted `/song` subfolder appended to custom Quick Grab folder).
+      - `◆ carrot113` (channel name displayed in the tree instead of the actual song title).
+      - The song title itself was missing from the TUI header entirely.
+    - **Root Causes**:
+      1. `parse_artist_and_title("OMORI - afterword")` parsed `OMORI` as the artist and `afterword` as the song title.
+      2. In `search_album_waterfall`, when querying MusicBrainz for `recording:"afterword" AND artist:"OMORI"`, it matched the light novel author **Fujino Omori** (`大森藤ノ`) whose audiobook release for *Is It Wrong to Try to Pick Up Girls in a Dungeon?, Vol. 1* includes an "Afterword" track.
+      3. `_is_artist_match` was overly permissive (matching single tokens in multi-word author names) and MusicBrainz queries lacked release group filtering (admitting Audiobooks, Spokenword, and Audio dramas as music albums).
+      4. In `workflow.py`, the `elif is_music: sub_folder = folder / "song"` routing ran unconditionally outside the `if is_multi:` check, polluting single Quick Grab downloads with unnecessary `/song` subfolders.
+      5. The tree header in `workflow.py` used `title` (Channel/Series) rather than the video's title in Quick Grab mode.
+  - **Resolution**:
+    - **Audiobook & Spokenword Rejection**: Filtered out `Audiobook`, `Spokenword`, `Audio drama`, and `Interview` release groups from MusicBrainz queries in `search_album_waterfall`.
+    - **Strict Artist Matching (`_is_artist_match`)**: Rewrote artist matching to require full token alignment and collaborative token splitting (`feat.`, `&`, `x`, `/`), preventing surname substrings from matching authors.
+    - **Direct Quick Grab Folder Routing**: Restricted `/song`, `/video`, and `/short` subfolder creation exclusively to `if is_multi:` (Vacuum/Channel/Playlist). In Quick Grab, files save directly into the specified root.
+    - **Prominent Song Title Display**: Added single song/video title display to `draw_yt_header` and `tui_reconstruct`, and passed `history_title` into `render_metadata_tree` so Quick Grab renders `◆ <Song Title>` instead of `◆ <Channel Name>`.
+
+---
+
 # Progress Report - September 06, 2026 (Anime HLS Stream Multi-Server Waterfall & Chunk Validation)
 
 - **Anime Multi-Server Stream Resolution & FFmpeg Exit Status 183 Resolution (`scrapers/anitaku/`, `scrapers/anikai/`, `scrapers/anineko/`, `scrapers/hianime/`):**

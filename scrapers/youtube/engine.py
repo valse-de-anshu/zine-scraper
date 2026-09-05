@@ -143,27 +143,57 @@ def clean_album_name(album: str) -> str:
     return a.strip()
 
 
+def _is_artist_match(candidate_artist: Optional[str], parsed_artist: str, channel_artist: str) -> bool:
+    if not candidate_artist:
+        return False
+    ca = candidate_artist.lower().strip()
+    raw_candidates = [a.lower().strip() for a in [parsed_artist, channel_artist] if a and a.strip()]
+    if not raw_candidates:
+        return True
+    
+    ca_parts = [p.strip() for p in re.split(r"(?i)\s*(?:feat\.?|ft\.?|&|x|/|,|\band\b)\s*", ca) if p.strip()]
+    
+    cand_parts = []
+    for c in raw_candidates:
+        cand_parts.append(c)
+        cand_parts.extend([p.strip() for p in re.split(r"(?i)\s*(?:feat\.?|ft\.?|&|x|/|,|\band\b)\s*", c) if p.strip()])
+
+    for c in cand_parts:
+        for part in ca_parts:
+            if part == c:
+                return True
+            part_clean = re.sub(r"(?i)\s*(?:official|topic|music|records|band|vevo)$", "", part).strip()
+            c_clean = re.sub(r"(?i)\s*(?:official|topic|music|records|band|vevo)$", "", c).strip()
+            if part_clean == c_clean:
+                return True
+            if part == f"the {c}" or c == f"the {part}":
+                return True
+    return False
+
+
 def search_album_waterfall(title: str, artist: str = "") -> Optional[str]:
     """
     Searches multi-layer online music databases (iTunes API -> LRCLIB API -> MusicBrainz API)
     using smart parsed (artist, title) queries to discover the true official Album name.
+    Strictly enforces artist validation to avoid matching unrelated releases with identical song titles.
     """
     import urllib.request
     import urllib.parse
     import json
 
     parsed_art, parsed_title = parse_artist_and_title(title, artist)
-    
+    effective_artist = parsed_art or artist or ""
+
     queries = []
     if parsed_art and parsed_title:
-        queries.append(f"{parsed_art} {parsed_title}")
-    if parsed_title:
-        queries.append(parsed_title)
+        queries.append((f"{parsed_art} {parsed_title}", parsed_art))
+    if artist and parsed_title and artist.lower() != parsed_art.lower():
+        queries.append((f"{artist} {parsed_title}", artist))
     if title:
-        queries.append(title)
+        queries.append((title, effective_artist))
 
-    for q in queries:
-        q_clean = q.strip()
+    for q_clean, expected_artist in queries:
+        q_clean = q_clean.strip()
         if not q_clean:
             continue
 
@@ -174,11 +204,17 @@ def search_album_waterfall(title: str, artist: str = "") -> Optional[str]:
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 for item in data.get("results", []):
+                    item_art = item.get("artistName", "")
+                    if effective_artist and not _is_artist_match(item_art, parsed_art, artist):
+                        continue
                     alb = item.get("collectionName")
                     if alb and alb.strip() and not alb.strip().lower().endswith(" - single"):
                         return clean_album_name(alb)
-                if data.get("results"):
-                    alb = data["results"][0].get("collectionName")
+                for item in data.get("results", []):
+                    item_art = item.get("artistName", "")
+                    if effective_artist and not _is_artist_match(item_art, parsed_art, artist):
+                        continue
+                    alb = item.get("collectionName")
                     if alb and alb.strip():
                         return clean_album_name(alb)
         except Exception as e:
@@ -191,11 +227,17 @@ def search_album_waterfall(title: str, artist: str = "") -> Optional[str]:
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 for item in data:
+                    item_art = item.get("artistName", "")
+                    if effective_artist and not _is_artist_match(item_art, parsed_art, artist):
+                        continue
                     alb = item.get("albumName")
                     if alb and alb.strip() and not alb.strip().lower().endswith(" - single"):
                         return clean_album_name(alb)
-                if data:
-                    alb = data[0].get("albumName")
+                for item in data:
+                    item_art = item.get("artistName", "")
+                    if effective_artist and not _is_artist_match(item_art, parsed_art, artist):
+                        continue
+                    alb = item.get("albumName")
                     if alb and alb.strip():
                         return clean_album_name(alb)
         except Exception as e:
@@ -203,15 +245,28 @@ def search_album_waterfall(title: str, artist: str = "") -> Optional[str]:
 
         # 3. MusicBrainz API
         try:
-            query_str = f"recording:\"{parsed_title or q_clean}\""
-            if parsed_art:
-                query_str += f" AND artist:\"{parsed_art}\""
-            url = f"https://musicbrainz.org/ws/2/recording/?query={urllib.parse.quote(query_str)}&fmt=json&limit=3"
+            target_title = parsed_title or q_clean
+            query_parts = [f"recording:\"{target_title}\""]
+            if effective_artist:
+                query_parts.append(f"artist:\"{effective_artist}\"")
+            query_str = " AND ".join(query_parts)
+            url = f"https://musicbrainz.org/ws/2/recording/?query={urllib.parse.quote(query_str)}&fmt=json&limit=5"
             req = urllib.request.Request(url, headers={"User-Agent": "ZineScraper/1.0 ( valsedeanshu@gmail.com )"})
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 for rec in data.get("recordings", []):
+                    artist_credits = rec.get("artist-credit", [])
+                    rec_art = " ".join([ac.get("name", "") for ac in artist_credits if isinstance(ac, dict)])
+                    if effective_artist and not _is_artist_match(rec_art, parsed_art, artist):
+                        continue
                     for rel in rec.get("releases", []):
+                        rel_grp = rel.get("release-group") or {}
+                        pri_type = (rel_grp.get("primary-type") or "").lower()
+                        sec_types = [t.lower() for t in (rel_grp.get("secondary-types") or [])]
+                        if "audiobook" in sec_types or "spokenword" in sec_types or "audio drama" in sec_types or "interview" in sec_types:
+                            continue
+                        if pri_type == "other" and not sec_types:
+                            continue
                         alb = rel.get("title")
                         if alb and alb.strip() and not alb.strip().lower().endswith(" - single"):
                             return clean_album_name(alb)

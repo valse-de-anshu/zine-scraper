@@ -245,6 +245,11 @@ def handle_youtube_tui(
         import html
         console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu_label}[/site]")
         console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]")
+        if not is_multi and videos:
+            single_title = html.unescape(videos[0].get("title") or "")
+            if single_title:
+                item_label = "Song" if (mode and "music" in mode) else "Video"
+                console.print(f"[menu]{item_label:<12}:[/menu] [title]{single_title}[/title]")
         console.print(f"[menu]{'Channel':<12}:[/menu] [title]{html.unescape(channel_name)}[/title]")
         if "Playlist" in metadata:
             console.print(f"[menu]{'Playlist':<12}:[/menu] [title]{html.unescape(metadata['Playlist'])}[/title]")

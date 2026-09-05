@@ -66,6 +66,7 @@ def run_workflow(
     if history_title:
         tracker.set_title(scraper.url, history_title)
 
+    if is_multi:
         if is_shorts:
             sub_folder = folder / "short"
         elif is_playlist_link:
@@ -87,9 +88,8 @@ def run_workflow(
         sub_folder.mkdir(parents=True, exist_ok=True)
 
     try:
-        is_quick_grab = "Quick grab" in sub_folder.parts or "Quick grab" in str(sub_folder)
-        if not is_quick_grab:
-            skip_cover = not is_multi or bool(custom_thumb_path)
+        if is_multi:
+            skip_cover = bool(custom_thumb_path)
             scraper.engine.save_metadata(sub_folder, info, metadata.get("Source", "Unknown"), skip_cover=skip_cover, channel_root=folder)
     except Exception as e:
         logger.error(f"Failed to save metadata/cover: {e}")
@@ -169,7 +169,8 @@ def run_workflow(
         verified_ids.extend(verify_videos(sf, folder_videos, ext_str, scraper.url, tracker))
 
     # Progress tree display using progress layer
-    root_tree = render_metadata_tree(title, sub_folder, metadata, len(verified_ids), custom_thumb_path, is_multi, folder)
+    tree_title = history_title if (not is_multi and history_title) else title
+    root_tree = render_metadata_tree(tree_title, sub_folder, metadata, len(verified_ids), custom_thumb_path, is_multi, folder)
     console.print(root_tree)
     console.print("")
 
@@ -195,6 +196,11 @@ def run_workflow(
         menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_multi else "Quick Grab")
         console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu_label}[/site]")
         console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]")
+        if not is_multi and videos:
+            single_title = html.unescape(videos[0].get("title") or "")
+            if single_title:
+                item_label = "Song" if is_music else "Video"
+                console.print(f"[menu]{item_label:<12}:[/menu] [title]{single_title}[/title]")
         import html
         channel_name = html.unescape(metadata.get('Channel/Series', 'Unknown'))
         console.print(f"[menu]{'Channel':<12}:[/menu] [title]{channel_name}[/title]")
