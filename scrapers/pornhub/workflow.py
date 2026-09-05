@@ -395,12 +395,8 @@ def run_workflow(
             time.sleep(0.3)
 
             # ── Revolt shutdown check (per-video, after each download) ────────
-            if ui._REVOLT_ACTIVE:
-                if ui._REVOLT_LIMIT == 0:
-                    console.print("[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
-                    sys.exit(0)
-                else:
-                    ui._REVOLT_LIMIT -= 1
+            if ui.check_revolt(title=title):
+                return
 
     set_active_live(None)
     console.print(f"\n[success]✦[/success] Done\n")

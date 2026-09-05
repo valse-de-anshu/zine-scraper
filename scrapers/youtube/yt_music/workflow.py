@@ -381,11 +381,8 @@ def run_workflow(
 
         # Global Revolt shutdown check
         import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT <= 0:
-                ui.clean_exit_revolt()
-            else:
-                ui._REVOLT_LIMIT -= 1
+        if ui.check_revolt(title=vid_title):
+            return
 
         time.sleep(0.1)
 

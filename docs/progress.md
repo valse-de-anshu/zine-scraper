@@ -1532,4 +1532,32 @@ The scraper architecture is split into 3 distinct stages:
   - **Revolt Completion OS Notification**: Integrated `send_os_notification("Zine Scraper — Revolt", ...)` inside `trigger_revolt_exit(title=...)` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py), dispatching native system notifications (Linux notify-send / macOS osascript / Windows Toast) indicating clean completion and including the series or item title.
   - **Verification**: Created [test_revolt_mode.py](file:///home/valse-de-anshu/.gemini/antigravity-cli/brain/f89e6d40-bc3b-440e-a95f-be050eabdd30/scratch/test_revolt_mode.py) testing PTY interaction, tree node injection, limit confirmation (`0` and `N`), and notification dispatch. Verified 100% test pass rate across all suites.
 
+***
+
+# Progress Report - September 2026 (Revolt Limit 0/1 Lifecycle & Duplicate Log Elimination)
+
+## 1. Revolt Limit 0 Mid-Download Kill Resolution
+- **Root Cause**: Setting Revolt limit `0` during an active chapter download marked `_REVOLT_TRIGGERED_DURING_ITEM = True` while `_REVOLT_LIMIT = 0`. Worker threads downloading chunks or images called `time.sleep()`, invoking `core/funnel.py:patched_sleep()` which triggered `trigger_revolt_exit()` in the middle of chapter slicing/download.
+- **Resolution**:
+  - Introduced `_REVOLT_CURRENT_DONE` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py). When Revolt is activated during an active `Live` session, `_REVOLT_CURRENT_DONE` is set to `False`, guaranteeing the currently running chapter/item finishes 100% cleanly.
+  - Guarded `patched_sleep`, `patched_input`, and post-TUI handlers in [`core/funnel.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/funnel.py) so revolt exits are only evaluated on the main thread when `_LIVE_INSTANCE is None` and `_REVOLT_CURRENT_DONE` is True. Background worker threads can no longer terminate downloads prematurely.
+
+## 2. Revolt Limit 1 Accurate Quota Fulfillment
+- **Root Cause**: `set_active_live(None)` decremented `_REVOLT_LIMIT` immediately upon the current chapter finishing, and subsequent checks decremented it again, causing limit 1 to exit immediately without downloading the additional chapter.
+- **Resolution**:
+  - `set_active_live(None)` now only sets `_REVOLT_CURRENT_DONE = True` without decrementing `_REVOLT_LIMIT` for the item that was active when Revolt was triggered.
+  - Only subsequent items decrement `_REVOLT_LIMIT`, allowing limit 1 to finish the current item + exactly 1 additional item before halting.
+
+## 3. Atomic Single-Print Shutdown & Codebase Harmonization
+- **Root Cause**:
+  - `trigger_revolt_exit()` had no re-entrancy lock. While `send_os_notification()` blocked on `notify-send`, concurrent threads or subsequent handlers invoked `trigger_revolt_exit()` again, printing the shutdown message twice.
+  - 15 video workflows manually printed duplicate `● Revolt shutdown triggered. Exiting cleanly...` and bypassed the centralized handler with raw `sys.exit(0)`.
+  - `core/history.py` contained rogue background threads decrementing `_REVOLT_LIMIT` in persistence methods (`set_title`, `mark_downloaded`, `unmark_downloaded`, `sync_local_history`).
+- **Resolution**:
+  - Added atomic lock `_REVOLT_EXIT_LOCK` and re-entrancy guard `_REVOLT_EXITING` to `trigger_revolt_exit()`.
+  - Standardized all 15 video scrapers (`hianime`, `miruro`, `anikai`, `hanime`, etc.), `omegascans`, and YouTube workflows to use unified `ui.check_revolt(title=title)`.
+  - Stripped rogue revolt decrementing threads from [`core/history.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/history.py).
+  - Created [test_revolt_lifecycle.py](file:///home/valse-de-anshu/.gemini/antigravity-cli/brain/f89e6d40-bc3b-440e-a95f-be050eabdd30/scratch/test_revolt_lifecycle.py) validating concurrency atomicity, single printout guarantees, limit 0 completion, and limit 1 multi-item quota. 100% test pass rate.
+
+
 

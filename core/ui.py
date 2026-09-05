@@ -232,6 +232,9 @@ _REVOLT_TRIGGERING = False
 _MENU_ACTIVE = False
 _REVOLT_INPUT_BUFFER = ""
 _REVOLT_TRIGGERED_DURING_ITEM = False
+_REVOLT_CURRENT_DONE = False
+_REVOLT_EXIT_LOCK = threading.Lock()
+_REVOLT_EXITING = False
 
 _tty_fd = None
 _old_tty_settings = None
@@ -415,7 +418,12 @@ def inject_revolt_into_renderable(renderable):
         return Group(revolt_panel, renderable)
 
 def trigger_revolt_exit(title: Optional[str] = None):
-    global _LIVE_INSTANCE
+    global _REVOLT_EXITING, _LIVE_INSTANCE
+    with _REVOLT_EXIT_LOCK:
+        if _REVOLT_EXITING:
+            return
+        _REVOLT_EXITING = True
+
     if _LIVE_INSTANCE:
         try:
             _LIVE_INSTANCE.stop()
@@ -457,20 +465,19 @@ def trigger_revolt_exit(title: Optional[str] = None):
     os._exit(0)
 
 def check_revolt(title: Optional[str] = None) -> bool:
-    """Check if Revolt mode is active. If limit has reached 0, triggers clean exit."""
-    global _REVOLT_ACTIVE, _REVOLT_LIMIT
+    """Check if Revolt mode is active and limit reached. If so, triggers clean exit."""
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_CURRENT_DONE
     if not _REVOLT_ACTIVE:
         return False
-    if _REVOLT_LIMIT <= 0:
+    if _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
         trigger_revolt_exit(title=title)
         return True
-    _REVOLT_LIMIT -= 1
     return False
 
 def global_revolt_listener():
     import time
     import sys
-    global _LIVE_INSTANCE, _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _MENU_ACTIVE, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM
+    global _LIVE_INSTANCE, _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _MENU_ACTIVE, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
     while True:
         if _LIVE_INSTANCE is None or _MENU_ACTIVE:
             time.sleep(0.04)
@@ -507,12 +514,21 @@ def global_revolt_listener():
                         if limit >= 0:
                             _REVOLT_ACTIVE = True
                             _REVOLT_LIMIT = limit
-                            _REVOLT_TRIGGERED_DURING_ITEM = True
+                            if _LIVE_INSTANCE is not None:
+                                _REVOLT_CURRENT_DONE = False
+                                _REVOLT_TRIGGERED_DURING_ITEM = True
+                            else:
+                                _REVOLT_CURRENT_DONE = True
+                                _REVOLT_TRIGGERED_DURING_ITEM = False
+                                if limit == 0:
+                                    trigger_revolt_exit()
                     except ValueError:
                         pass
                 else:  # Empty input cancels/backs out of Revolt mode
                     _REVOLT_ACTIVE = False
                     _REVOLT_LIMIT = 0
+                    _REVOLT_CURRENT_DONE = False
+                    _REVOLT_TRIGGERED_DURING_ITEM = False
                 _REVOLT_TRIGGERING = False
                 _REVOLT_INPUT_BUFFER = ""
                 if _LIVE_INSTANCE is not None:
@@ -544,11 +560,11 @@ _ctrl_r_thread.start()
 
 def set_active_live(live):
     global _LIVE_INSTANCE, _tty_fd, _old_tty_settings, _is_custom_tty_fd
-    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERED_DURING_ITEM
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
 
     if live is not None:
-        # If revolt is active and limit is 0 (and an item already finished under revolt), halt!
-        if _REVOLT_ACTIVE and _REVOLT_LIMIT <= 0 and _REVOLT_TRIGGERED_DURING_ITEM:
+        # If revolt is active and limit is 0 (and an item already finished under revolt), halt before starting next!
+        if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
             trigger_revolt_exit()
             return
 
@@ -618,9 +634,11 @@ def set_active_live(live):
         _is_custom_tty_fd = False
 
         if _REVOLT_ACTIVE:
-            _REVOLT_TRIGGERED_DURING_ITEM = True
-            if _REVOLT_LIMIT > 0:
-                _REVOLT_LIMIT -= 1
+            if not _REVOLT_CURRENT_DONE:
+                _REVOLT_CURRENT_DONE = True
+            else:
+                if _REVOLT_LIMIT > 0:
+                    _REVOLT_LIMIT -= 1
 
 import contextlib
 
@@ -1815,17 +1833,6 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
             
     return new_chapters
 
-def clean_exit_revolt():
-    """Used to exit after the Revolt limit is reached. Performs a clean, silent exit without ASCII art."""
-    global _LIVE_INSTANCE
-    if _LIVE_INSTANCE is not None:
-        try:
-            _LIVE_INSTANCE.stop()
-            _LIVE_INSTANCE = None
-        except Exception:
-            pass
-    # Show cursor
-    print("\033[?25h", end="")
-    sys.stdout.flush()
-    import os
-    os._exit(0)
+def clean_exit_revolt(title: Optional[str] = None):
+    """Used to exit after the Revolt limit is reached. Delegates cleanly to trigger_revolt_exit."""
+    trigger_revolt_exit(title=title)

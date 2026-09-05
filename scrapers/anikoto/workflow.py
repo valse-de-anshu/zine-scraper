@@ -606,12 +606,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         time.sleep(CHAPTER_DELAY)
 
         # ── Revolt check ─────────────────────────────────────────────
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT == 0:
-                console.print("[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
-                import sys; sys.exit(0)
-            else:
-                ui._REVOLT_LIMIT -= 1
+        if ui.check_revolt(title=title):
+            return
 
     # ── Summary ───────────────────────────────────────────────────────
     total = len(videos)

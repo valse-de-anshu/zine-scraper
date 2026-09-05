@@ -405,19 +405,6 @@ class HistoryLayer:
                         existing_flags.append(f)
         self.save_history()
 
-        # Global Revolt shutdown check
-        import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT <= 0:
-                def delayed_exit():
-                    import time
-                    time.sleep(0.3)
-                    ui.clean_exit_revolt()
-                import threading
-                threading.Thread(target=delayed_exit, daemon=True).start()
-            else:
-                ui._REVOLT_LIMIT -= 1
-
     def mark_downloaded(self, site_url: str, item_id: str, title: Optional[str] = None, flags: Optional[List[str]] = None):
         """Marks an item as downloaded for a site URL and persists history."""
         site_url = self.normalize_url(site_url)
@@ -456,19 +443,6 @@ class HistoryLayer:
         if BatchHistoryManager._instance:
             BatchHistoryManager._instance.update_item(site_url, item_id_str, title=title or entry.get("title"))
 
-        # Global Revolt shutdown check
-        import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT <= 0:
-                def delayed_exit():
-                    import time
-                    time.sleep(0.3)
-                    ui.clean_exit_revolt()
-                import threading
-                threading.Thread(target=delayed_exit, daemon=True).start()
-            else:
-                ui._REVOLT_LIMIT -= 1
-
     def unmark_downloaded(self, site_url: str, item_id: str):
         """Removes an item from downloaded registry for a site URL."""
         site_url = self.normalize_url(site_url)
@@ -481,19 +455,6 @@ class HistoryLayer:
             if item_id_str in info:
                 info.remove(item_id_str)
                 self.save_history()
-
-        # Global Revolt shutdown check
-        import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT <= 0:
-                def delayed_exit():
-                    import time
-                    time.sleep(0.3)
-                    ui.clean_exit_revolt()
-                import threading
-                threading.Thread(target=delayed_exit, daemon=True).start()
-            else:
-                ui._REVOLT_LIMIT -= 1
 
     def get_downloaded_items(self, site_url: str) -> Set[str]:
         site_url = self.normalize_url(site_url)
@@ -636,19 +597,6 @@ class HistoryLayer:
                     
         # Save both global and local history
         self.save_history()
-
-        # Global Revolt shutdown check
-        import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT <= 0:
-                def delayed_exit():
-                    import time
-                    time.sleep(0.3)
-                    ui.clean_exit_revolt()
-                import threading
-                threading.Thread(target=delayed_exit, daemon=True).start()
-            else:
-                ui._REVOLT_LIMIT -= 1
         self._storage.write_file(local_history_file, _sort_and_dump_history(local_history))
         return verified_ids
 

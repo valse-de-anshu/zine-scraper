@@ -605,12 +605,8 @@ def run_workflow(
         console.print(f"  [{res_color}]●[/{res_color}] [unselected]{display_name}{status_msg}[/unselected]")
         time.sleep(CHAPTER_DELAY)
 
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT == 0:
-                console.print("[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
-                import sys; sys.exit(0)
-            else:
-                ui._REVOLT_LIMIT -= 1
+        if ui.check_revolt(title=title):
+            return
 
     # ── Summary ───────────────────────────────────────────────────────────────
     total     = len(videos)
