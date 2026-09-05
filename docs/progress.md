@@ -1,3 +1,26 @@
+# Progress Report - September 05, 2026 (Hentaimama Native AJAX Stream Extraction & Clean Title Resolution)
+
+- **Hentaimama Stream Extraction, Clean Series Title & Pipeline Hardening (`scrapers/hentaimama/engine.py`, `scrapers/hentaimama/scraper.py`, `scrapers/hentaimama/tui.py`, `scrapers/hentaimama/workflow.py`):**
+  - **Identified Problem**:
+    - yt-dlp's built-in extractor failed on `hentaimama.io` episodes (`ERROR: [Hentaimama] ...: Unable to extract ajax data`), causing downloads to immediately abort and fail.
+    - `engine.py` blindly delegated `page_url` to yt-dlp without native stream extraction.
+    - Series title extraction parsed raw `<title>` tags contaminated with SEO strings (`Watch Kanojo Saimin Hentai Online Free – Hentaimama`), contaminating directory names and filenames.
+    - `tui.py` had an `elif len(videos) == 1:` branch bypassing user selection between Single Episode (Quick grab) and Whole Franchise (Vacuum).
+  - **Resolution**:
+    - **Native AJAX & Iframe Stream Extraction (`scrapers/hentaimama/engine.py`)**:
+      - Extracts post ID from episode page scripts (`get_player_contents` / `postId`).
+      - Queries Hentaimama's `admin-ajax.php` player endpoints (`get_player_contents`) across available mirror options.
+      - Traverses the embed iframe (`?dt_embed=...`) and extracts direct high-speed `.mp4` video URLs (`gdvid.info`, `javprovider.com`) from player setup scripts.
+      - Passes the extracted raw stream URL directly to `download_video`, downloading smoothly at full bandwidth without requiring Playwright.
+    - **DOM-Based Series Title & Poster Extraction (`scrapers/hentaimama/scraper.py`)**:
+      - Extracts clean anime title directly from `.dsc-title h1` or `h1` (stripping episode suffixes), yielding clean canonical titles (e.g. `Kanojo Saimin`).
+      - Extracts official high-res poster images from `.dsc-poster img` instead of low-res banners.
+    - **Interactive TUI & Quick Grab Naming (`scrapers/hentaimama/tui.py`, `scrapers/hentaimama/workflow.py`)**:
+      - Removed the `len(videos) == 1` prompt bypass.
+      - Single episode quick grabs and progress trees now format as `Kanojo Saimin - Episode 1.mp4`.
+
+---
+
 # Progress Report - September 05, 2026 (HentaiHavenCo Episode Discovery, TUI Selection & Stream Download Resolution)
 
 - **HentaiHavenCo Episode Discovery, Full Franchise Linking & Stream Download Pipeline (`scrapers/hentaihaven_co/scraper.py`, `scrapers/hentaihaven_co/engine.py`, `scrapers/hentaihaven_co/tui.py`, `scrapers/hentaihaven_co/workflow.py`):**

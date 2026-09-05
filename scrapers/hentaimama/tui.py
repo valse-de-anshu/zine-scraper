@@ -83,12 +83,8 @@ def handle_hentaimama_tui(
     if is_batch_mode:
         scraper.is_playlist = True
         is_vacuum = True
-    elif len(videos) == 1:
-        scraper.is_playlist = False
-        is_vacuum = False
     else:
-
-        if __import__("sys").stdin.isatty():
+        if sys.stdin.isatty():
             choice = Selector([
                 ("Single Episode", "single"),
                 ("Whole Franchise", "franchise"),
@@ -153,14 +149,8 @@ def handle_hentaimama_tui(
         is_batch_mode=is_batch_mode,
     )
 
-    if not is_batch_mode:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
-
-        pass
-        try:
-            input()
-        except EOFError:
-            pass
+    if not is_batch_mode and sys.stdin.isatty():
+        console.input("\n[info]Download finished. Press Enter to return...[/info]")
 
 def handle_tui(
     url: str,

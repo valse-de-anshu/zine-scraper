@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-import requests
+from curl_cffi import requests
 import re
 import json
 import logging
@@ -9,14 +9,14 @@ from core.video_engine import VideoEngine
 logger = logging.getLogger(__name__)
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Referer": "https://hentaimama.io/",
 }
 
 class HentaimamaEngine(VideoEngine):
     def __init__(self):
         super().__init__()
-        self.session = requests.Session()
+        self.session = requests.Session(impersonate="chrome124")
         self.session.headers.update(HEADERS)
         self.headers = HEADERS
 
@@ -80,7 +80,73 @@ class HentaimamaEngine(VideoEngine):
                 self.download_avatar(avatar_url, cover_path)
 
     def extract_stream_url(self, page_url: str) -> Optional[str]:
-        return page_url
+        try:
+            r = self.session.get(page_url, headers=self.headers, impersonate="chrome124", timeout=15)
+            if r.status_code != 200:
+                logger.warning(f"[Hentaimama] Failed to fetch {page_url}, status: {r.status_code}")
+                return None
+
+            # Look for episode post ID
+            m = re.search(r"action:\s*['\"]get_player_contents['\"],\s*a:\s*['\"](\d+)['\"]", r.text)
+            if not m:
+                m = re.search(r"['\"]postId['\"]:\s*(\d+)", r.text)
+            if not m:
+                m = re.search(r"['\"]episode['\"]:\s*['\"](\d+)['\"]", r.text)
+
+            if m:
+                post_id = m.group(1)
+                ajax_headers = self.headers.copy()
+                ajax_headers["X-Requested-With"] = "XMLHttpRequest"
+
+                for opt in [1, 2, 3]:
+                    data = {"action": "get_player_contents", "a": post_id, "i": str(opt)}
+                    try:
+                        r_ajax = self.session.post(
+                            "https://hentaimama.io/wp-admin/admin-ajax.php",
+                            data=data,
+                            headers=ajax_headers,
+                            impersonate="chrome124",
+                            timeout=10,
+                        )
+                        if r_ajax.status_code == 200:
+                            import html as html_lib
+                            items = json.loads(r_ajax.text)
+                            for item in items:
+                                if not item:
+                                    continue
+                                ifr_m = re.search(r"src=['\"]([^'\"]+)['\"]", item)
+                                if ifr_m:
+                                    ifr_url = html_lib.unescape(ifr_m.group(1))
+                                    if ifr_url.startswith("//"):
+                                        ifr_url = f"https:{ifr_url}"
+                                    r_ifr = self.session.get(
+                                        ifr_url,
+                                        headers=self.headers,
+                                        impersonate="chrome124",
+                                        timeout=10,
+                                    )
+                                    if r_ifr.status_code == 200:
+                                        f_m = re.search(r"file:\s*['\"]([^'\"]+)['\"]", r_ifr.text)
+                                        if f_m:
+                                            file_url = f_m.group(1).replace("\\/", "/")
+                                            logger.info(f"[Hentaimama] Found stream URL via option {opt}: {file_url}")
+                                            return file_url
+                                        dl_m = re.search(r"window\.open\(['\"]([^'\"]+)['\"]\)", r_ifr.text)
+                                        if dl_m:
+                                            file_url = dl_m.group(1).replace("\\/", "/")
+                                            return file_url
+                    except Exception as e:
+                        logger.debug(f"[Hentaimama] Error probing player option {opt}: {e}")
+
+            # Fallback: direct mp4 / m3u8 search in page
+            direct_m = re.search(r"['\"](https?://[^\s'\"<>]+\.(?:mp4|m3u8)(?:\?[^\s'\"<>]*)?)['\"]", r.text)
+            if direct_m:
+                return direct_m.group(1)
+
+            return None
+        except Exception as e:
+            logger.error(f"[Hentaimama] Exception in extract_stream_url for {page_url}: {e}")
+            return None
 
     def download_hentaimama_video(
         self,
@@ -94,13 +160,20 @@ class HentaimamaEngine(VideoEngine):
         pre_extracted_stream: str = "",
     ) -> bool:
         """
-        Downloads a Hentaimama video.
+        Downloads a Hentaimama video using extracted direct stream.
         """
         try:
+            stream_url = pre_extracted_stream or self.extract_stream_url(url)
+            if not stream_url:
+                logger.error(f"[Hentaimama] Could not extract stream URL for: {url}")
+                return False
+
+            self.headers["Referer"] = "https://hentaimama.io/"
             return self.download_video(
                 url=url,
                 output_dir=output_dir,
                 progress_hook=progress_hook or (lambda d: None),
+                raw_stream_url=stream_url,
                 is_audio=is_audio,
                 fixed_title=fixed_title,
                 fixed_artist=fixed_artist,
