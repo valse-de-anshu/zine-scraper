@@ -1,11 +1,28 @@
+import os
+import sys
 import re
+import json
 import time
 import signal
 import logging
-import requests
+import threading
 from pathlib import Path
 from typing import Optional, List, Any
-from core.ui import console, startup_clear, print_banner, active_status
+from urllib.parse import urljoin, urlparse
+
+import requests
+from rich.tree import Tree
+from rich.live import Live
+from rich.progress import Progress, TextColumn, TaskProgressColumn, DownloadColumn
+import core.ui as ui
+from core.ui import (
+    console, startup_clear, print_banner, active_status,
+    Selector, MinimalPulseBar, MbpsColumn, set_active_live, clean_exit
+)
+from core.import_tui import CategoryImportTUI
+from core.anime_categories import CATEGORIES
+from butler.part_cleaner import clean_part_files
+from core.video_engine import handle_internet_loss
 from core.cache import save_url_to_file
 from core.paths import resolve_folder_collision, PathAuthority
 
@@ -29,7 +46,6 @@ def _get_library_root() -> Path:
     config_file = paths.get_config_file()
     if config_file.exists():
         try:
-            import json
             with open(config_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 custom_base = data.get("download_base")
@@ -73,7 +89,6 @@ def _fetch_hls_qualities(master_url: str, headers: dict) -> list:
     highest-first: [{'label': '1080p', 'bandwidth': N, 'resolution': 'WxH', 'url': '...'}, ...]
     Returns [] if the URL is already a media playlist (not a master).
     """
-    from urllib.parse import urljoin
     try:
         r = requests.get(master_url, headers=headers, timeout=10)
         r.raise_for_status()
@@ -149,14 +164,13 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
-                console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+                console.input("\n[info]Press Enter to return...[/info]") if sys.stdin.isatty() else None
             else:
                 time.sleep(1.5)
             return
 
     # ── Mode: whole series vs single episode ─────────────────────────
     is_single_episode = False
-    import sys
     
     # Auto-detect if URL specifies a single episode (contains -episode-)
     is_single_ep_url = False
@@ -173,7 +187,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         console.print("")
 
     if not is_batch and sys.stdin.isatty():
-        from core.ui import Selector
         _draw_header("Anime")
         if len(videos) > 1:
             choice = Selector(
@@ -258,10 +271,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             tui_rel_path = Path("")
             chosen_quality_url = None
         else:
-            from core.import_tui import CategoryImportTUI
-            from core.anime_categories import CATEGORIES
-
-            if __import__("sys").stdin.isatty() and not is_batch:
+            if sys.stdin.isatty() and not is_batch:
                 tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard")
                 res = tui.run()
                 if not res or (isinstance(res, tuple) and res[0] is None):
@@ -288,7 +298,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         cover_url = metadata.get("Thumbnail")
         cover_ext = ".jpg"
         if cover_url:
-            from urllib.parse import urlparse
             path_ext = Path(urlparse(cover_url).path).suffix
             if path_ext:
                 cover_ext = path_ext
@@ -305,7 +314,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
         # Metadata in series root .zine/
         try:
-            import json
             zine_dir = series_root / ".zine"
             zine_dir.mkdir(parents=True, exist_ok=True)
             custom_metadata = {
@@ -345,7 +353,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     if not is_single_episode:
         render_completion_tree(title, folder, metadata, verified_ids, cover_exists)
     else:
-        from rich.tree import Tree
         def _align(label: str, value: Any) -> str:
             return f"{label:<18} : {value}"
         tree = Tree(f"[title]◆ {title} (Single Episode)[/title]")
@@ -359,7 +366,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         return
 
     try:
-        from butler.part_cleaner import clean_part_files
         clean_part_files(folder, videos, tracker, scraper.url)
     except Exception:
         pass
@@ -395,11 +401,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             "speed": 0.0,
         }
 
-        from rich.tree import Tree
-        from rich.live import Live
-        from rich.progress import Progress, TextColumn, TaskProgressColumn, DownloadColumn
-        from core.ui import MinimalPulseBar, MbpsColumn, set_active_live
-
         # Exact progress bar once we know total bytes
         exact_bar = Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -421,7 +422,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                 phase = progress_data.get("phase", "resolving")
                 
                 # Blinking dot logic for indeterminate states
-                import time
                 if phase == "resolving":
                     blink_state = int(time.time() * 3) % 2
                     ball_style = "sexy_pink" if blink_state == 0 else "unselected"
@@ -441,14 +441,11 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                 res_branch.add(f"[{res_color}]● {res_text}[/{res_color}]")
             return tree
 
-        import core.ui as ui
-
         def _sigint_handler(sig, frame):
             try:
                 live.stop()
             except Exception:
                 pass
-            from core.ui import clean_exit
             clean_exit(forceful=True)
         old_sigint = signal.signal(signal.SIGINT, _sigint_handler)
         ui._REVOLT_LISTENER_ACTIVE = True
@@ -457,13 +454,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         with Live(render_video_tree(), console=console, refresh_per_second=12,
                   transient=True) as live:
             _LIVE_INSTANCE = live
-            from core.ui import MinimalPulseBar, set_active_live
             set_active_live(live)
             
             live_active = [True]
-            import threading
             def refresh_loop():
-                import time
                 while live_active[0]:
                     try:
                         live.update(render_video_tree())
@@ -574,7 +568,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                                 break
                         except Exception as e:
                             progress_data["status"] = str(e)
-                            from core.video_engine import handle_internet_loss
                             if not handle_internet_loss():
                                 break
                                 

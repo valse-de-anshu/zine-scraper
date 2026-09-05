@@ -1,3 +1,23 @@
+# Progress Report - September 06, 2026 (Anime Workflow Scoping Audit & UnboundLocalError Resolution)
+
+- **Comprehensive Scope Sanitization Across All Anime Platforms (`scrapers/miruro`, `scrapers/anikoto`, `scrapers/hianime`, `scrapers/anitaku`, `scrapers/anineko`, `scrapers/anikai`):**
+  - **Identified Problem**:
+    - Selecting "Download single episode" in `miruro` threw `Failed to load TUI for miruro: cannot access local variable 're' where it is not associated with a value`.
+    - Investigation revealed a Python scoping issue: when late inner `import` statements (e.g. `import re`, `import sys`, `import time`, `from core.ui import Selector`, `from rich.tree import Tree`) exist anywhere in a function, Python treats those names as local variables throughout the entire function scope. Any reference to that name earlier in the function (such as `re.search` in single-episode detection, or `time.sleep` in error retries) causes an `UnboundLocalError`.
+    - Auditing the other 5 anime platforms (`anikoto`, `hianime`, `anitaku`, `anineko`, `anikai`) showed that all of them shared identical patterns: late inner imports of `time`, `sys`, `threading`, `Selector`, `Tree`, `Live`, `Progress`, `set_active_live`, `clean_part_files`, and `handle_internet_loss`.
+    - In `scrapers/hianime/workflow.py`, an additional typo was discovered: `blink_style` instead of `blink_state` at line 428, which threw a `NameError` during the downloading phase.
+  - **Resolution**:
+    - **Global Module-Level Centralization**:
+      - Centralized all imports at the top of each workflow file: `os`, `sys`, `re`, `json`, `time`, `signal`, `logging`, `threading`, `Path`, `requests`, Rich renderables (`Tree`, `Live`, `Progress`, etc.), and UI components (`CategoryImportTUI`, `CATEGORIES`, `clean_part_files`, `handle_internet_loss`).
+      - Stripped all inner imports across all 6 anime workflow modules.
+    - **HiAnime NameError Fix**:
+      - Corrected `blink_style` to `blink_state` in the indeterminate blinking dot logic.
+    - **Static AST ScopeChecker & Automated Verification**:
+      - Built an automated AST ScopeChecker verifying 0 inner imports across all 6 workflows (100% clean).
+      - Added automated test suite `scratch/test_anime_tui_flow.py` asserting all 6 workflows execute both URL parsing and single-episode / whole-series execution cleanly without exceptions.
+
+---
+
 # Progress Report - September 05, 2026 (Miruro Genres & Synopsis NameError Resolution)
 
 - **Miruro Metadata Resolution (`scrapers/miruro/scraper.py`):**
