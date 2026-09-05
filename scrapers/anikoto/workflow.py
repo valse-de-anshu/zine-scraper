@@ -262,39 +262,18 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             from core.import_tui import CategoryImportTUI
             from core.anime_categories import CATEGORIES
 
-            def probe_qualities():
-                probe_video = videos[0] if videos else None
-                if probe_video:
-                    try:
-                        ps = None
-                        if hasattr(scraper, 'resolve_episode_stream'):
-                            ps = scraper.resolve_episode_stream(probe_video)
-                        elif hasattr(scraper, 'engine') and hasattr(scraper.engine, 'resolve_episode_stream'):
-                            ep_u = probe_video.get("url", "") if isinstance(probe_video, dict) else str(probe_video)
-                            ps = scraper.engine.resolve_episode_stream(ep_u)
-                        probe_m3u8 = ps.get('m3u8_url') if ps else None
-                        if probe_m3u8:
-                            qualities = _fetch_hls_qualities(probe_m3u8, scraper.engine.headers)
-                            if not qualities:
-                                qualities = [{'label': 'Source', 'url': probe_m3u8}]
-                            return qualities
-                    except Exception:
-                        pass
-                return []
-
             if __import__("sys").stdin.isatty() and not is_batch:
-                tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard", quality_callback=probe_qualities)
+                tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard")
                 res = tui.run()
                 if not res or (isinstance(res, tuple) and res[0] is None):
                     return
                 if isinstance(res, tuple):
-                    tui_rel_path, chosen_quality_url = res
+                    tui_rel_path = res[0]
                 else:
                     tui_rel_path = res
-                    chosen_quality_url = None
             else:
                 tui_rel_path = Path("TV/Season 1")
-                chosen_quality_url = None
+            chosen_quality_url = None
 
         # ── Build final folder path, reuse existing if mirror-dup ────
         safe_title = _safe_title(title)

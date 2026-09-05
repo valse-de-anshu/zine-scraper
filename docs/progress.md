@@ -1813,7 +1813,7 @@ The scraper architecture is split into 3 distinct stages:
 - **Resolution**:
   - Implemented `_draw_header(menu="Anime")` rendering Tokyo Night Storm metadata headers prior to mode selection across all anime workflows.
   - Standardized 2-stage mode selection (`Download single episode` vs `Download whole series`) with robust regex boundary matching (`(?:[?&]ep=|/ep-|/episode-|-episode-)(\d+)`) preventing substring collisions.
-  - Reconnected `quality_callback=probe_qualities` into `CategoryImportTUI` with cached stream reuse for episode 1.
+  - Removed annoying resolution selection prompt (`quality_callback`) from the import wizard; all anime downloads automatically default to the highest resolution (`format_override="best[ext=mp4]/best"`) without prompting.
   - Updated completion logs to display `[menu]Menu[/menu] : [site]Anime[/site]`.
 
 ## 2. Responsive Terminal Layout for `CategoryImportTUI`
