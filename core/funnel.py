@@ -7,6 +7,7 @@ with site-specific scraper TUIs. Routes all operations through path config and s
 
 import os
 import sys
+import re
 import time
 import importlib
 import select
