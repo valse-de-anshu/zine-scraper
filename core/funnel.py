@@ -263,8 +263,13 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
         original_input = console.input
         original_print = console.print
+        original_sleep = time.sleep
         
         def patched_input(prompt="", **kwargs):
+            import core.ui
+            if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_TRIGGERED_DURING_ITEM", False):
+                core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
+                return ""
             if "[info]" in str(prompt) or "finished" in str(prompt).lower() or "return" in str(prompt).lower():
                 fire_notification()
                 if is_batch:
@@ -277,14 +282,28 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                 fire_notification()
             return original_print(*args, **kwargs)
 
+        def patched_sleep(secs):
+            import core.ui
+            if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_TRIGGERED_DURING_ITEM", False):
+                core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
+                return
+            original_sleep(secs)
+            if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_TRIGGERED_DURING_ITEM", False):
+                core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
+                return
+
         console.input = patched_input
         console.print = patched_print
+        time.sleep = patched_sleep
         try:
             scraper._batch_quick_grab = batch_quick_grab
             scraper._batch_flags = flags or []
             scraper._chapter_limit = chapter_limit
             hist_layer._active_batch_flags = flags or []
             tui_module.handle_tui(url, hist_layer, store_layer, scraper, batch_path=batch_path, is_batch=is_batch)
+            import core.ui
+            if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_TRIGGERED_DURING_ITEM", False):
+                core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
             fire_notification() # In case it's batch mode and didn't call input
             try:
                 final_title = getattr(scraper, "title", None)
@@ -297,6 +316,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             except Exception:
                 pass
         finally:
+            time.sleep = original_sleep
             hist_layer._active_batch_flags = []
             console.input = original_input
             console.print = original_print
