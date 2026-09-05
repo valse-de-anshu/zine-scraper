@@ -1,3 +1,21 @@
+# Progress Report - September 05, 2026 (MangaDex Multi-Language MultiSelector, Braille Animation & Cursor Visibility)
+
+- **MangaDex Multi-Language Selection (`scrapers/mangadex/`):**
+  - **`MultiSelector` Integration**: Replaced single-choice language `Selector` with `MultiSelector` (matching `scrapers/archive/`), allowing users to check multiple languages simultaneously via Spacebar and confirm via Enter.
+  - **Multi-Version Library Isolation**: When multiple languages are selected (e.g. English and Japanese), the scraper downloads each language version into its own dedicated folder (e.g. `Title [en]` and `Title [ja]`), each containing its own cover, chapters, and `.zine/meta.json` with localized `"language": chosen_lang`.
+  - **Backward Compatibility**: Selecting a single language preserves standard naming (`Title`) without appending any language tags.
+  - **History Isolation**: Multi-language downloads track chapter IDs with language namespaces (`url#<lang>`), preventing downloads of chapter 1 in one language from falsely marking chapter 1 in another language as skipped.
+
+- **Dynamic Live Braille Spinner & Baking States (`scrapers/mangadex/`, `scrapers/asurascans/`, `scrapers/omegascans/`):**
+  - **Rotating Braille Spinner**: Integrated animated 10-frame braille spinner (`["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]`) into `render_chapter_tree` for active resolving and baking states.
+  - **Smooth 12Hz Ticking via Callable `get_renderable`**: Replaced static Tree instances in `Live(render_chapter_tree(), ...)` with `Live(get_renderable=render_chapter_tree, ...)`. Rich continuously invokes `render_chapter_tree` 12 times a second, keeping the rotating braille animation and pulse bar moving fluidly without freezing while waiting for network streams or slice baking.
+  - **Status Callbacks**: Engines emit `"status": "loading"` while obtaining stream/node tokens and `"status": "baking"` before slicing strips, providing continuous visual feedback.
+
+- **Terminal Cursor Management**:
+  - **Hidden Cursor Protection**: Explicitly wrapped download loops in `console.show_cursor(False)` and `finally: console.show_cursor(True)` across workflows. Eliminates the blinking cursor sitting idly on empty terminal screens between TUI transitions or during downloads.
+
+---
+
 # Progress Report - September 05, 2026 (Batch History Logging, Flag Tracking & Revolt-Resilient Checkpointing)
 
 - **Structural Batch Logging & Dual-Log Synchronization (`core/history.py`, `core/paths.py`, `core/library.py`):**
