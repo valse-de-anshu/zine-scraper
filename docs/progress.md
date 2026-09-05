@@ -1,3 +1,23 @@
+# Progress Report - September 06, 2026 (HiAnime Stream Resolution Typo & Multi-Server Waterfall)
+
+- **HiAnime Stream Resolution Fix & Multi-Server Waterfall (`scrapers/hianime/engine.py`, `scrapers/hianime/workflow.py`):**
+  - **Identified Problem**:
+    - When attempting to download episodes from HiAnime (e.g. `https://hianime.ad/anime/ushiro-no-shoumen-kamui-san`), every single episode immediately failed with:
+      `● Ep X - ... (Error: Failed to resolve)`.
+    - **Root Causes**:
+      1. In `scrapers/hianime/engine.py`, lines 67 and 101 had a typo passing undefined variable `headers=h` instead of `headers=HEADERS` to `requests.get()`.
+      2. This caused `NameError: name 'h' is not defined` on every stream resolution request. The exception was caught by a generic `try...except` block, silently returning `None` and causing the workflow to report `Failed to resolve`.
+      3. `_server_priority` and the direct regex extractor lacked support for `bibiemb.xyz` Cloudflare mirror servers, which stream video directly without Cloudflare bot challenges or ByteDance 403 blocks.
+      4. `workflow.py` only attempted the first discovered stream and lacked multi-stream fallback iteration.
+  - **Resolution**:
+    - **Headers Typo Resolution**: Replaced undefined `headers=h` with `headers=HEADERS` across all watch page and embed extraction requests.
+    - **Multi-Server Candidate Discovery (`resolve_episode_streams`)**: Implemented multi-stream resolution discovering all working mirrors (`HD-2 bibiemb`, `HD-1 vivibebe`, etc.).
+    - **Direct Regex Extraction for Cloudflare Mirrors**: Added direct regex m3u8 extraction for `bibiemb.xyz` and `vibe` servers without Playwright overhead.
+    - **Multi-Server Waterfalling (`workflow.py`)**: Updated the episode download loop to waterfall through all candidate streams automatically if any server fails.
+    - **Live Download Verification**: Verified live extraction on all episodes of `Ushiro no Shoumen Kamui-san` and successfully downloaded Episode 1 end-to-end (572 MB 1080p video) with 0 errors.
+
+---
+
 # Progress Report - September 06, 2026 (YouTube Album Waterfall Hardening & Quick Grab Isolation)
 
 - **YouTube Music Album Waterfall Hardening & Quick Grab Directory Isolation (`scrapers/youtube/engine.py`, `scrapers/youtube/workflow.py`, `scrapers/youtube/tui.py`):**
