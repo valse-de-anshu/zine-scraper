@@ -63,7 +63,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         base_folder = Path(*target_path.parts[:idx+1])
     else:
         base_folder = ZineFolder(target_path) / title
-    location_manager.create_directory(base_folder)
     save_url_to_file(url, title)
 
     # ── Interactive Multi-Language Selection ─────────────────────────────────
@@ -120,8 +119,18 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     else:
         chosen_langs = [getattr(scraper, "chosen_language", "en") or "en"]
 
+    # Prune empty base_folder if multiple languages are chosen to avoid clutter
+    if len(chosen_langs) > 1 and base_folder.exists() and base_folder.is_dir():
+        try:
+            if not any(base_folder.iterdir()):
+                base_folder.rmdir()
+        except Exception:
+            pass
+
     # Hide terminal cursor throughout the entire downloading workflow
     console.show_cursor(False)
+    multilang_summary = []
+    all_langs_str = ", ".join(LANGUAGE_NAMES.get(l, l.upper()) for l in chosen_langs)
     try:
         for lang_idx, chosen_lang in enumerate(chosen_langs, 1):
             scraper.chosen_language = chosen_lang
@@ -211,17 +220,28 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             verified_nums, to_process = verify_chapters(folder, chapters, tracker, track_url)
             to_process = apply_chapter_limit(to_process, scraper)
 
-            startup_clear()
-            print_banner()
-            if is_batch:
-                console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
-            console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
-            cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
-            console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
-            console.print(f"[menu]Folder[/menu]       : [sexy_pink]{folder.resolve()}[/sexy_pink]")
-            console.print("")
+            tree_title = f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title
+            tree_lang = f"{lang_display} ({lang_idx}/{len(chosen_langs)})" if len(chosen_langs) > 1 else lang_display
+
+            if lang_idx == 1:
+                startup_clear()
+                print_banner()
+                if is_batch:
+                    console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+                console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+                cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
+                console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
+                if len(chosen_langs) > 1:
+                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+                    console.print(f"[menu]Languages[/menu]    : [site]{all_langs_str}[/site] ({len(chosen_langs)} selected)")
+                else:
+                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{folder.resolve()}[/sexy_pink]")
+                console.print("")
+            else:
+                console.print(f"\n[site]{'─' * 60}[/site]")
+                console.print(f"[site]◆ Language [{lang_idx}/{len(chosen_langs)}]: {lang_display_name} [{chosen_lang}][/site]\n")
             
-            render_completion_tree(title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui, language=lang_display)
+            render_completion_tree(tree_title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui, language=tree_lang)
             
             completed_history = []
 
@@ -236,9 +256,13 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
                 cat_disp = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
                 console.print(f"[menu]Category[/menu]     : [info]{cat_disp}[/info]")
-                console.print(f"[menu]Folder[/menu]       : [sexy_pink]{folder.resolve()}[/sexy_pink]")
+                if len(chosen_langs) > 1:
+                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+                    console.print(f"[menu]Languages[/menu]    : [site]{all_langs_str}[/site] ({len(chosen_langs)} selected)")
+                else:
+                    console.print(f"[menu]Folder[/menu]       : [sexy_pink]{folder.resolve()}[/sexy_pink]")
                 console.print("")
-                render_completion_tree(title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui, language=lang_display)
+                render_completion_tree(tree_title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui, language=tree_lang)
                 for hist in completed_history:
                     console.print(hist)
                     
@@ -261,6 +285,14 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             
             if not to_process:
                 console.print(f"[success]All chapters for {lang_display_name} are already downloaded.[/success]\n")
+                multilang_summary.append({
+                    "lang_name": lang_display_name,
+                    "code": chosen_lang,
+                    "status": "Already up to date",
+                    "saved": len(verified_nums),
+                    "total": len(chapters),
+                    "color": "success"
+                })
                 continue
 
             console.print(" ")
@@ -380,10 +412,53 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                     return
                 time.sleep(CHAPTER_DELAY)
 
+            if success_count == len(to_process):
+                status_str = "Complete"
+                color_str = "success"
+            elif success_count > 0:
+                status_str = f"Partial ({success_count}/{len(to_process)})"
+                color_str = "warning"
+            else:
+                status_str = "Failed"
+                color_str = "error"
+
+            multilang_summary.append({
+                "lang_name": lang_display_name,
+                "code": chosen_lang,
+                "status": status_str,
+                "saved": success_count,
+                "total": len(to_process),
+                "color": color_str
+            })
+
             if success_count > 0:
                 console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved for {lang_display_name}\n")
             else:
                 console.print(f"\n[error]✘[/error] Failed: No chapters saved for {lang_display_name}\n")
+
+        if len(chosen_langs) > 1 and multilang_summary:
+            from rich.table import Table
+            summary_table = Table(
+                title="◆ Multi-Language Download Summary",
+                title_style="title",
+                header_style="menu",
+                border_style="unselected",
+                show_lines=False
+            )
+            summary_table.add_column("Language", style="site")
+            summary_table.add_column("Code", style="tree.line")
+            summary_table.add_column("Downloaded / Total", justify="right")
+            summary_table.add_column("Status", justify="center")
+
+            for item in multilang_summary:
+                summary_table.add_row(
+                    item["lang_name"],
+                    f"\\[{item['code']}]",
+                    f"{item['saved']}/{item['total']}",
+                    f"[{item['color']}]{item['status']}[/{item['color']}]"
+                )
+            console.print(summary_table)
+            console.print("")
 
     finally:
         console.show_cursor(True)

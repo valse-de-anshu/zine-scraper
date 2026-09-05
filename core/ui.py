@@ -1757,7 +1757,7 @@ def apply_chapter_limit(to_process: List[Tuple[str, str]], scraper: Any) -> List
     --0 (Quick grab) downloads the single next item.
     """
     chapter_limit = getattr(scraper, '_chapter_limit', None)
-    if chapter_limit is not None and chapter_limit > 0:
+    if isinstance(chapter_limit, int) and chapter_limit > 0:
         return to_process[:chapter_limit]
     if getattr(scraper, '_batch_quick_grab', False):
         return to_process[:1]

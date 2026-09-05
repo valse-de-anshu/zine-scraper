@@ -1,3 +1,21 @@
+# Progress Report - September 05, 2026 (MangaDex Multi-Language Folder Pruning & Multi-Language Summary Logging)
+
+- **MangaDex Multi-Language Workflow & Folder Isolation (`scrapers/mangadex/workflow.py`, `core/ui.py`):**
+  - **Eliminated Phantom Base Folder Creation**:
+    - Previously, `location_manager.create_directory(base_folder)` was called prematurely before interactive language selection occurred. When multiple languages were chosen, chapters were routed to `Title [lang]`, leaving an empty, untagged `Title` base folder lingering in the library.
+    - Deferred folder creation until the active language folder is determined.
+    - Added empty base folder pruning check (`if len(chosen_langs) > 1: base_folder.rmdir()`) if an empty base directory was created by previous runs.
+  - **Non-Destructive Multi-Language Progress Reporting**:
+    - Previously, `startup_clear()` was unconditionally invoked on every language, wiping earlier language logs from the terminal scrollback and leaving only the final language visible.
+    - Updated to clear screen only on the first language (`if lang_idx == 1`), printing a comprehensive header displaying all chosen languages (`Languages: English, Vietnamese (2 selected)`). Subsequent languages print a clean Tokyo Night divider (`────────────────────────────────────────────────────────────`) and a language transition header (`◆ Language [2/2]: Vietnamese [vi]`), preserving terminal scrollback history.
+    - Updated progress tree title and language branch to reflect the active language counter (e.g. `Language: English (1/2)`).
+  - **Comprehensive Multi-Language Summary Table**:
+    - Added a post-run summary table rendered via Rich (`◆ Multi-Language Download Summary`) with Tokyo Night styling, showing columns for Language, Code (`[en]`), Downloaded / Total chapter counts, and per-language completion status (`Complete`, `Partial`, `Already up to date`, `Failed`).
+  - **Hardened Chapter Limit Flags (`core/ui.py`)**:
+    - Enhanced `apply_chapter_limit` to explicitly verify `isinstance(chapter_limit, int) and chapter_limit > 0` before slicing chapters.
+
+---
+
 # Progress Report - September 05, 2026 (Eliminated Page Count Freezes & Phantom Link Hanging Across All Toon & Manga Scrapers)
 
 - **Comprehensive Phantom Link & Page Count Discrepancy Resolution Across 15 Toon & Manga Engines:**
