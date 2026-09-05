@@ -1,3 +1,23 @@
+# Progress Report - September 06, 2026 (AniNeko & AniKai Stream Resolution Typo & Multi-Server Waterfall)
+
+- **AniNeko & AniKai Stream Resolution Fix & Multi-Server Waterfall (`scrapers/anineko/`, `scrapers/anikai/`):**
+  - **Identified Problem**:
+    - When downloading anime episodes from AniNeko (e.g. `https://anineko.to/watch/gals-cant-be-kind-to-otaku`), all episodes failed immediately with:
+      `● Gals Can't Be Kind to Otaku - Episode X.mp4 (Error: Failed to resolve)`
+    - Both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py` had an identical issue.
+  - **Root Causes**:
+    1. In both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py` (lines 72, 106), HTTP requests were invoked with `headers=h` instead of `headers=HEADERS`.
+    2. Because variable `h` was undefined, python raised `NameError: name 'h' is not defined`. This was caught silently by `try...except Exception:` blocks, returning `None` and marking each episode with `Failed to resolve`.
+    3. Both engines lacked `resolve_episode_streams()` to discover multiple alternative servers (`HD-2 bibiemb`, `HD-1 vivibebe`, etc.).
+    4. `workflow.py` did not waterfall through candidate streams if an individual server had issues or was blocked.
+  - **Resolution**:
+    - **Headers Typo Resolution**: Fixed undefined `headers=h` -> `headers=HEADERS` across all watch page and embed extraction calls in both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py`.
+    - **Multi-Server Candidate Discovery (`resolve_episode_streams`)**: Added multi-stream candidate discovery in both engines, discovering both `HD-2` and `HD-1` mirrors with direct regex stream extraction (`bibiemb`, `vibe`, `vivibebe`, `vidstreaming`).
+    - **Multi-Server Waterfall (`workflow.py`)**: Updated `run_workflow` in both `scrapers/anineko/workflow.py` and `scrapers/anikai/workflow.py` to seamlessly waterfall across all candidate streams.
+    - **Verification**: Verified live on `https://anineko.to/watch/gals-cant-be-kind-to-otaku/ep-1`, successfully discovering 4 valid candidate m3u8 streams across HD-2 and HD-1 mirrors.
+
+---
+
 # Progress Report - September 06, 2026 (HiAnime Stream Resolution Typo & Multi-Server Waterfall)
 
 - **HiAnime Stream Resolution Fix & Multi-Server Waterfall (`scrapers/hianime/engine.py`, `scrapers/hianime/workflow.py`):**

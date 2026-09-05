@@ -56,30 +56,30 @@ class AninekoEngine(VideoEngine):
     # Stream resolution
     # ──────────────────────────────────────────────────────────────────────────
 
-    def resolve_episode_stream(self, episode_url: str) -> dict | None:
+    def resolve_episode_streams(self, episode_url: str) -> list:
         """
         Fetches the watch page for *episode_url*, collects all data-video embed
-        URLs, sorts them by server priority, and resolves an m3u8 stream URL.
-
-        For vivibebe/vidstreaming we directly regex the embed page JS for
-        `const src = "..."` — instant, no Playwright overhead.
-        For everything else we fall back to the shared Playwright extractor.
+        URLs, sorts them by server priority, and resolves all valid m3u8 stream candidates.
         """
+        import logging
+        engine_logger = logging.getLogger(__name__)
+
         # Fetch episode page with retry
         soup = None
         for attempt in range(3):
             try:
-                r = requests.get(episode_url, headers=h, timeout=(10, 30))
+                r = requests.get(episode_url, headers=HEADERS, timeout=(10, 30))
                 r.raise_for_status()
                 soup = BeautifulSoup(r.text, "lxml")
                 break
-            except Exception:
+            except Exception as e:
                 if attempt == 2:
-                    return None
+                    engine_logger.debug(f"[AninekoEngine] Watch page fetch failed: {e}")
+                    return []
                 time.sleep(1.0 * (attempt + 1))
 
         if not soup:
-            return None
+            return []
 
         # Collect all embed URLs from data-video attributes
         embed_entries = []
@@ -87,23 +87,24 @@ class AninekoEngine(VideoEngine):
             data_video = a.get("data-video", "").strip()
             if not data_video:
                 continue
-            tab = a.get("data-tab", "")
-            embed_entries.append((data_video, tab))
+            server_name = a.text.strip()
+            embed_entries.append((data_video, server_name))
 
         if not embed_entries:
-            return None
+            return []
 
-        # Sort: prefer vivibebe, then streamhg, etc.
+        # Sort: prefer bibiemb, then vivibebe, then streamhg, etc.
         embed_entries.sort(key=lambda e: _server_priority(e[0]))
 
-        for embed_url, tab in embed_entries:
+        candidates = []
+        for embed_url, server_name in embed_entries:
             try:
                 # ── bibiemb / vivibebe / vidstreaming: direct regex extraction ──────────
                 if any(k in embed_url for k in ["bibiemb", "vivibebe", "vidstreaming", "vibe"]):
                     r_embed = None
                     for attempt in range(3):
                         try:
-                            r_embed = requests.get(embed_url, headers=h, timeout=(10, 25))
+                            r_embed = requests.get(embed_url, headers=HEADERS, timeout=(10, 25))
                             r_embed.raise_for_status()
                             break
                         except Exception:
@@ -124,34 +125,44 @@ class AninekoEngine(VideoEngine):
                         subtitles = []
                         if subtitle_url:
                             subtitles.append({"url": subtitle_url, "label": "English"})
-                        return {
+                        candidates.append({
                             "m3u8_url": m.group(1),
                             "subtitles": subtitles,
                             "qualities": [],
                             "embed_referer": embed_url,
-                        }
-                    else:
-                        if "cloudflare" in r_embed.text.lower() or "just a moment" in r_embed.text.lower():
-                            raise RuntimeError("Cloudflare block detected on video server")
-                        # If regex failed but no block, let it fall through to Playwright
-
-                # ── All other servers: Playwright fallback ───────────────────
-                from scrapers.playwright_extractor import extract_stream
-                result = asyncio.run(extract_stream(embed_url))
-                stream_url = result.get("url")
-                if stream_url:
-                    return {
-                        "m3u8_url": stream_url,
-                        "subtitles": result.get("subtitles", []),
-                        "qualities": result.get("qualities_urls", []),
-                        "embed_referer": embed_url,
-                    }
-
+                            "server_name": server_name or "Server"
+                        })
+                        continue
             except Exception as e:
-                print(f"[AninekoEngine] Server {embed_url} failed: {e}")
+                engine_logger.debug(f"[AninekoEngine] Fast extraction error on {embed_url}: {e}")
                 continue
 
-        return None
+        # If direct extraction yielded no candidates, fallback to Playwright
+        if not candidates:
+            for embed_url, server_name in embed_entries:
+                try:
+                    from scrapers.playwright_extractor import extract_stream
+                    result = asyncio.run(extract_stream(embed_url))
+                    stream_url = result.get("url")
+                    if stream_url:
+                        candidates.append({
+                            "m3u8_url": stream_url,
+                            "subtitles": result.get("subtitles", []),
+                            "qualities": result.get("qualities_urls", []),
+                            "embed_referer": embed_url,
+                            "server_name": server_name or "Alternative"
+                        })
+                        break
+                except Exception as e:
+                    engine_logger.debug(f"[AninekoEngine] Server {embed_url} failed: {e}")
+                    continue
+
+        return candidates
+
+    def resolve_episode_stream(self, episode_url: str) -> dict | None:
+        """Backwards-compatible wrapper returning the top stream candidate."""
+        streams = self.resolve_episode_streams(episode_url)
+        return streams[0] if streams else None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Download routing
@@ -165,13 +176,19 @@ class AninekoEngine(VideoEngine):
         baking_callback=None, **kwargs
     ) -> bool:
         target = raw_stream_url if raw_stream_url else url
-        if ".m3u8" in target and not is_audio:
-            success = self._fast_hls_download(
-                target, output_dir, progress_hook,
-                fixed_title, custom_thumbnail, baking_callback, **kwargs
-            )
-            if success:
-                return True
+        if target and ".m3u8" in target and not is_audio:
+            try:
+                success = self._fast_hls_download(
+                    target, output_dir, progress_hook,
+                    fixed_title, custom_thumbnail, baking_callback, **kwargs
+                )
+                if success:
+                    return True
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"[AninekoEngine] Fast HLS download failed: {e}")
+            if raw_stream_url:
+                return False
         # Fallback to base VideoEngine (yt-dlp subprocess)
         return super().download_video(
             url, output_dir, progress_hook, raw_stream_url, is_audio,
