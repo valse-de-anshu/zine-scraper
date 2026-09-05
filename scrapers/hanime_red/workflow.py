@@ -59,15 +59,20 @@ def run_workflow(
     """
     from core.paths import resolve_folder_collision
 
-    title = metadata.get("Channel/Series", "Unknown")
+    series_name = metadata.get("Channel/Series", "Unknown")
+    title = series_name
     if not is_vacuum and videos and videos[0].get("title"):
-        title = videos[0]["title"]
+        vid_t = videos[0]["title"]
+        if series_name and series_name != "Unknown" and not vid_t.lower().startswith(series_name.lower()):
+            title = f"{series_name} - {vid_t}"
+        else:
+            title = vid_t
     if title and title != "Unknown":
         tracker.set_title(scraper.url, title)
     scraper.title = title
     scraper.metadata = metadata
     # Use the safe filesystem name (apostrophes/entities cleaned) if available
-    folder_name = getattr(scraper, '_folder_name', None) or title
+    folder_name = getattr(scraper, '_folder_name', None) or series_name
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
 
     if is_vacuum:
@@ -183,8 +188,12 @@ def run_workflow(
             else:
                 sub_folder = creator_root
                 
+        target_vid_title = vid_title
+        if not is_vacuum and series_name and series_name != "Unknown" and not vid_title.lower().startswith(series_name.lower()):
+            target_vid_title = f"{series_name} - {vid_title}"
+
         resolved_file_path, is_downloaded = tracker.resolve_download_path(
-            sub_folder, vid_id, vid_title, ext,
+            sub_folder, vid_id, target_vid_title, ext,
             date_str=video.get("upload_date")
         )
         display_name = resolved_file_path.name

@@ -1,3 +1,22 @@
+# Progress Report - September 05, 2026 (HanimeRed Series & NoneType Metadata Crash Resolution)
+
+- **HanimeRed Series & Metadata Loading Resolution (`scrapers/hanime_red/scraper.py`, `plugins/yt_dlp_plugins/.../hanimered.py`, `scrapers/hanime_red/tui.py`, `scrapers/hanime_red/workflow.py`, `scrapers/hanime_red/location.py`):**
+  - **Identified Problem**:
+    - When passing a series URL (e.g. `https://hanime.red/serie/deco-x-deco-the-animation/`), `HanimeRedScraper.get_metadata_and_videos` invoked `self.engine.extract_video_info(self.url)`. Because series catalog pages contain no video player iframe, yt-dlp returned `None`. Calling `info.get("title")` immediately crashed with `AttributeError: 'NoneType' object has no attribute 'get'`.
+    - `HanimeRedIE` regex matched `https://hanime.red/serie` because it was not anchored to exclude `/serie/` or `/series/`.
+    - When a series URL was parsed, `ep_urls.add(self.url)` blindly added the series catalog URL as a video to download.
+    - Quick grab downloads for single episodes lacked series title prefixes, potentially creating ambiguous filenames like `Episode 1.mp4`.
+  - **Resolution**:
+    - **Native HTML Metadata Extraction**: Replaced premature `extract_video_info` call during metadata fetching with direct BeautifulSoup extraction. Scrapes series title from `<h1>`, episode cards, and cover art directly from the catalog page.
+    - **First-Episode Metadata Enrichment**: When parsing a series page, automatically enriches series metadata (Brand/Studio, Release Date, Plot Description, Tags) by fetching Episode 1's page.
+    - **Bidirectional Episode & Series Linking**: Episode URLs now detect the parent `/serie/<slug>/` link to discover all sister episodes in the franchise, enabling single-episode and whole-franchise downloads from either URL format.
+    - **yt-dlp Extractor Regex Hardening**: Updated `HanimeRedIE._VALID_URL` to exclude `/serie/`, `/series/`, `/tags-page/`, `/hentai/`, `/login-page/`, and `/register-page/` paths so it only targets actual playable video episodes.
+    - **TUI Episode Selection**: If the user enters a series URL and chooses "Single Episode", an interactive episode picker allows selecting which episode to download rather than defaulting blindly to Episode 1.
+    - **Quick Grab Filename Collision Protection**: When downloading single episodes via Quick Grab, filenames are prefixed with the series title (e.g. `Deco x Deco The Animation - Episode 1.mp4`).
+    - **Location Root & Custom Path Normalization**: Normalized save paths to `Vacuum/Hentai/HanimeRed` and supported the `"series"` link type.
+
+---
+
 # Progress Report - September 05, 2026 (YouTube Music Isolation, MultiSelector Tuple Resilience & Site-Wide Time Imports)
 
 - **YouTube Music Folder Resolution & Collision Prevention (`core/paths.py`, `scrapers/youtube/yt_music/location.py`):**

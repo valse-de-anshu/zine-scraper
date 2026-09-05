@@ -99,14 +99,24 @@ def handle_hanime_red_tui(
             if choice == "single":
                 norm_url = url.rstrip("/")
                 filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
-                videos[:] = filtered if filtered else videos[:1]
+                if not filtered and len(videos) > 1 and sys.stdin.isatty():
+                    ep_options = [(v.get("title", f"Episode {i+1}"), i) for i, v in enumerate(videos)]
+                    selected_idx = Selector(ep_options, "Select Episode", vertical=True).select()
+                    if selected_idx is not None and selected_idx != "toggle":
+                        videos[:] = [videos[selected_idx]]
+                    else:
+                        videos[:] = videos[:1]
+                else:
+                    videos[:] = filtered if filtered else videos[:1]
                 metadata["Total Videos"] = len(videos)
                 scraper.is_playlist = False
                 is_vacuum = False
-            else:
+            elif choice in ["flat", "nested"]:
                 scraper.franchise_structure = choice
                 scraper.is_playlist = True
                 is_vacuum = True
+            else:
+                return
         else:
             scraper.is_playlist = True
             is_vacuum = True
