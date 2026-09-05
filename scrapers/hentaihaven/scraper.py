@@ -90,8 +90,7 @@ class HentaiHavenScraper(UnifiedBaseScraper):
         self.title = series_title
         self._folder_name = re.sub(r'[<>:"/\\|?*]', '', series_title).strip()
 
-        # 3. Discover all episodes in the series
-        episodes_map = {}
+        # 3. Discover all episodes and true series cover from series catalog
         series_html = html if not ep_slug else None
         if not series_html:
             try:
@@ -102,19 +101,33 @@ class HentaiHavenScraper(UnifiedBaseScraper):
 
         series_soup = BeautifulSoup(series_html, "html.parser")
 
-        # Also grab cover from series page if missing
-        if not cover_url:
-            for s in series_soup.select("script[type=\"application/ld+json\"]"):
-                try:
-                    data = json.loads(s.string)
-                    graph = data.get("@graph", []) if isinstance(data.get("@graph"), list) else [data]
-                    for g in graph:
-                        if g.get("@type") == "ImageObject":
-                            cover_url = g.get("contentUrl") or g.get("url")
+        # Extract REAL series poster from the series catalog page
+        series_cover = None
+        for s in series_soup.select('script[type="application/ld+json"]'):
+            try:
+                data = json.loads(s.string)
+                graph = data.get("@graph", []) if isinstance(data.get("@graph"), list) else [data]
+                for g in graph:
+                    if g.get("@type") == "ImageObject":
+                        cand = g.get("contentUrl") or g.get("url")
+                        if cand and "img.hentaihaven.xxx" in cand:
+                            series_cover = cand
                             break
-                except Exception:
-                    pass
+                        elif cand and not series_cover:
+                            series_cover = cand
+            except Exception:
+                pass
 
+        if not series_cover:
+            img = series_soup.select_one('img[src*="img.hentaihaven.xxx/images/"]')
+            if img:
+                src = img.get("src")
+                series_cover = re.sub(r"/s_([^/]+)$", r"/\1", src)
+
+        if not series_cover:
+            series_cover = cover_url
+
+        episodes_map = {}
         for a in series_soup.find_all("a", href=True):
             href = a["href"]
             if f"/watch/{series_slug}/" in href:
@@ -124,11 +137,20 @@ class HentaiHavenScraper(UnifiedBaseScraper):
                     m_ep = re.search(r"/episode-(\d+)", full_norm)
                     num = int(m_ep.group(1)) if m_ep else 999
                     raw_text = a.get_text(separator=" ", strip=True)
+
+                    ep_thumb = None
+                    img_node = a.find("img")
+                    if img_node:
+                        ep_thumb_src = img_node.get("src") or img_node.get("data-src")
+                        if ep_thumb_src:
+                            ep_thumb = ep_thumb_src.replace("s_thumbnail.", "thumbnail.")
+
                     if num not in episodes_map:
                         episodes_map[num] = {
                             "url": full_norm + "/",
                             "title": f"Episode {num}" if num != 999 else (raw_text or "Episode 1"),
                             "num": num,
+                            "thumbnail": ep_thumb or series_cover,
                         }
 
         # If current URL was an episode and not in map, add it
@@ -140,6 +162,7 @@ class HentaiHavenScraper(UnifiedBaseScraper):
                     "url": self.url.rstrip("/") + "/",
                     "title": ep_title or f"Episode {curr_num}",
                     "num": curr_num,
+                    "thumbnail": cover_url or series_cover,
                 }
 
         sorted_eps = sorted(episodes_map.values(), key=lambda x: x["num"])
@@ -148,6 +171,7 @@ class HentaiHavenScraper(UnifiedBaseScraper):
                 "url": self.url,
                 "title": ep_title or "Episode 1",
                 "num": 1,
+                "thumbnail": series_cover,
             }]
 
         metadata = {
@@ -155,8 +179,8 @@ class HentaiHavenScraper(UnifiedBaseScraper):
             "Source": "HentaiHaven",
             "Total Videos": len(sorted_eps),
             "ID": series_slug,
-            "Thumbnail": cover_url,
-            "Avatar URL": cover_url,
+            "Thumbnail": series_cover,
+            "Avatar URL": series_cover,
         }
 
         videos = []
@@ -166,7 +190,7 @@ class HentaiHavenScraper(UnifiedBaseScraper):
                 "title": ep["title"],
                 "id": str(ep["num"]) if ep["num"] != 999 else str(idx),
                 "uploader": "HentaiHaven",
-                "thumbnail": cover_url,
+                "thumbnail": ep.get("thumbnail") or series_cover,
                 "upload_date": upload_date or "",
             })
 

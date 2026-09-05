@@ -275,9 +275,9 @@ class HentaiHavenEngine(VideoEngine):
 
         logger.info(f"HentaiHaven metadata saved to {meta_path}")
 
-        # ── Download cover.png ────────────────────────────────────────
+        # ── Download cover.jpg ────────────────────────────────────────
         if not skip_cover:
-            cover_path = root_dir / "cover.png"
+            cover_path = root_dir / "cover.jpg"
             if not cover_path.exists() and avatar_url:
                 self.download_avatar(avatar_url, cover_path)
 

@@ -10,11 +10,13 @@
     - **Native Next.js JSON-LD & DOM Extraction (`scrapers/hentaihaven/scraper.py`)**:
       - Parses `BreadcrumbList`, `ImageObject`, and `VideoObject` from JSON-LD schema blocks.
       - Discovers the full franchise episode list by querying `https://hentaihaven.xxx/watch/<series_slug>/` and sorting numerically (`Episode 1`, `Episode 2`, ...).
-      - Accurately captures series title (`Inaka ni wa Kore kurai shika Goraku ga Nai`) and high-res cover poster.
+      - Accurately captures series title (`Inaka ni wa Kore kurai shika Goraku ga Nai`) and the official high-resolution series poster (`https://img.hentaihaven.xxx/images/...`) from the series catalog page instead of episode screenshot thumbnails.
+      - Attaches individual episode screenshot thumbnails (`https://coverlanyvd.org/storage/...`) strictly to each video entry in `videos`, while preserving the official poster for `metadata["Thumbnail"]`, `metadata["Avatar URL"]`, and `cover.jpg`.
     - **Direct Stream Extraction & Native HLS Download (`scrapers/hentaihaven/engine.py`)**:
       - Completely removed legacy Playwright extraction.
       - Extracts master `.m3u8` playlist directly via `curl_cffi` Chrome impersonation from `VideoObject.contentUrl` or `<source>` tag in milliseconds.
       - Uses `yt-dlp --hls-prefer-native` to reliably download fragmented mp4 (`.html`) segments and merge them with audio without ffmpeg demuxer extension errors.
+      - Normalized series root cover file to `cover.jpg`.
     - **TUI & Quick Grab Naming (`scrapers/hentaihaven/workflow.py`, `scrapers/hentaihaven/tui.py`)**:
       - Single episode downloads in Quick Grab are prefixed with the true series name (e.g. `Inaka ni wa Kore kurai shika Goraku ga Nai - Episode 1.mp4`).
       - Removed duplicate input prompt on completion in TUI.
