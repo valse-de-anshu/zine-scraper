@@ -163,59 +163,84 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     if "-episode-" in url:
         is_single_ep_url = True
 
-    if not is_batch and sys.stdin.isatty() and len(videos) > 1:
-        from core.ui import Selector
+    def _draw_header(menu="Anime"):
         startup_clear()
         print_banner()
-        choice = Selector(
-            [("Download whole series", "whole"), ("Download single episode", "single")],
-            title="Mode",
-            vertical=True
-        ).select()
+        console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu}[/site]")
+        console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]")
+        console.print(f"[menu]{'Series':<12}:[/menu] [title]{title}[/title]")
+        console.print(f"[menu]{'Episodes':<12}:[/menu] [info]{len(videos)}[/info]")
+        console.print("")
+
+    if not is_batch and sys.stdin.isatty():
+        from core.ui import Selector
+        _draw_header("Anime")
+        if len(videos) > 1:
+            choice = Selector(
+                [("Download whole series", "whole"), ("Download single episode", "single")],
+                title="Mode",
+                vertical=True
+            ).select()
+        else:
+            choice = Selector(
+                [("Download single episode", "single"), ("Download whole series", "whole")],
+                title="Mode",
+                vertical=True
+            ).select()
+
         if choice == "single":
-            if "-episode-" in url:
-                ep_num = url.split("-episode-")[-1]
-                target_videos = [v for v in videos if v["url"].endswith(f"-episode-{ep_num}")]
-                if not target_videos:
-                    target_videos = [v for v in scraper.get_metadata_and_videos()[1]
-                              if v["url"].endswith(f"-episode-{ep_num}")]
-                if target_videos:
-                    videos = target_videos
+            if is_single_ep_url:
+                ep_match = re.search(r'(?:[?&]ep=|/ep-|-episode-)(\d+)', url)
+                if ep_match:
+                    ep_num = ep_match.group(1)
+                    ep_pattern = re.compile(r'(?:[?&]ep=|/ep-|/episode-|-episode-)' + re.escape(ep_num) + r'(?:[?&#/]|\Z)')
+                    target_videos = [v for v in videos if ep_pattern.search(v.get("url", "")) or str(v.get("id", "")).endswith(f"_ep{ep_num}") or str(v.get("id", "")) == ep_num]
+                    if not target_videos:
+                        try:
+                            raw_list = scraper.get_metadata_and_videos()[1]
+                            target_videos = [v for v in raw_list if ep_pattern.search(v.get("url", "")) or str(v.get("id", "")).endswith(f"_ep{ep_num}") or str(v.get("id", "")) == ep_num]
+                        except Exception:
+                            target_videos = []
+                    if target_videos:
+                        videos = target_videos
             
             if len(videos) > 1:
                 # If they pasted a category URL, ask them which episode to download
-                startup_clear()
-                print_banner()
+                _draw_header("Anime")
                 options = [(v.get("title", f"Episode {i+1}"), v) for i, v in enumerate(videos)]
-                # Add a back option? No, keep it simple.
                 selected_vid = Selector(options, title="Select Episode", vertical=True).select()
-                videos = [selected_vid]
+                if selected_vid:
+                    videos = [selected_vid]
                 
-            metadata["Total Videos"] = 1
+            metadata["Total Videos"] = len(videos)
             scraper.is_playlist = False
             is_single_episode = True
-        else:
+        elif choice == "whole":
             scraper.is_playlist = True
+            is_single_episode = False
+        else:
+            return
     else:
         if getattr(scraper, "_batch_quick_grab", False):
             if is_single_ep_url:
                 target_videos = []
-                if "-episode-" in url:
-                    ep_num = url.split("-episode-")[-1].split("?")[0]
-                    target_videos = [v for v in videos if v["url"].endswith(f"-episode-{ep_num}")]
-                
+                ep_match = re.search(r'(?:[?&]ep=|/ep-|-episode-)(\d+)', url)
+                if ep_match:
+                    ep_num = ep_match.group(1)
+                    ep_pattern = re.compile(r'(?:[?&]ep=|/ep-|/episode-|-episode-)' + re.escape(ep_num) + r'(?:[?&#/]|\Z)')
+                    target_videos = [v for v in videos if ep_pattern.search(v.get("url", "")) or str(v.get("id", "")).endswith(f"_ep{ep_num}") or str(v.get("id", "")) == ep_num]
                 if target_videos:
                     videos = target_videos
             else:
                 videos = videos[:1]
-            metadata["Total Videos"] = 1
+            metadata["Total Videos"] = len(videos)
             scraper.is_playlist = False
             is_single_episode = True
         else:
             scraper.is_playlist = True
             is_single_episode = False
 
-        # ── Determine save folder ─────────────────────────────────────────
+    # ── Determine save folder ─────────────────────────────────────────
     library_root = _get_library_root()
     anitaku_root = library_root / "Vacuum" / "Anime" / "anitaku"
 
@@ -238,10 +263,15 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
             def probe_qualities():
                 probe_video = videos[0] if videos else None
-                if probe_video and hasattr(scraper, 'resolve_episode_stream'):
+                if probe_video:
                     try:
-                        probe_stream = scraper.resolve_episode_stream(probe_video)
-                        probe_m3u8 = probe_stream.get('m3u8_url') if probe_stream else None
+                        ps = None
+                        if hasattr(scraper, 'resolve_episode_stream'):
+                            ps = scraper.resolve_episode_stream(probe_video)
+                        elif hasattr(scraper, 'engine') and hasattr(scraper.engine, 'resolve_episode_stream'):
+                            ep_u = probe_video.get("url", "") if isinstance(probe_video, dict) else str(probe_video)
+                            ps = scraper.engine.resolve_episode_stream(ep_u)
+                        probe_m3u8 = ps.get('m3u8_url') if ps else None
                         if probe_m3u8:
                             qualities = _fetch_hls_qualities(probe_m3u8, scraper.engine.headers)
                             if not qualities:
@@ -252,7 +282,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                 return []
 
             if __import__("sys").stdin.isatty() and not is_batch:
-                tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard")
+                tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard", quality_callback=probe_qualities)
                 res = tui.run()
                 if not res or (isinstance(res, tuple) and res[0] is None):
                     return
@@ -328,6 +358,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     # ── Header log ────────────────────────────────────────────────────
     startup_clear()
     print_banner()
+    console.print(f"[menu]Menu[/menu]         : [site]Anime[/site]")
     console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
     console.print(f"[menu]Category[/menu]     : [info]{tui_rel_path}[/info]")
     console.print("")

@@ -157,78 +157,78 @@ def run_workflow(
     is_single_episode = False
     import sys
 
-    # Check if the URL points directly to a specific episode
-    ep_match = re.search(r'/ep-(\d+)', url)
-    
-    if is_batch:
-        if getattr(scraper, "_batch_quick_grab", False):
+    # Auto-detect if URL specifies a single episode (contains /ep- or ?ep=)
+    is_single_ep_url = False
+    if "/ep-" in url or "?ep=" in url:
+        is_single_ep_url = True
+
+    def _draw_header(menu="Anime"):
+        startup_clear()
+        print_banner()
+        console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu}[/site]")
+        console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]")
+        console.print(f"[menu]{'Series':<12}:[/menu] [title]{title}[/title]")
+        console.print(f"[menu]{'Episodes':<12}:[/menu] [info]{len(videos)}[/info]")
+        console.print("")
+
+    if not is_batch and sys.stdin.isatty():
+        from core.ui import Selector
+        _draw_header("Anime")
+        if len(videos) > 1:
+            choice = Selector(
+                [("Download whole series", "whole"), ("Download single episode", "single")],
+                title="Mode", vertical=True
+            ).select()
+        else:
+            choice = Selector(
+                [("Download single episode", "single"), ("Download whole series", "whole")],
+                title="Mode", vertical=True
+            ).select()
+
+        if choice == "single":
+            ep_match = re.search(r'(?:[?&]ep=|/ep-|/episode-|-episode-)(\d+)', url)
             if ep_match:
                 ep_num = ep_match.group(1)
-                target = []
-                for v in videos:
-                    clean_path = v["url"].split("?")[0]
-                    if clean_path.endswith(f"/ep-{ep_num}"):
-                        target.append(v)
+                ep_pattern = re.compile(r'(?:[?&]ep=|/ep-|/episode-|-episode-)' + re.escape(ep_num) + r'(?:[?&#/]|\Z)')
+                target = [v for v in videos if ep_pattern.search(v.get("url", "")) or str(v.get("id", "")).endswith(f"_ep{ep_num}") or str(v.get("id", "")) == ep_num]
                 if target:
                     videos = target
+            if len(videos) > 1:
+                _draw_header("Anime")
+                options = [(v.get("title", f"Episode {i+1}"), v) for i, v in enumerate(videos)]
+                selected = Selector(options, title="Select Episode", vertical=True).select()
+                if selected:
+                    videos = [selected]
+            metadata["Total Videos"] = len(videos)
+            scraper.is_playlist = False
+            is_single_episode = True
+        elif choice == "whole":
+            scraper.is_playlist = True
+            is_single_episode = False
+        else:
+            return
+    else:
+        # Headless, batch, or redirected stdin mode
+        if getattr(scraper, "_batch_quick_grab", False):
+            if is_single_ep_url:
+                target_videos = []
+                ep_match = re.search(r'(?:[?&]ep=|/ep-|/episode-|-episode-)(\d+)', url)
+                if ep_match:
+                    ep_num = ep_match.group(1)
+                    ep_pattern = re.compile(r'(?:[?&]ep=|/ep-|/episode-|-episode-)' + re.escape(ep_num) + r'(?:[?&#/]|\Z)')
+                    target_videos = [v for v in videos if ep_pattern.search(v.get("url", "")) or str(v.get("id", "")).endswith(f"_ep{ep_num}") or str(v.get("id", "")) == ep_num]
+                if target_videos:
+                    videos = target_videos
             else:
                 videos = videos[:1]
-            metadata["Total Videos"] = 1
+            metadata["Total Videos"] = len(videos)
             scraper.is_playlist = False
             is_single_episode = True
         else:
             scraper.is_playlist = True
             is_single_episode = False
-    elif ep_match and not sys.stdin.isatty():
-        # Auto-select the specific episode if in headless mode
-        ep_num = ep_match.group(1)
-        target = []
-        for v in videos:
-            clean_path = v["url"].split("?")[0]
-            if clean_path.endswith(f"/ep-{ep_num}"):
-                target.append(v)
-        if target:
-            videos = target
-            metadata["Total Videos"] = 1
-            scraper.is_playlist = False
-            is_single_episode = True
 
-    elif not is_batch and sys.stdin.isatty() and len(videos) > 1:
-        from core.ui import Selector
-        startup_clear()
-        print_banner()
-        choice = Selector(
-            [("Download whole series", "whole"), ("Download single episode", "single")],
-            title="Mode", vertical=True
-        ).select()
-        if choice == "single":
-            if ep_match:
-                ep_num = ep_match.group(1)
-                target = []
-                for v in videos:
-                    clean_path = v["url"].split("?")[0]
-                    if clean_path.endswith(f"/ep-{ep_num}"):
-                        target.append(v)
-                if target:
-                    videos = target
-            if len(videos) > 1:
-                startup_clear()
-                print_banner()
-                options = [(v.get("title", f"Episode {i+1}"), v) for i, v in enumerate(videos)]
-                selected = Selector(options, title="Select Episode", vertical=True).select()
-                videos = [selected]
-            metadata["Total Videos"] = 1
-            scraper.is_playlist = False
-            is_single_episode = True
-        else:
-            scraper.is_playlist = True
-    elif len(videos) > 1:
-        scraper.is_playlist = True
-    else:
-        scraper.is_playlist = False
-        is_single_episode = len(videos) == 1
-
-        # ── Determine save folder ─────────────────────────────────────────
+    # ── Determine save folder ─────────────────────────────────────────
     library_root = _get_library_root()
     anikai_root = library_root / "Vacuum" / "Anime" / "anikai"
 
@@ -251,10 +251,15 @@ def run_workflow(
 
             def probe_qualities():
                 probe_video = videos[0] if videos else None
-                if probe_video and hasattr(scraper, 'resolve_episode_stream'):
+                if probe_video:
                     try:
-                        probe_stream = scraper.resolve_episode_stream(probe_video)
-                        probe_m3u8 = probe_stream.get('m3u8_url') if probe_stream else None
+                        ps = None
+                        if hasattr(scraper, 'resolve_episode_stream'):
+                            ps = scraper.resolve_episode_stream(probe_video)
+                        elif hasattr(scraper, 'engine') and hasattr(scraper.engine, 'resolve_episode_stream'):
+                            ep_u = probe_video.get("url", "") if isinstance(probe_video, dict) else str(probe_video)
+                            ps = scraper.engine.resolve_episode_stream(ep_u)
+                        probe_m3u8 = ps.get('m3u8_url') if ps else None
                         if probe_m3u8:
                             qualities = _fetch_hls_qualities(probe_m3u8, scraper.engine.headers)
                             if not qualities:
@@ -265,7 +270,7 @@ def run_workflow(
                 return []
 
             if __import__("sys").stdin.isatty() and not is_batch:
-                tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard")
+                tui = CategoryImportTUI(CATEGORIES, title="ZINE SCRAPER · Anime Import Wizard", quality_callback=probe_qualities)
                 res = tui.run()
                 if not res or (isinstance(res, tuple) and res[0] is None):
                     return
@@ -342,7 +347,10 @@ def run_workflow(
     # ── Header log ────────────────────────────────────────────────────────────
     startup_clear()
     print_banner()
-    menu_name = "Quick grab" if is_single_episode else "Vacuum"
+    console.print(f"[menu]Menu[/menu]         : [site]Anime[/site]")
+    console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+    console.print(f"[menu]Category[/menu]     : [info]{tui_rel_path}[/info]")
+    console.print("")
 
     if not is_single_episode:
         render_completion_tree(title, folder, metadata, verified_ids, cover_exists)

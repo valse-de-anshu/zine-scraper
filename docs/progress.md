@@ -1799,8 +1799,27 @@ The scraper architecture is split into 3 distinct stages:
   - Updated line 379 in [`scrapers/mangadex/workflow.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/mangadex/workflow.py) to reference `chosen_lang` (`check_revolt(title=f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title)`).
   - Verified multi-language downloading end-to-end with multiple selected languages (e.g., English and Vietnamese), confirming both languages download sequentially with zero errors.
 
+***
 
+# Progress Report - September 2026 (Anime Interactive TUI Standardization & Responsive Import Wizard)
 
+## 1. Interactive TUI Restoration & Harmonization Across All Anime Scrapers
+- **Root Cause**:
+  - Across the 6 anime platforms (`miruro`, `anikoto`, `hianime`, `anitaku`, `anineko`, `anikai`), the interactive TUI experience had diverged:
+    - Mode selection lacked the pre-flight Tokyo Night Storm metadata header (`Menu: Anime`, `URL`, `Series`, `Episodes`).
+    - Single episode URL filtering used raw substring checks (e.g. `f"?ep={ep_num}" in url`), which incorrectly matched episode 1 against episodes 10, 11, 12, etc.
+    - Quality probing in `CategoryImportTUI` was disconnected (`quality_callback=None`), rendering quality selection in the import wizard inert.
+    - Completion header logs printed `Menu : Vacuum` instead of `Menu : Anime`.
+- **Resolution**:
+  - Implemented `_draw_header(menu="Anime")` rendering Tokyo Night Storm metadata headers prior to mode selection across all anime workflows.
+  - Standardized 2-stage mode selection (`Download single episode` vs `Download whole series`) with robust regex boundary matching (`(?:[?&]ep=|/ep-|/episode-|-episode-)(\d+)`) preventing substring collisions.
+  - Reconnected `quality_callback=probe_qualities` into `CategoryImportTUI` with cached stream reuse for episode 1.
+  - Updated completion logs to display `[menu]Menu[/menu] : [site]Anime[/site]`.
 
-
-
+## 2. Responsive Terminal Layout for `CategoryImportTUI`
+- **Root Cause**:
+  - `CategoryImportTUI` in [`core/import_tui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/import_tui.py) used hardcoded heights (padding to 28 lines) and a 135-column table width. On standard 24-line or 80-column terminal windows, this caused vertical overflow, jitter, line jumping, and visual boundary truncation on every live frame update.
+- **Resolution**:
+  - Implemented dynamic dimension querying (`_get_dimensions()`) using `console.size` to dynamically constrain height (between 10 and 20 lines) and width (between 64 and 120 columns).
+  - Dynamically calculated left/right panel padding and right-panel text wrapping to guarantee render frames remain strictly within terminal bounds with zero flicker.
+  - Verified batch mode isolation: when `is_batch=True` or `not sys.stdin.isatty()`, all interactive selectors and the wizard are completely bypassed.
