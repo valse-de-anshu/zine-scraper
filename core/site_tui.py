@@ -254,18 +254,7 @@ SITE_CATEGORIES = [
                 "content": "Web serials / light novels",
                 "tags": "SFW · Light Novel · Archive · REST API",
                 "desc": "Clean API-driven light novel repository. Serves as a dependable backup reader for completed web serials and light novels when primary aggregators go offline."
-            },
-            {
-                "name": "LightNovelWorld",
-                "primary": "lightnovelworld.org",
-                "alts": [],
-                "rating": "8/10",
-                "popularity": "High",
-                "status": "Shutting down",
-                "content": "Web serials (Legacy / Deprecated)",
-                "tags": "SFW · Light Novel · Legacy · Shutting Down",
-                "desc": "Leading historical reader for translated Japanese, Korean, and Chinese web serials. The site is currently shutting down; alternative platforms above are recommended."
-            },
+            }
         ]
     },
     {

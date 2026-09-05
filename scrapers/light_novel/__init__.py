@@ -1,1 +1,1 @@
-# light_novel/lightnovelworld scraper package
+# light_novel scraper package

@@ -62,7 +62,6 @@ SITE_MAP = {
     "hentaimama.io": "hentaimama",
     "ohentai.org": "ohentai",
     "asmhentai.com": "asmhentai",
-    "lightnovelworld.org": "light_novel.lightnovelworld",
     "novelarchive.cc": "light_novel.novelarchive",
     "chikari.moe": "light_novel.chikari",
     "novelphoenix.com": "light_novel.novelphoenix",

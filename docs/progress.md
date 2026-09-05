@@ -1,3 +1,17 @@
+# Progress Report - September 05, 2026 (Decommissioned Defunct LightNovelWorld Platform)
+
+- **Complete Decommissioning of Defunct `lightnovelworld.org` Platform:**
+  - **Reason**: The official platform `lightnovelworld.org` has completely shut down and is no longer accessible.
+  - **Removed Package & Mappings**:
+    - Deleted obsolete package directory [`scrapers/light_novel/lightnovelworld/`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/light_novel/lightnovelworld/) (`engine.py`, `scraper.py`, `workflow.py`, `tui.py`, `location.py`, `verification.py`, `progress.py`).
+    - Removed `lightnovelworld.org` domain routing entry from [`core/site_map.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/site_map.py).
+    - Removed `LightNovelWorld` entry from the interactive Light Novel site explorer menu in [`core/site_tui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/site_tui.py).
+    - Updated [`scrapers/light_novel/README.md`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/light_novel/README.md) and [`README.md`](file:///home/valse-de-anshu/.config/zine%20scraper/README.md) to eliminate references to the defunct platform.
+    - Updated [`scrapers/light_novel/__init__.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/light_novel/__init__.py).
+    - Verified all 46 active scrapers and 81 domain mappings pass comprehensive test suites.
+
+---
+
 # Progress Report - September 05, 2026 (MangaDex Multi-Language Folder Pruning & Multi-Language Summary Logging)
 
 - **MangaDex Multi-Language Workflow & Folder Isolation (`scrapers/mangadex/workflow.py`, `core/ui.py`):**

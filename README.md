@@ -211,7 +211,6 @@ Zine natively supports 47+ platforms across 8 dedicated categories (80+ supporte
 | **NovelFire** | `novelfire.net` | `novelfire.docs` | Sanitized chapter extraction, ad-filtered text exports |
 | **NovelBuddy** | `novelbuddy.me` | `novelbuddy.com` | Next.js API chapter discovery, rich synopsis & cover grabs |
 | **NovelArchive** | `novelarchive.cc` | — | Lightweight REST API web novel repository |
-| **LightNovelWorld**| `lightnovelworld.org`| — | Historical web serial archive |
 
 ### 🎵 4. Music & Audio (SFW)
 | Platform | Primary Domain | Alternate Domains | Capabilities |

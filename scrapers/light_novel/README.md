@@ -13,15 +13,6 @@ light_novel
 │   ├── tui.py
 │   ├── verification.py
 │   └── workflow.py
-├── lightnovelworld
-│   ├── __init__.py
-│   ├── engine.py
-│   ├── location.py
-│   ├── progress.py
-│   ├── scraper.py
-│   ├── tui.py
-│   ├── verification.py
-│   └── workflow.py
 ├── novelarchive
 │   ├── engine.py
 │   ├── location.py
@@ -67,6 +58,5 @@ The `light_novel` directory acts as an umbrella package for text-based light nov
 - **NovelFire** (`novelfire.net`): High-catalogue light novel platform with DOM sanitization.
 - **NovelBuddy** (`novelbuddy.me`): Next.js platform with API-driven chapter indexing.
 - **NovelArchive** (`novelarchive.cc`): Direct REST API reader for web serials.
-- **LightNovelWorld** (`lightnovelworld.org`): Legacy scraper (site shutting down).
 
 Because light novels are text-based, chapters are formatted as clean `.txt` files containing chapter titles, paragraph breaks, and calculated word counts inside `<Title>/novel chapter/` with rich `.zine/meta.json` metadata.
