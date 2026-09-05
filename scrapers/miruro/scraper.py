@@ -157,6 +157,11 @@ class MiruroScraper:
         cover = data.get('coverImage', {}).get('large') or f"https://img.anili.st/media/{anilist_id}"
         status = data.get('status', 'FINISHED')
         total_episodes = data.get('episodes') or 1
+        genres = data.get('genres') or []
+        synopsis = data.get('description') or ""
+        if synopsis:
+            import html as html_lib
+            synopsis = html_lib.unescape(re.sub(r'<[^>]+>', '', synopsis)).strip()
         
         metadata = {
             "Channel/Series": title,

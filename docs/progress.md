@@ -1,3 +1,17 @@
+# Progress Report - September 05, 2026 (Miruro Genres & Synopsis NameError Resolution)
+
+- **Miruro Metadata Resolution (`scrapers/miruro/scraper.py`):**
+  - **Identified Problem**:
+    - When accessing any anime on Miruro (e.g. `https://www.miruro.ru/watch/147103/my-happy-marriage?ep=1`), `scraper.py` failed during `get_metadata_and_videos()` with:
+      `Failed to fetch metadata: name 'genres' is not defined`.
+    - `genres` and `synopsis` were never bound from the retrieved `data` object before constructing the `metadata` and `info` dictionaries.
+  - **Resolution**:
+    - Extracted `genres = data.get('genres') or []` and `synopsis = data.get('description') or ""`.
+    - Cleaned up any embedded HTML markup from `synopsis` using `re.sub(r'<[^>]+>', '', synopsis)` and `html.unescape`.
+    - Fully populated `metadata["Genres"]`, `metadata["Description"]`, and `info["description"]`.
+
+---
+
 # Progress Report - September 05, 2026 (Hentaimama Native AJAX Stream Extraction & Clean Title Resolution)
 
 - **Hentaimama Stream Extraction, Clean Series Title & Pipeline Hardening (`scrapers/hentaimama/engine.py`, `scrapers/hentaimama/scraper.py`, `scrapers/hentaimama/tui.py`, `scrapers/hentaimama/workflow.py`):**
