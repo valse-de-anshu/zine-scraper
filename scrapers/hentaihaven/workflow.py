@@ -60,15 +60,20 @@ def run_workflow(
     """
     from core.paths import resolve_folder_collision
 
-    title = metadata.get("Channel/Series", "Unknown")
+    series_name = metadata.get("Channel/Series", "Unknown")
+    title = series_name
     if not is_vacuum and videos and videos[0].get("title"):
-        title = videos[0]["title"]
+        vid_t = videos[0]["title"]
+        if series_name and series_name != "Unknown" and not vid_t.lower().startswith(series_name.lower()):
+            title = f"{series_name} - {vid_t}"
+        else:
+            title = vid_t
     if title and title != "Unknown":
         tracker.set_title(scraper.url, title)
     scraper.title = title
     scraper.metadata = metadata
     # Use the safe filesystem name (apostrophes/entities cleaned) if available
-    folder_name = getattr(scraper, '_folder_name', None) or title
+    folder_name = getattr(scraper, '_folder_name', None) or series_name
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
 
     ext = "mp4"

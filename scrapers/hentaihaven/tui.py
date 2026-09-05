@@ -157,13 +157,8 @@ def handle_hentaihaven_tui(
     )
 
     if not is_batch_mode:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
-
-        pass
-        try:
-            input()
-        except EOFError:
-            pass
+        if __import__("sys").stdin.isatty():
+            console.input("\n[info]Download finished. Press Enter to return...[/info]")
 
 def handle_tui(
     url: str,

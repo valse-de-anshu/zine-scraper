@@ -1,3 +1,26 @@
+# Progress Report - September 05, 2026 (HentaiHaven Next.js Redesign & Direct Stream Download Resolution)
+
+- **HentaiHaven Series Extraction, Next.js JSON-LD Parsing & Direct Native HLS Pipeline (`scrapers/hentaihaven/scraper.py`, `scrapers/hentaihaven/engine.py`, `scrapers/hentaihaven/tui.py`, `scrapers/hentaihaven/workflow.py`):**
+  - **Identified Problem**:
+    - HentaiHaven migrated from legacy WordPress Madara (`.post-title h1`, `li.wp-manga-chapter a`) to Next.js (`<h1 ...>Title<span>Episode X</span></h1>`, Tailwind layout).
+    - When passing an episode URL (e.g. `https://hentaihaven.xxx/watch/inaka-ni-wa-kore-kurai-shika-goraku-ga-nai/episode-1/`), selector failure caused the series title to fall back to `self.url.split("/")[-2].title()` (`"Episode-1"`).
+    - Only 1 episode was detected because legacy chapter selectors returned empty.
+    - Download failed because `engine.py` spawned a legacy `playwright_extractor.py` subprocess that hung or was intercepted by ads instead of extracting the stream.
+  - **Resolution**:
+    - **Native Next.js JSON-LD & DOM Extraction (`scrapers/hentaihaven/scraper.py`)**:
+      - Parses `BreadcrumbList`, `ImageObject`, and `VideoObject` from JSON-LD schema blocks.
+      - Discovers the full franchise episode list by querying `https://hentaihaven.xxx/watch/<series_slug>/` and sorting numerically (`Episode 1`, `Episode 2`, ...).
+      - Accurately captures series title (`Inaka ni wa Kore kurai shika Goraku ga Nai`) and high-res cover poster.
+    - **Direct Stream Extraction & Native HLS Download (`scrapers/hentaihaven/engine.py`)**:
+      - Completely removed legacy Playwright extraction.
+      - Extracts master `.m3u8` playlist directly via `curl_cffi` Chrome impersonation from `VideoObject.contentUrl` or `<source>` tag in milliseconds.
+      - Uses `yt-dlp --hls-prefer-native` to reliably download fragmented mp4 (`.html`) segments and merge them with audio without ffmpeg demuxer extension errors.
+    - **TUI & Quick Grab Naming (`scrapers/hentaihaven/workflow.py`, `scrapers/hentaihaven/tui.py`)**:
+      - Single episode downloads in Quick Grab are prefixed with the true series name (e.g. `Inaka ni wa Kore kurai shika Goraku ga Nai - Episode 1.mp4`).
+      - Removed duplicate input prompt on completion in TUI.
+
+---
+
 # Progress Report - September 05, 2026 (Hentai Video Platform Folder Architecture & TUI Simplification)
 
 - **Standardized Video Folder Routing Across All 9 Hentai Platforms (`scrapers/hanime/`, `scrapers/hanime_red/`, `scrapers/hentaihaven/`, `scrapers/hentaihaven_co/`, `scrapers/hentaicity/`, `scrapers/hstream/`, `scrapers/oppai_stream/`, `scrapers/hentaimama/`, `scrapers/ohentai/`):**

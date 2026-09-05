@@ -1,10 +1,15 @@
-from curl_cffi import requests
 import re
+import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from bs4 import BeautifulSoup
+from curl_cffi import requests
 from core.base_scraper import UnifiedBaseScraper
 from .engine import HentaiHavenEngine
+
+logger = logging.getLogger(__name__)
+
 
 class HentaiHavenScraper(UnifiedBaseScraper):
     def __init__(self, url: str):
@@ -13,95 +18,157 @@ class HentaiHavenScraper(UnifiedBaseScraper):
         self.is_playlist = True
         self.session = requests.Session(impersonate="chrome124")
         self.title = "Unknown"
-        self.title = "Unknown"
         self._folder_name = "Unknown"
 
     def get_link_type(self) -> str:
-        return "model"
+        return "series"
 
     def get_metadata_and_videos(self, playlist_limit=None, playlist_start=None, enrich_metadata=True) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-        def fetch(url):
-            res = self.session.get(url, timeout=(10, 30))
+        def fetch(u: str) -> str:
+            res = self.session.get(u, timeout=(10, 30))
             res.raise_for_status()
             return res.text
-            
+
         html = self.retry(lambda: fetch(self.url))
         soup = BeautifulSoup(html, "html.parser")
-        
-        title_sel = self.get_selector("title")
-        title_node = soup.select_one(title_sel) if title_sel else None
-        series_title = title_node.text.strip() if title_node else self.url.split("/")[-2].title()
+
+        # Parse series_slug and ep_slug
+        m = re.match(r"https?://([^/]+)/watch/([^/]+)(?:/([^/]+))?/?", self.url)
+        domain = m.group(1) if m else "hentaihaven.xxx"
+        series_slug = m.group(2) if m else self.url.strip("/").split("/")[-1]
+        ep_slug = m.group(3) if m else None
+        series_url = f"https://{domain}/watch/{series_slug}/"
+
+        series_title = None
+        cover_url = None
+        ep_title = None
+        upload_date = None
+
+        # 1. Parse JSON-LD metadata
+        for s in soup.select("script[type=\"application/ld+json\"]"):
+            try:
+                data = json.loads(s.string)
+                if isinstance(data, dict):
+                    graph = data.get("@graph") if isinstance(data.get("@graph"), list) else ([data] if "@type" in data else [])
+                    for g in graph:
+                        g_type = g.get("@type")
+                        if g_type == "BreadcrumbList":
+                            items = g.get("itemListElement", [])
+                            if len(items) >= 3 and not series_title:
+                                series_title = items[2].get("name")
+                            if len(items) >= 4 and not ep_title:
+                                ep_title = items[3].get("name")
+                        elif g_type == "WebPage" and not ep_slug:
+                            if not series_title:
+                                series_title = g.get("name")
+                        elif g_type == "ImageObject" and not cover_url:
+                            cover_url = g.get("contentUrl") or g.get("url")
+                        elif g_type == "VideoObject":
+                            if not cover_url:
+                                thumbs = g.get("thumbnailUrl", [])
+                                if thumbs:
+                                    cover_url = thumbs[0]
+                            if not upload_date:
+                                raw_date = g.get("uploadDate", "")
+                                upload_date = raw_date[:10].replace("-", "") if raw_date else ""
+            except Exception:
+                pass
+
+        # 2. Fallback for series title and episode title
+        h1 = soup.select_one("h1")
+        if h1:
+            span = h1.select_one("span")
+            if span:
+                ep_title = ep_title or span.text.strip()
+                span.decompose()
+            if not series_title:
+                series_title = h1.text.strip()
+
+        if not series_title:
+            series_title = series_slug.replace("-", " ").title()
 
         self.title = series_title
-        import re
         self._folder_name = re.sub(r'[<>:"/\\|?*]', '', series_title).strip()
 
-        cover_sel = self.get_selector("cover_url")
-        cover_node = soup.select_one(cover_sel) if cover_sel else None
-        cover_url = cover_node.get("src") or cover_node.get("data-src") if cover_node else None
+        # 3. Discover all episodes in the series
+        episodes_map = {}
+        series_html = html if not ep_slug else None
+        if not series_html:
+            try:
+                series_html = self.retry(lambda: fetch(series_url))
+            except Exception as e:
+                logger.warning(f"Could not fetch series catalog {series_url}: {e}")
+                series_html = html
 
-        # Episode links
-        ep_sel = self.get_selector("episode_list")
-        ep_nodes = soup.select(ep_sel) if ep_sel else []
-        
-        # Typically Madara returns episodes in reverse order (newest first)
-        ep_nodes = list(reversed(ep_nodes))
-        
-        # Fallback to current URL if no episodes found (maybe it's a single episode link)
-        if not ep_nodes:
-            import re
-            series_url_match = re.search(r'(https?://[^/]+/watch/[^/]+/)', self.url)
-            if series_url_match:
-                series_url = series_url_match.group(1)
-                if series_url != self.url and series_url != self.url + "/":
-                    try:
-                        series_html = self.retry(lambda: fetch(series_url))
-                        series_soup = BeautifulSoup(series_html, "html.parser")
-                        ep_nodes = series_soup.select(ep_sel) if ep_sel else []
-                        ep_nodes = list(reversed(ep_nodes))
-                        
-                        if not cover_url and cover_sel:
-                            c_node = series_soup.select_one(cover_sel)
-                            if c_node:
-                                cover_url = c_node.get("src") or c_node.get("data-src")
-                        if title_sel:
-                            t_node = series_soup.select_one(title_sel)
-                            if t_node:
-                                series_title = t_node.text.strip()
-                                self.title = series_title
-                                self._folder_name = re.sub(r'[<>:"/\\|?*]', '', series_title).strip()
-                    except Exception:
-                        pass
+        series_soup = BeautifulSoup(series_html, "html.parser")
 
-        if not ep_nodes:
-            ep_nodes = [{"href": self.url, "text": series_title}]
+        # Also grab cover from series page if missing
+        if not cover_url:
+            for s in series_soup.select("script[type=\"application/ld+json\"]"):
+                try:
+                    data = json.loads(s.string)
+                    graph = data.get("@graph", []) if isinstance(data.get("@graph"), list) else [data]
+                    for g in graph:
+                        if g.get("@type") == "ImageObject":
+                            cover_url = g.get("contentUrl") or g.get("url")
+                            break
+                except Exception:
+                    pass
+
+        for a in series_soup.find_all("a", href=True):
+            href = a["href"]
+            if f"/watch/{series_slug}/" in href:
+                full = f"https://{domain}" + href if href.startswith("/") else href
+                full_norm = full.rstrip("/")
+                if full_norm != series_url.rstrip("/"):
+                    m_ep = re.search(r"/episode-(\d+)", full_norm)
+                    num = int(m_ep.group(1)) if m_ep else 999
+                    raw_text = a.get_text(separator=" ", strip=True)
+                    if num not in episodes_map:
+                        episodes_map[num] = {
+                            "url": full_norm + "/",
+                            "title": f"Episode {num}" if num != 999 else (raw_text or "Episode 1"),
+                            "num": num,
+                        }
+
+        # If current URL was an episode and not in map, add it
+        if ep_slug:
+            m_curr = re.search(r"episode-(\d+)", ep_slug)
+            curr_num = int(m_curr.group(1)) if m_curr else 1
+            if curr_num not in episodes_map:
+                episodes_map[curr_num] = {
+                    "url": self.url.rstrip("/") + "/",
+                    "title": ep_title or f"Episode {curr_num}",
+                    "num": curr_num,
+                }
+
+        sorted_eps = sorted(episodes_map.values(), key=lambda x: x["num"])
+        if not sorted_eps:
+            sorted_eps = [{
+                "url": self.url,
+                "title": ep_title or "Episode 1",
+                "num": 1,
+            }]
 
         metadata = {
             "Channel/Series": series_title,
             "Source": "HentaiHaven",
-            "Total Videos": len(ep_nodes),
-            "ID": series_title.lower().replace(" ", "-"),
+            "Total Videos": len(sorted_eps),
+            "ID": series_slug,
             "Thumbnail": cover_url,
-            "Avatar URL": cover_url
+            "Avatar URL": cover_url,
         }
 
         videos = []
-        for idx, node in enumerate(ep_nodes, 1):
-            href = node.get("href", node["href"] if isinstance(node, dict) else "")
-            if not href:
-                continue
-                
-            # If href is relative, make it absolute
-            if href.startswith("/"):
-                href = f"https://{self.config['primary_domain']}{href}"
-                
+        for idx, ep in enumerate(sorted_eps, 1):
             videos.append({
-                "url": href,
-                "title": f"Episode {idx}",
-                "id": str(idx),
+                "url": ep["url"],
+                "title": ep["title"],
+                "id": str(ep["num"]) if ep["num"] != 999 else str(idx),
                 "uploader": "HentaiHaven",
                 "thumbnail": cover_url,
-                "upload_date": ""
+                "upload_date": upload_date or "",
             })
 
         return metadata, videos, {"title": series_title, "url": self.url}
+
