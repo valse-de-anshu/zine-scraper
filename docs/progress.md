@@ -1,3 +1,18 @@
+# Progress Report - September 05, 2026 (Eliminated False-Positive Notifications & OmegaScans Timeout Resilience)
+
+- **Eliminated False-Positive Success Notifications (`core/funnel.py`):**
+  - **Root Cause Resolution**: Previously, `patched_input` fired a success desktop notification if `"[info]"`, `"finished"`, or `"return"` appeared anywhere in the prompt, causing error prompts (e.g. `\n[info]Press Enter to return...[/info]`) and unconditional post-TUI execution to dispatch false `"Finished downloading: <url>"` notifications even when metadata timed out or zero chapters were downloaded.
+  - **Accurate Download Counter & Verification**: Integrated an active `download_count` interceptor on `hist_layer.mark_downloaded` and safe polymorphic guards (`check_has_downloaded()`). Success notifications are now strictly dispatched only when items were actually downloaded or the series was already up to date.
+  - **Intelligent Error Dispatch**: Captures errors printed to the console (e.g. `Failed to fetch metadata`, `Read timed out`, `No chapters saved`) and dispatches native OS error notifications (`"Zine Scraper Error"`, `"Download failed: <error>"`, `is_success=False`) instead of misleading success messages.
+  - **Batch History Accuracy**: If a download run fails with 0 items downloaded, `BatchHistoryManager` records `status="failed"` rather than falsely marking the run as `"completed"`.
+  - **Menu Navigation Silence**: Cleanly returning or backing out of menus without downloads or errors no longer triggers any notification.
+
+- **OmegaScans API Timeout Resilience & Retries (`scrapers/omegascans/`):**
+  - **Exponential Backoff & Retries**: Implemented `_request_get` across series, chapter list, and chapter stream endpoints with 3 retries and increased timeout `(10, 30)` to handle Cloudflare and slow network responses on `api.omegascans.org`.
+  - **Session Connection Pooling**: Mounted an `HTTPAdapter` with automatic retry handling for transient HTTP 429 and 5xx status codes in `make_api_session()`.
+
+---
+
 # Progress Report - September 05, 2026 (MangaDex Multi-Language MultiSelector, Braille Animation & Cursor Visibility)
 
 - **MangaDex Multi-Language Selection (`scrapers/mangadex/`):**

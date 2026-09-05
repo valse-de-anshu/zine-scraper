@@ -78,6 +78,22 @@ class OmegaScansScraper:
 
     # ── Metadata & chapter list ───────────────────────────────────────────────
 
+    def _request_get(self, url: str, **kwargs):
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = self.session.get(url, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     def get_title_and_chapters(self) -> Tuple[str, List[Tuple[str, str]]]:
         """
         Returns (title, [(ch_num_str, full_chapter_url), ...]) sorted oldest→newest.
@@ -88,8 +104,7 @@ class OmegaScansScraper:
 
         # If URL is already a specific chapter, skip the full chapter list
         if chapter_slug:
-            r = self.session.get(f"{OMEGA_API_BASE}/series/{series_slug}", timeout=15)
-            r.raise_for_status()
+            r = self._request_get(f"{OMEGA_API_BASE}/series/{series_slug}")
             meta = r.json()
             self._apply_meta(meta)
             m = re.search(r"(\d+(?:\.\d+)?)", chapter_slug)
@@ -97,8 +112,7 @@ class OmegaScansScraper:
             return self.title, [(num, self.url)]
 
         # Full series: fetch metadata + chapter list
-        r = self.session.get(f"{OMEGA_API_BASE}/series/{series_slug}", timeout=15)
-        r.raise_for_status()
+        r = self._request_get(f"{OMEGA_API_BASE}/series/{series_slug}")
         meta = r.json()
         self._apply_meta(meta)
         series_id = meta.get("id")
@@ -106,12 +120,10 @@ class OmegaScansScraper:
             raise RuntimeError(f"No series ID returned for '{series_slug}'")
 
         # OmegaScans returns chapters newest-first; we sort oldest-first
-        r2 = self.session.get(
+        r2 = self._request_get(
             f"{OMEGA_API_BASE}/chapter/query"
-            f"?page=1&perPage=10000&series_id={series_id}",
-            timeout=15,
+            f"?page=1&perPage=10000&series_id={series_id}"
         )
-        r2.raise_for_status()
         raw_chapters = r2.json().get("data", [])
 
         chapters = []
@@ -162,11 +174,9 @@ class OmegaScansScraper:
         if not chapter_slug:
             raise ValueError(f"No chapter slug in: {ch_url}")
 
-        r = self.session.get(
-            f"{OMEGA_API_BASE}/chapter/{series_slug}/{chapter_slug}",
-            timeout=15,
+        r = self._request_get(
+            f"{OMEGA_API_BASE}/chapter/{series_slug}/{chapter_slug}"
         )
-        r.raise_for_status()
         data = r.json()
 
         ch_info = data.get("chapter", {})

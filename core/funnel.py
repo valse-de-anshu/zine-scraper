@@ -250,15 +250,61 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         logging.info(f"Passing control to TUI for site: {site_folder} with scraper: {scraper.__class__.__name__}")
         
         notification_fired = False
+        last_error: Optional[str] = None
+        already_up_to_date = False
+        download_count = 0
+
+        original_mark_downloaded = getattr(hist_layer, "mark_downloaded", None)
+        def tracking_mark_downloaded(*args, **kwargs):
+            nonlocal download_count
+            download_count += 1
+            if original_mark_downloaded:
+                return original_mark_downloaded(*args, **kwargs)
+
+        if original_mark_downloaded:
+            hist_layer.mark_downloaded = tracking_mark_downloaded
+
+        def clean_error_text(text: str) -> str:
+            s = re.sub(r"\033\[[0-9;]*[mK]", "", text)
+            s = re.sub(r"\[/?[\w#= -]+\]", "", s).strip()
+            for line in s.splitlines():
+                line = line.strip()
+                if line:
+                    if len(line) > 120:
+                        line = line[:117] + "..."
+                    return line
+            return s[:120]
+
+        def check_has_downloaded() -> bool:
+            if download_count > 0:
+                return True
+            dc = getattr(scraper, "downloaded_count", None)
+            if isinstance(dc, (int, float)) and dc > 0:
+                return True
+            sc = getattr(scraper, "success_count", None)
+            if isinstance(sc, (int, float)) and sc > 0:
+                return True
+            return False
+
         def fire_notification():
             nonlocal notification_fired
-            if not notification_fired:
-                try:
-                    from butler.notify import send_os_notification
-                    t = getattr(scraper, "title", None) or url
+            if notification_fired:
+                return
+            t = getattr(scraper, "title", None) or url
+            has_downloaded = check_has_downloaded()
+            try:
+                from butler.notify import send_os_notification
+                if has_downloaded:
                     send_os_notification("Zine Scraper", f"Finished downloading: {t}", is_success=True)
-                except Exception as e:
-                    logging.error(f"Notification failed: {e}")
+                    notification_fired = True
+                elif last_error:
+                    send_os_notification("Zine Scraper Error", f"Download failed: {last_error}", is_success=False)
+                    notification_fired = True
+                elif already_up_to_date:
+                    send_os_notification("Zine Scraper", f"Already up to date: {t}", is_success=True)
+                    notification_fired = True
+            except Exception as e:
+                logging.error(f"Notification failed: {e}")
                 notification_fired = True
 
         original_input = console.input
@@ -270,16 +316,22 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_TRIGGERED_DURING_ITEM", False):
                 core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
                 return ""
-            if "[info]" in str(prompt) or "finished" in str(prompt).lower() or "return" in str(prompt).lower():
+            prompt_str = str(prompt)
+            prompt_lower = prompt_str.lower()
+            if "download finished" in prompt_lower or "press enter to return" in prompt_lower or "return to menu" in prompt_lower or ("finished" in prompt_lower and "return" in prompt_lower):
                 fire_notification()
                 if is_batch:
                     return ""
             return original_input(prompt, **kwargs)
 
         def patched_print(*args, **kwargs):
+            nonlocal last_error, already_up_to_date
             text = " ".join(str(a) for a in args)
-            if "finished" in text.lower() and "return" in text.lower():
-                fire_notification()
+            text_lower = text.lower()
+            if "[error]" in text or "failed to" in text_lower or "could not retrieve" in text_lower or "failed: no chapters" in text_lower or "download failed" in text_lower:
+                last_error = clean_error_text(text)
+            elif "already downloaded" in text_lower or "already up to date" in text_lower:
+                already_up_to_date = True
             return original_print(*args, **kwargs)
 
         def patched_sleep(secs):
@@ -309,10 +361,15 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                 final_title = getattr(scraper, "title", None)
                 if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
                     target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
-                    hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
                     from core.history import BatchHistoryManager
-                    if BatchHistoryManager._instance:
-                        BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
+                    has_downloaded = check_has_downloaded()
+                    if has_downloaded or already_up_to_date:
+                        hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
+                        if BatchHistoryManager._instance:
+                            BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
+                    elif last_error:
+                        if BatchHistoryManager._instance:
+                            BatchHistoryManager._instance.record_finish(target_url, status="failed", title=str(final_title).strip())
             except Exception:
                 pass
         finally:
@@ -320,6 +377,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             hist_layer._active_batch_flags = []
             console.input = original_input
             console.print = original_print
+            if original_mark_downloaded:
+                hist_layer.mark_downloaded = original_mark_downloaded
             
         logging.info(f"Finished TUI execution for: {url}")
         return True

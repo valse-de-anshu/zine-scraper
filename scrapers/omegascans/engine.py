@@ -435,4 +435,14 @@ def make_api_session() -> requests.Session:
     """Returns a requests.Session configured for OmegaScans API calls."""
     s = requests.Session()
     s.headers.update(_API_HEADERS)
+    from urllib3.util import Retry
+    retries = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        raise_on_status=False
+    )
+    adapter = requests.adapters.HTTPAdapter(max_retries=retries, pool_connections=5, pool_maxsize=5)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
     return s
