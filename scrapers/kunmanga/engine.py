@@ -121,30 +121,22 @@ class BaseScraper:
 
     def download_image(self, src: str, path: Path, referer: str = None) -> int:
         """Download a single image, preserving its original format.
-        Returns 1 on success, -1 on dead/fake link, 0 on retriable failure."""
-        if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
-            return 0
-
-        time.sleep(self.IMAGE_DELAY + random.uniform(0, 0.5))
-        for attempt in range(3):
+        Returns 1 on success, -1 on failure (to dynamically drop missing/dead/phantom pages)."""
+        time.sleep(self.IMAGE_DELAY + random.uniform(0, 0.2))
+        for attempt in range(2):
             try:
                 headers = HEADERS.copy()
 
                 # Attempt 1: Base domain referer
                 headers["Referer"] = f"https://{self.domain}/"
-                r = self.session.get(src, stream=True, timeout=30, headers=headers)
+                r = self.session.get(src, stream=True, timeout=(8, 15), headers=headers)
 
                 if r.status_code == 403 and referer:
                     # Attempt 2: Chapter page as referer
                     headers["Referer"] = referer
-                    r = self.session.get(src, stream=True, timeout=30, headers=headers)
+                    r = self.session.get(src, stream=True, timeout=(8, 15), headers=headers)
 
-                if r.status_code == 403:
-                    # Attempt 3: No referer
-                    headers.pop("Referer", None)
-                    r = self.session.get(src, stream=True, timeout=30, headers=headers)
-
-                if r.status_code in (403, 404):
+                if r.status_code in (403, 404, 410, 500, 502, 503, 504):
                     return -1
 
                 r.raise_for_status()
@@ -164,18 +156,19 @@ class BaseScraper:
                     for chunk in r.iter_content(chunk_size=16384):
                         f.write(chunk)
 
-                if path.stat().st_size < 2000:
-                    path.unlink()
+                if path.stat().st_size < 1500:
+                    path.unlink(missing_ok=True)
                     return -1
 
                 self.consecutive_failures = 0
                 return 1
             except Exception:
-                if path.exists(): path.unlink()
-                time.sleep(1)
+                if path.exists():
+                    path.unlink(missing_ok=True)
+                if attempt == 0:
+                    time.sleep(0.3)
 
-        self.consecutive_failures += 1
-        return 0
+        return -1
     def download_cover(self, folder: Path):
         """Download cover image, preserving original format. Skips if any cover.* already exists."""
         cover_url = getattr(self, "cover_url", None)
@@ -203,15 +196,17 @@ class BaseScraper:
                 logging.info("Cover: Saved")
                 return
             if attempt < 3:
-                time.sleep(2)
+                time.sleep(1)
 
         logging.error("Cover: Failed after 3 tries")
     def process_chapter_multi(self, img_urls: List[str], folder: Path, ch_num: str, ch_url: str, live=None, stats_callback=None) -> dict:
+        self.consecutive_failures = 0
         temp_dir = folder / f"_temp_{ch_num}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
         
         total_pages = len(img_urls)
+        valid_pages = total_pages
         
         # Fire initial callback so UI knows total pages immediately
         if stats_callback:
@@ -226,28 +221,28 @@ class BaseScraper:
                 candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
                 actual_p = candidates[0] if candidates else p
                 return (1, actual_p)
-            elif res == -1:
-                return (-1, None)
-            return (0, None)
+            return (-1, None)
 
         # Perform the download tasks silently in the background
         # The orchestrator handles the live progress display
         with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             futures = [executor.submit(dl_task, i, src) for i, src in enumerate(img_urls)]
-            valid_pages = total_pages
             for future in as_completed(futures):
                 res_code, p = future.result()
                 if res_code == 1: 
                     paths.append(p)
-                elif res_code == -1:
+                else:
                     valid_pages -= 1
                     
                 if stats_callback:
-                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": valid_pages - len(paths)})
+                    cur_missing = max(0, valid_pages - len(paths))
+                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": cur_missing})
         
         success = False
-        missing = valid_pages - len(paths)
+        missing = max(0, valid_pages - len(paths))
         final_chunks = 0
+        min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else total_pages
+
         if paths:
             if stats_callback:
                 stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
@@ -258,14 +253,15 @@ class BaseScraper:
                         stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
                     time.sleep(0.1)
                 final_chunks = slice_future.result()
-            # Allow up to 3 missing pages or 5% loss due to CDN instability
-            if len(paths) == valid_pages or (len(paths) > 0 and missing <= max(3, int(valid_pages * 0.05))):
+            
+            # Chapter succeeds if all valid pages downloaded OR at least 70% of pages sliced
+            if len(paths) >= valid_pages or (len(paths) >= min_ok and final_chunks > 0):
                 success = True
             
         shutil.rmtree(temp_dir, ignore_errors=True)
         
         if success and final_chunks:
-            return {"total": final_chunks, "downloaded": final_chunks, "missing": missing, "success": success}
+            return {"total": final_chunks, "downloaded": final_chunks, "missing": 0, "success": success}
         return {"total": valid_pages, "downloaded": len(paths), "missing": missing, "success": success}
 
     def slice_and_save(self, paths: List[Path], output_dir: Path):

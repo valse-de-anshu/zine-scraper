@@ -138,6 +138,12 @@ class KunMangaScraper(BaseScraper):
         imgs = soup.select("div.read-container img, div.page-break img, img.wp-manga-chapter-img, div.reading-content img")
         if not imgs: imgs = soup.find_all("img")
         img_urls = []
+        bad_keywords = (
+            "logo", "banner", "avatar", "icon", "ads", "advert", "sponsor",
+            "spinner", "loading", "placeholder", "pixel", "tracker", "adzerk",
+            "doubleclick", "adsterra", "exoclick", "juicyads", "trafficjunky",
+            "wp-content/plugins", "donate", "patreon", "discord_banner", "promo"
+        )
         for img in imgs:
             src = ""
             for attr in ["data-src", "src", "data-lazy-src", "data-cdn"]:
@@ -146,8 +152,15 @@ class KunMangaScraper(BaseScraper):
                     src = val.strip()
                     if src: break
             
-            if src and not any(x in src.lower() for x in ["logo", "banner", "avatar", "icon", "ads"]):
-                img_urls.append(urljoin(ch_url, src))
+            if not src or src.startswith("data:"):
+                continue
+            src_full = urljoin(ch_url, src)
+            if not src_full.startswith("http"):
+                continue
+            src_low = src_full.lower()
+            if any(x in src_low for x in bad_keywords):
+                continue
+            img_urls.append(src_full)
         
         img_urls = list(dict.fromkeys(img_urls))
         return self.process_chapter_multi(img_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)

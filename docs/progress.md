@@ -1,3 +1,32 @@
+# Progress Report - September 05, 2026 (Eliminated Page Count Freezes & Phantom Link Hanging Across All Toon & Manga Scrapers)
+
+- **Comprehensive Phantom Link & Page Count Discrepancy Resolution Across 15 Toon & Manga Engines:**
+  - **Identified Problem**: Webtoon, manhua, and manga platforms often include tracking pixels, decoy banner links, ads, or count overshoots (e.g. scraper discovers 17 URLs when only 15 real pages exist). Once the 15 real pages finished downloading, scrapers would hang at 15 for minutes or hours waiting for the phantom links, before eventually marking the chapter as failed and retrying the whole chapter from scratch 3 times.
+  - **Root Causes Fixed**:
+    1. **Phantom / Tracker / Ad Links**: HTML parsers and API endpoints were collecting `data:image/...` placeholders, tracking pixels (`pixel.wp.com`, `adzerk`, `doubleclick`, `adsterra`, `exoclick`, `trafficjunky`), loaders (`spinner`, `placeholder`, `loading`), and API count mismatches.
+    2. **Blocking Retries & Long Timeouts on Dead Links**: `download_image` previously used 3 retries with `timeout=30` (or `timeout=(10, 60)` in OmegaScans), meaning each non-existent image blocked worker threads for 90–140 seconds.
+    3. **`res_code == 0` Never Decrementing `valid_pages`**: Exceptions/timeouts in `download_image` returned `0` instead of `-1`, preventing `valid_pages` from decrementing and leaving the UI stuck at `15/17`.
+    4. **Strict Equality Trap (`len(paths) == valid_pages`)**: When 15 out of 17 images downloaded, strict equality checks failed the chapter, deleted the temp directory, and triggered 3 chapter-level retries in `workflow.py`.
+    5. **`consecutive_failures` Poisoning**: `self.consecutive_failures` was an instance-level variable never reset per chapter, permanently breaking all subsequent chapters once 5 cumulative failures were reached.
+  - **Site-Level Isolation Compliant Upgrades Across 15 Scrapers**:
+    - **`scrapers/omegascans/`**: Added `BAD_OMEGA_KEYWORDS` filter; reduced image timeout from `(10, 60)` to `(8, 20)`; implemented dynamic total reporting `valid_total = max(dl_count, total - failed)`; added tolerant completion (`downloaded_count >= valid_total or (downloaded_count >= min_ok and slices > 0)` where `min_ok = max(1, int(total * 0.70))`).
+    - **`scrapers/asurascans/`**: Added `timeout=(8, 15)`, fast `-1` rejection on 4xx/5xx/errors, reset `consecutive_failures = 0` per chapter, dynamic `valid_pages` decrementing, and >=70% slice tolerance.
+    - **`scrapers/kunmanga/`**: Added comprehensive ad/tracker keyword filtering in `scraper.py`, updated `engine.py` with `timeout=(8, 15)`, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/mangak/`**: Added CDN verification and ad/tracker keyword filtering in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/weebcentral/`**: Added `broken_image` and tracker filtering in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/fanfox/`**: Added ad/tracker filtering in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/projectsuki/`**: Added bad keywords filtering and data URL rejection in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/nhentai/`**: Updated `_download_with_retry` and `engine.py` with dynamic `valid_pages` decrementing, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/asmhentai/`**: Updated `_download_with_retry` and `engine.py` with dynamic `valid_pages` decrementing, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/mangadex/`**: Updated `engine.py` with `timeout=(8, 15)`, fast `-1` drop, dynamic total calculation `valid_pages -= 1` on missing/failed images, and seamless slicing.
+    - **`scrapers/hentai18/`**: Added comprehensive ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/hentai20/`**: Added comprehensive ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/oppai_stream/oppai_stream_toon/`**: Resilient count probe with `timeout=(10, 30)`, extension probe with `timeout=(5, 10)`, fast `-1` drop, and >=70% slice tolerance.
+    - **`scrapers/manhuaplus/`**: Added ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/manhwaus/`**: Added ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+
+---
+
 # Progress Report - September 05, 2026 (Site-Wide Network Resilience, Resilient Timeouts & Retry Loops)
 
 - **Systematic Timeout Resilience Across Scrapers (`(10, 30)` Connect & Read Timeouts):**

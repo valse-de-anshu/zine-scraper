@@ -183,11 +183,25 @@ class OmegaScansScraper:
         ch_dat  = ch_info.get("chapter_data", {})
         imgs    = ch_dat.get("images", [])
 
-        # Deduplicate while preserving order
+        # Deduplicate while preserving order and filtering invalid/ad URLs
+        bad_keywords = (
+            "spinner", "loading", "placeholder", "pixel", "tracker", "adzerk",
+            "doubleclick", "adsterra", "exoclick", "juicyads", "trafficjunky",
+            "wp-content/plugins", "banner", "donate", "patreon", "discord_banner",
+            "avatar", "icon", "logo", "promo"
+        )
         seen = set()
         unique = []
         for url in imgs:
-            if url and url not in seen:
+            if not url or not isinstance(url, str):
+                continue
+            url = url.strip()
+            if not url.startswith("http"):
+                continue
+            u_low = url.lower()
+            if any(kw in u_low for kw in bad_keywords):
+                continue
+            if url not in seen:
                 seen.add(url)
                 unique.append(url)
 

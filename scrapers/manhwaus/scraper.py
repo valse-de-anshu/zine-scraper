@@ -82,10 +82,22 @@ class ManhwaUSScraper(BaseScraper):
         imgs = soup.select("div.container-chapter-reader img, div.read-container img, div.reading-content img")
         if not imgs: imgs = soup.find_all("img")
         img_urls = []
+        bad_keywords = [
+            "logo", "banner", "avatar", "icon", "ads", "button", "loader",
+            "loading", "spinner", "placeholder", "spacer", "pixel.wp.com",
+            "broken_image", "1x1", "transparent.png", "blank.gif", "statcounter",
+            "histats", "analytics", "exoclick", "adsterra", "trafficjunky",
+            "syndication", "mgid", "doubleclick", "next-chapter", "prev-chapter",
+            "discord", "donate", "patreon", "bookmark", "recruit"
+        ]
         for img in imgs:
             src = (img.get("data-src") or img.get("src") or "").strip()
-            if src and "logo" not in src.lower() and "banner" not in src.lower():
-                img_urls.append(urljoin(ch_url, src))
+            if src and not src.startswith("data:"):
+                full_src = urljoin(ch_url, src)
+                if full_src.startswith("http") and not any(x in full_src.lower() for x in bad_keywords):
+                    img_urls.append(full_src)
         
         img_urls = list(dict.fromkeys(img_urls))
+        if not img_urls:
+            return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
         return self.process_chapter_multi(img_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)

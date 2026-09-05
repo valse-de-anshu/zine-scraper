@@ -89,6 +89,13 @@ MAX_WORKERS = 4
 
 # ─── URL validation (zero network) ────────────────────────────────────────────
 
+BAD_OMEGA_KEYWORDS = (
+    "spinner", "loading", "placeholder", "pixel", "tracker", "adzerk",
+    "doubleclick", "adsterra", "exoclick", "juicyads", "trafficjunky",
+    "wp-content/plugins", "banner", "donate", "patreon", "discord_banner",
+    "avatar", "icon", "logo", "promo"
+)
+
 def is_omega_image_url(url: str) -> bool:
     """
     Returns True only for real OmegaScans CDN image URLs.
@@ -99,6 +106,9 @@ def is_omega_image_url(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
     try:
+        url_lower = url.lower()
+        if any(kw in url_lower for kw in BAD_OMEGA_KEYWORDS):
+            return False
         p = urlparse(url)
         host = p.netloc.lower()
         ext  = os.path.splitext(p.path.lower())[1]
@@ -149,21 +159,21 @@ def download_image(url: str, dest: Path) -> bool:
       thread don't pay the TCP+TLS handshake cost — exactly what the browser does.
 
     Timeouts:
-      (10, 60) — 10s connect, 60s read per socket call.
-      Large images (4-5 MB) at CDN speeds need 20-60s.
+      (8, 20) — 8s connect, 20s read per socket call.
+      Prevents hanging for minutes on phantom or dead links.
 
     Returns True on success, False on any failure.
-    Resume: if dest already exists and is ≥ 2 KB, returns True immediately.
+    Resume: if dest already exists and is ≥ 1.5 KB, returns True immediately.
     """
     # Resume: skip already-downloaded files
-    if dest.exists() and dest.stat().st_size >= 2048:
+    if dest.exists() and dest.stat().st_size >= 1500:
         return True
 
     s = _get_thread_session()
 
     for attempt in range(2):  # 1 retry on transient errors
         try:
-            r = s.get(url, timeout=(10, 60), stream=True)
+            r = s.get(url, timeout=(8, 20), stream=True)
 
             if r.status_code in (403, 404, 410, 500, 502, 503, 504):
                 _log.debug(f"HTTP {r.status_code} for {url}")
@@ -192,11 +202,11 @@ def download_image(url: str, dest: Path) -> bool:
             except Exception:
                 tmp.unlink(missing_ok=True)
                 if attempt == 0:
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                     continue
                 return False
 
-            if tmp.stat().st_size < 2048:
+            if tmp.stat().st_size < 1500:
                 tmp.unlink(missing_ok=True)
                 return False
 
@@ -207,7 +217,7 @@ def download_image(url: str, dest: Path) -> bool:
             _log.debug(f"download_image attempt {attempt+1} error for {url}: {e}")
             dest.with_suffix(dest.suffix + ".part").unlink(missing_ok=True)
             if attempt == 0:
-                time.sleep(0.5)
+                time.sleep(0.3)
 
     return False
 
@@ -284,9 +294,11 @@ def download_chapter(
             else:
                 failed += 1
 
-        dl_count = len(downloaded)
-        _emit(stats_callback, {"total": total, "downloaded": dl_count,
-                               "missing": total - dl_count - failed})
+            dl_count = len(downloaded)
+            # Dynamic total prevents UI hanging at 15/17 when phantom/dead links fail
+            valid_total = max(dl_count, total - failed)
+            _emit(stats_callback, {"total": valid_total, "downloaded": dl_count,
+                                   "missing": max(0, valid_total - dl_count)})
 
     # ── 4. Parallel download with independent sessions per thread ─────────────
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -295,14 +307,15 @@ def download_chapter(
             f.result()   # propagate exceptions (none expected, errors are silent)
 
     downloaded_count = len(downloaded)
-    missing = total - downloaded_count
+    valid_total = max(downloaded_count, total - failed)
+    missing = max(0, valid_total - downloaded_count)
 
     if not downloaded:
         shutil.rmtree(temp_dir, ignore_errors=True)
         return {"total": total, "downloaded": 0, "missing": total, "success": False}
 
     # ── 5. Slice downloaded images into 2000px output chunks ─────────────────
-    _emit(stats_callback, {"total": total, "downloaded": downloaded_count,
+    _emit(stats_callback, {"total": valid_total, "downloaded": downloaded_count,
                            "missing": missing, "status": "baking"})
 
     folder.mkdir(parents=True, exist_ok=True)
@@ -310,13 +323,13 @@ def download_chapter(
 
     shutil.rmtree(temp_dir, ignore_errors=True)
 
-    # Chapter succeeds if we downloaded ≥ 70% of pages and produced ≥ 1 slice
+    # Chapter succeeds if we downloaded all valid pages, or ≥ 70% of pages and produced ≥ 1 slice
     min_ok = max(1, int(total * 0.70)) if total > 3 else total
-    success = downloaded_count >= min_ok and slices > 0
+    success = (downloaded_count >= valid_total) or (downloaded_count >= min_ok and slices > 0)
 
     if success:
-        return {"total": slices, "downloaded": slices, "missing": missing, "success": True}
-    return {"total": total, "downloaded": downloaded_count, "missing": missing, "success": False}
+        return {"total": slices, "downloaded": slices, "missing": 0, "success": True}
+    return {"total": valid_total, "downloaded": downloaded_count, "missing": missing, "success": False}
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -75,17 +75,26 @@ class Hentai20Scraper(BaseScraper):
         imgs = soup.select("div#readerarea img")
 
         img_urls = []
+        bad_keywords = [
+            "logo", "banner", "avatar", "icon", "ads", "button", "loader",
+            "loading", "spinner", "placeholder", "spacer", "pixel.wp.com",
+            "broken_image", "1x1", "transparent.png", "blank.gif", "statcounter",
+            "histats", "analytics", "exoclick", "adsterra", "trafficjunky",
+            "syndication", "mgid", "doubleclick", "next-chapter", "prev-chapter",
+            "discord", "donate", "patreon", "bookmark", "recruit"
+        ]
         for img in imgs:
             src = ""
             for attr in ["data-src", "src", "data-original", "data-lazy-src"]:
                 val = img.get(attr)
                 if val:
-                    src = val.strip().replace("\n", "").replace("\r", "").replace("\t", "")
-                    if src:
+                    val = val.strip().replace("\n", "").replace("\r", "").replace("\t", "")
+                    if val and not val.startswith("data:"):
+                        src = val
                         break
-            if src:
+            if src and not src.startswith("data:"):
                 full_src = urljoin(ch_url, src)
-                if not any(x in full_src.lower() for x in ["logo", "banner", "avatar", "icon", "ads", "button", "loader"]):
+                if full_src.startswith("http") and not any(x in full_src.lower() for x in bad_keywords):
                     img_urls.append(full_src)
 
         img_urls = list(dict.fromkeys(img_urls))

@@ -159,8 +159,16 @@ class MangaKScraper(BaseScraper):
         # Extract all image URLs
         img_urls = re.findall(r'https?://[^"]*\.(?:jpg|jpeg|png|webp|avif)', raw_text)
         
-        # Filter to only allow MangaK CDNs (rx.qvzr*, resmk.org, etc.)
-        img_urls = [u for u in img_urls if "rx.qvzr" in u or "resmk.org" in u]
+        # Filter to only allow MangaK CDNs (rx.qvzr*, resmk.org, etc.) and exclude trackers/ads
+        bad_keywords = (
+            "logo", "banner", "avatar", "icon", "ads", "advert", "sponsor",
+            "spinner", "loading", "placeholder", "pixel", "tracker", "promo"
+        )
+        img_urls = [
+            u for u in img_urls
+            if ("rx.qvzr" in u or "resmk.org" in u)
+            and not any(kw in u.lower() for kw in bad_keywords)
+        ]
         
         # Deduplicate
         img_urls = list(dict.fromkeys(img_urls))

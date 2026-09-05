@@ -222,8 +222,14 @@ class FanFoxScraper(BaseScraper):
                 src = (img.get("data-original") or img.get("src") or "").strip()
                 if src and "zjcdn" in src:
                     if src.startswith("//"): src = "https:" + src
-                    img_urls.append(src)
-        
+        bad_keywords = (
+            "logo", "banner", "avatar", "icon", "ads", "advert", "sponsor",
+            "spinner", "loading", "placeholder", "pixel", "tracker", "promo"
+        )
+        img_urls = [
+            u for u in img_urls
+            if u and not any(kw in u.lower() for kw in bad_keywords)
+        ]
         img_urls = list(dict.fromkeys(img_urls))
         if not img_urls:
             logger.warning(f"No images found for ch {ch_num} at {ch_url}")

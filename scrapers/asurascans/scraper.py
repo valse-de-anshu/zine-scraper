@@ -150,10 +150,11 @@ class AsuraScansScraper(BaseScraper):
         imgs = soup.find_all("img")
         for img in imgs:
             src = (img.get("data-src") or img.get("src") or img.get("data-lazy-src") or "").strip()
-            if src and "asura-images/chapters" in src:
-                # Clean up query params if any
+            if src and "asura-images/chapters" in src and not src.startswith("data:"):
                 clean_src = src.split('?')[0]
-                img_urls.append(urljoin(ch_url, clean_src))
+                full_src = urljoin(ch_url, clean_src)
+                if full_src.startswith("http"):
+                    img_urls.append(full_src)
         
         # Method 2: Extract from JSON structure if available (fallback)
         if not img_urls:
@@ -161,7 +162,9 @@ class AsuraScansScraper(BaseScraper):
             json_matches = re.findall(r'&quot;url&quot;:\[\d+,&quot;(https?://[^&]+)&quot;\]', str(soup))
             for match in json_matches:
                 if "asura-images/chapters" in match:
-                    img_urls.append(match.replace("\\/", "/"))
+                    cleaned_u = match.replace("\\/", "/")
+                    if cleaned_u.startswith("http"):
+                        img_urls.append(cleaned_u)
 
         img_urls = list(dict.fromkeys(img_urls))
         if not img_urls:

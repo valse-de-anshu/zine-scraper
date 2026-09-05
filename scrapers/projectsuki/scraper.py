@@ -144,5 +144,19 @@ class ProjectSukiScraper(BaseScraper):
         except Exception as e:
             logging.warning(f"ProjectSuki API failed: {e}")
 
-        img_urls = list(dict.fromkeys(img_urls))
-        return self.process_chapter_multi(img_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)
+        bad_keywords = (
+            "logo", "banner", "avatar", "icon", "ads", "advert", "sponsor",
+            "spinner", "loading", "placeholder", "pixel", "tracker", "promo"
+        )
+        filtered_urls = []
+        for u in img_urls:
+            if not u or u.startswith("data:"):
+                continue
+            if not u.startswith("http"):
+                continue
+            if any(kw in u.lower() for kw in bad_keywords):
+                continue
+            filtered_urls.append(u)
+
+        filtered_urls = list(dict.fromkeys(filtered_urls))
+        return self.process_chapter_multi(filtered_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)

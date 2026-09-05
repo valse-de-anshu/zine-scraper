@@ -162,21 +162,31 @@ class WeebCentralScraper(BaseScraper):
         # 1. Fetch Image List via AJAX
         img_urls = []
         ajax_url = f"https://weebcentral.com/chapters/{ch_id}/images?is_prev=False&current_page=1&reading_style=long_strip"
+        bad_keywords = (
+            "broken_image", "logo", "banner", "avatar", "icon", "ads", "advert",
+            "sponsor", "spinner", "loading", "placeholder", "pixel", "tracker", "promo"
+        )
         try:
-            r = self.session.get(ajax_url, timeout=30)
+            r = self.session.get(ajax_url, timeout=(10, 25))
             if r.status_code == 200:
                 ajax_soup = BeautifulSoup(r.text, "lxml")
                 imgs = ajax_soup.find_all("img")
                 for img in imgs:
                     src = (img.get("src") or img.get("data-src") or "").strip()
-                    if src and not src.endswith("broken_image.jpg"):
-                        img_urls.append(urljoin(ch_url, src))
+                    if not src or src.startswith("data:"):
+                        continue
+                    src_full = urljoin(ch_url, src)
+                    if not src_full.startswith("http"):
+                        continue
+                    if any(kw in src_full.lower() for kw in bad_keywords):
+                        continue
+                    img_urls.append(src_full)
         except Exception as e:
             logger.error(f"Failed to fetch images for {ch_url}: {e}")
 
         img_urls = list(dict.fromkeys(img_urls))
         if not img_urls:
             logger.warning(f"No images found for ch {ch_num} at {ch_url}")
-            return False
+            return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
 
         return self.process_chapter_multi(img_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)
