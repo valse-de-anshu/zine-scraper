@@ -45,6 +45,16 @@ class ChikariScraper(ChikariBaseEngine):
 
         super().__init__(self.series_url)
 
+    def _request_get(self, url: str, max_retries: int = 3, timeout=(10, 30), **kwargs):
+        for attempt in range(max_retries):
+            try:
+                return self.session.get(url, timeout=timeout, **kwargs)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(1 * (attempt + 1))
+        return None
+
     def get_title_and_chapters(self):
         """
         Returns (title, chapters_list) where chapters_list = [(num_str, chapter_url), ...]
@@ -57,8 +67,8 @@ class ChikariScraper(ChikariBaseEngine):
         for ep in endpoints_to_try:
             api_url = f"https://chikari.moe/api/{ep}/{self.slug}"
             try:
-                r = self.session.get(api_url, timeout=15)
-                if r.status_code == 200:
+                r = self._request_get(api_url)
+                if r and r.status_code == 200:
                     data = r.json()
                     used_endpoint = ep
                     self.endpoint_type = ep
@@ -105,8 +115,8 @@ class ChikariScraper(ChikariBaseEngine):
         while True:
             ch_api = f"https://chikari.moe/api/{used_endpoint}/{self.slug}/chapters?limit={limit}&offset={offset}"
             try:
-                r = self.session.get(ch_api, timeout=20)
-                if r.status_code != 200:
+                r = self._request_get(ch_api)
+                if not r or r.status_code != 200:
                     break
                 ch_data = r.json()
                 items = ch_data.get("items", [])
@@ -167,8 +177,8 @@ class ChikariScraper(ChikariBaseEngine):
             if self.endpoint_type == "novels":
                 api_url = f"https://chikari.moe/api/novels/{self.slug}/chapters/{ch_num}/read"
                 try:
-                    r = self.session.get(api_url, timeout=20)
-                    if r.status_code == 200:
+                    r = self._request_get(api_url)
+                    if r and r.status_code == 200:
                         data = r.json()
                         chapter_title = data.get("title") or f"Chapter {ch_num}"
                         body_text = data.get("body", "")
@@ -200,8 +210,8 @@ class ChikariScraper(ChikariBaseEngine):
             # 2. Try series API endpoint: /api/series/<slug>/chapters/<num>
             api_url = f"https://chikari.moe/api/{self.endpoint_type}/{self.slug}/chapters/{ch_num}"
             try:
-                r = self.session.get(api_url, timeout=20)
-                data = r.json() if r.status_code == 200 else {}
+                r = self._request_get(api_url)
+                data = r.json() if r and r.status_code == 200 else {}
             except Exception:
                 data = {}
 
@@ -218,7 +228,7 @@ class ChikariScraper(ChikariBaseEngine):
                     if not exists:
                         for attempt in range(3):
                             try:
-                                img_r = self.session.get(page_url, timeout=25)
+                                img_r = self.session.get(page_url, timeout=(10, 30))
                                 if img_r.status_code == 200 and len(img_r.content) > 100:
                                     from .engine import detect_image_extension
                                     ext = detect_image_extension(img_r.content[:32])
@@ -226,7 +236,7 @@ class ChikariScraper(ChikariBaseEngine):
                                     p_file.write_bytes(img_r.content)
                                     break
                             except Exception:
-                                time.sleep(1)
+                                time.sleep(1 * (attempt + 1))
                 if stats_callback:
                     stats_callback({"status": "done", "words": len(pages), "success": True})
                 return {"success": True, "words": len(pages)}

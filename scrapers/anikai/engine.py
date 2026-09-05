@@ -63,13 +63,20 @@ class AnikaiEngine(VideoEngine):
         `const src = "..."` — instant, no Playwright overhead.
         For everything else we fall back to the shared Playwright extractor.
         """
-        h = HEADERS.copy()
+        # Fetch episode page with retry
+        soup = None
+        for attempt in range(3):
+            try:
+                r = requests.get(episode_url, headers=h, timeout=(10, 30))
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, "lxml")
+                break
+            except Exception:
+                if attempt == 2:
+                    return None
+                time.sleep(1.0 * (attempt + 1))
 
-        try:
-            r = requests.get(episode_url, headers=h, timeout=15)
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, "lxml")
-        except Exception as e:
+        if not soup:
             return None
 
         # Collect all embed URLs from data-video attributes
@@ -91,7 +98,17 @@ class AnikaiEngine(VideoEngine):
             try:
                 # ── vivibebe / vidstreaming: direct regex extraction ──────────
                 if "vivibebe" in embed_url or "vidstreaming" in embed_url:
-                    r_embed = requests.get(embed_url, headers=h, timeout=12)
+                    r_embed = None
+                    for attempt in range(3):
+                        try:
+                            r_embed = requests.get(embed_url, headers=h, timeout=(10, 25))
+                            r_embed.raise_for_status()
+                            break
+                        except Exception:
+                            if attempt < 2:
+                                time.sleep(1.0 * (attempt + 1))
+                    if not r_embed:
+                        continue
                     # Extract subtitle VTT if embedded in the URL query string
                     sub_match = re.search(r'[?&]sub=([^&]+)', embed_url)
                     subtitle_url = sub_match.group(1) if sub_match else None
@@ -190,9 +207,19 @@ class AnikaiEngine(VideoEngine):
         from urllib.parse import urljoin
         import re
 
+        def _fetch_playlist(target_url):
+            for attempt in range(3):
+                try:
+                    r = requests.get(target_url, headers=headers, timeout=(10, 30))
+                    r.raise_for_status()
+                    return r.text.splitlines()
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1.0 * (attempt + 1))
+
         try:
-            resp = requests.get(m3u8_url, headers=headers, timeout=15)
-            lines = resp.text.splitlines()
+            lines = _fetch_playlist(m3u8_url)
 
             # If this is a master playlist, pick the highest-bandwidth variant
             real_url = m3u8_url
@@ -217,8 +244,7 @@ class AnikaiEngine(VideoEngine):
                 
                 if best_uri:
                     real_url = urljoin(m3u8_url, best_uri)
-                    resp = requests.get(real_url, headers=headers, timeout=15)
-                    lines = resp.text.splitlines()
+                    lines = _fetch_playlist(real_url)
 
             # Build chunk list
             chunks = []

@@ -130,17 +130,31 @@ class HianimeScraper:
             "japanese":   sidebar.get("Japanese", ""),
         }
 
+    def _get(self, url: str, **kwargs) -> requests.Response:
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        h = kwargs.pop("headers", None) or HEADERS.copy()
+        h.setdefault("Referer", self._host)
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, headers=h, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     # ──────────────────────────────────────────────────────────────────────────
     # Public API
     # ──────────────────────────────────────────────────────────────────────────
 
     def get_metadata_and_videos(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-        h = HEADERS.copy()
-        h["Referer"] = self._host
-
         # Step 1 – fetch the page we were given
-        r = requests.get(self.url, headers=h, timeout=15)
-        r.raise_for_status()
+        r = self._get(self.url)
         soup = BeautifulSoup(r.text, "lxml")
 
         # Step 2 – if we landed on a category page, convert it to a watch URL
@@ -150,8 +164,7 @@ class HianimeScraper:
             if watch_btn:
                 href = watch_btn.get("href", "")
                 watch_url = self._host + href if href.startswith("/") else href
-                r = requests.get(watch_url, headers=h, timeout=15)
-                r.raise_for_status()
+                r = self._get(watch_url)
                 soup = BeautifulSoup(r.text, "lxml")
 
         # Step 3 – extract episode list from the watch page
@@ -162,8 +175,7 @@ class HianimeScraper:
         category_url = self._category_url_from_watch(soup)
         if category_url:
             try:
-                r_meta = requests.get(category_url, headers=h, timeout=15)
-                r_meta.raise_for_status()
+                r_meta = self._get(category_url)
                 meta_raw = self._extract_metadata_from_overview(BeautifulSoup(r_meta.text, "lxml"))
             except Exception:
                 pass

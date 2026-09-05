@@ -123,11 +123,17 @@ def run_workflow(
                 try:
                     import requests
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                    r = requests.get(pfp_url, headers=headers, timeout=10)
-                    if r.status_code == 200:
-                        with open(pfp_path, "wb") as f:
-                            f.write(r.content)
-                        global_logs.append(f"  [success]✔ Downloaded Profile Picture for {profile_name}[/success]")
+                    for attempt in range(3):
+                        try:
+                            r = requests.get(pfp_url, headers=headers, timeout=(10, 30))
+                            if r.status_code == 200:
+                                with open(pfp_path, "wb") as f:
+                                    f.write(r.content)
+                                global_logs.append(f"  [success]✔ Downloaded Profile Picture for {profile_name}[/success]")
+                                break
+                        except Exception:
+                            if attempt < 2:
+                                time.sleep(1)
                 except Exception as e:
                     logger.debug(f"Failed to download profile picture: {e}")
             else:

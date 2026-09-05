@@ -23,9 +23,21 @@ class AnitakuEngine(VideoEngine):
     def resolve_episode_stream(self, episode_url: str) -> dict:
         """Intercepts embed URLs from the episode page and resolves m3u8."""
         h = HEADERS.copy()
-        r = requests.get(episode_url, headers=h)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = None
+        for attempt in range(3):
+            try:
+                r = requests.get(episode_url, headers=h, timeout=(10, 30))
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, "lxml")
+                break
+            except Exception:
+                if attempt == 2:
+                    return None
+                time.sleep(1.0 * (attempt + 1))
         
+        if not soup:
+            return None
+
         embed_urls = []
         for li in soup.select(".anime_muti_link ul li a"):
             embed_url = li.get("data-video")
@@ -52,7 +64,17 @@ class AnitakuEngine(VideoEngine):
             try:
                 # Fast direct extraction for vivibebe/vidstreaming
                 if "vivibebe" in embed_url or "vidstreaming" in embed_url:
-                    r_embed = requests.get(embed_url, headers=h, timeout=10)
+                    r_embed = None
+                    for attempt in range(3):
+                        try:
+                            r_embed = requests.get(embed_url, headers=h, timeout=(10, 25))
+                            r_embed.raise_for_status()
+                            break
+                        except Exception:
+                            if attempt < 2:
+                                time.sleep(1.0 * (attempt + 1))
+                    if not r_embed:
+                        continue
                     m = re.search(r"const\s+src\s*=\s*['\"](.*?)['\"]", r_embed.text)
                     if m:
                         return {
@@ -113,9 +135,20 @@ class AnitakuEngine(VideoEngine):
         if "embed_referer" in kwargs:
             headers["Referer"] = kwargs["embed_referer"]
             
+        def _fetch_m3u8(target_url):
+            for attempt in range(3):
+                try:
+                    r = requests.get(target_url, headers=headers, timeout=(10, 30))
+                    r.raise_for_status()
+                    return r.text
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1.0 * (attempt + 1))
+
         try:
-            resp = requests.get(m3u8_url, headers=headers, timeout=15)
-            playlist = m3u8.loads(resp.text, uri=m3u8_url)
+            m3u8_text = _fetch_m3u8(m3u8_url)
+            playlist = m3u8.loads(m3u8_text, uri=m3u8_url)
             
             real_url = m3u8_url
             if playlist.is_variant:
@@ -123,8 +156,8 @@ class AnitakuEngine(VideoEngine):
                 real_url = best.absolute_uri if best.absolute_uri else best.uri
                 if not real_url.startswith("http"):
                     real_url = m3u8_url.rsplit("/", 1)[0] + "/" + real_url
-                resp = requests.get(real_url, headers=headers, timeout=15)
-                playlist = m3u8.loads(resp.text, uri=real_url)
+                variant_text = _fetch_m3u8(real_url)
+                playlist = m3u8.loads(variant_text, uri=real_url)
                 
             chunks = []
             for i, segment in enumerate(playlist.segments):

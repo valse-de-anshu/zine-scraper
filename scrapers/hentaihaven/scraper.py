@@ -21,7 +21,7 @@ class HentaiHavenScraper(UnifiedBaseScraper):
 
     def get_metadata_and_videos(self, playlist_limit=None, playlist_start=None, enrich_metadata=True) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
         def fetch(url):
-            res = self.session.get(url, timeout=15)
+            res = self.session.get(url, timeout=(10, 30))
             res.raise_for_status()
             return res.text
             

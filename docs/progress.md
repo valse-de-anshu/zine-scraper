@@ -1,3 +1,20 @@
+# Progress Report - September 05, 2026 (Site-Wide Network Resilience, Resilient Timeouts & Retry Loops)
+
+- **Systematic Timeout Resilience Across Scrapers (`(10, 30)` Connect & Read Timeouts):**
+  - **Identified Vulnerability**: Multiple scrapers across anime, manga/comics, light novels, and image categories used rigid, short timeouts (`timeout=10` or `15`) or un-timeouted requests with zero retries, causing read timeouts and aborted downloads during Cloudflare congestion or slow origin servers.
+  - **Site-Level Isolation Compliant Upgrades**:
+    - **`scrapers/hianime/`**: Added self-contained `_get` helper with 3 retries and `(10, 30)` timeout across episode lists, AJAX server resolvers, embed pages, and m3u8 playlist fetching.
+    - **`scrapers/anineko/`**: Added `_get` helper with retries and `(10, 30)` timeout in scraper and engine for episode streams and playlist parsing.
+    - **`scrapers/anikoto/`**: Added `_get` helper with retries and `(10, 30)` timeout across base URL checks, `/ajax/episode/list`, and `/ajax/server/list`.
+    - **`scrapers/anitaku/`**: Added `_get` helper with retries and `(10, 30)` timeout across episode stream resolution and m3u8 playlist fetching.
+    - **`scrapers/anikai/`**: Added `_get` helper with retries and `(10, 30)` timeout across episode stream resolution and m3u8 playlist fetching.
+    - **`scrapers/hentaihaven/`**: Upgraded `fetch(url)` timeout to `(10, 30)`.
+    - **`scrapers/oppai_stream/`**: Added `_get` helper with retries and `(10, 30)` timeout in scraper and engine for stream URL extraction.
+    - **`scrapers/light_novel/chikari/`**: Added `_request_get` with 3 retries and `(10, 30)` timeout in `ChikariScraper` across series discovery, chapter pagination, novel read endpoint, and comic page downloads; updated `ChikariBaseEngine` (`get_soup`, `get_json`, `download_cover`) with `(10, 30)` timeouts.
+    - **`scrapers/pinterest/`**: Upgraded user board discovery, single pin extraction, and profile picture downloads in `engine.py` and `workflow.py` with 3-attempt retry loops and `(10, 30)` timeouts; upgraded async pin enrichment with `aiohttp.ClientTimeout(total=30, sock_connect=10)`.
+
+---
+
 # Progress Report - September 05, 2026 (Eliminated False-Positive Notifications & OmegaScans Timeout Resilience)
 
 - **Eliminated False-Positive Success Notifications (`core/funnel.py`):**
