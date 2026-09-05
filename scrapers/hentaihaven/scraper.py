@@ -130,7 +130,7 @@ class HentaiHavenScraper(UnifiedBaseScraper):
         episodes_map = {}
         for a in series_soup.find_all("a", href=True):
             href = a["href"]
-            if f"/watch/{series_slug}/" in href:
+            if f"/watch/{series_slug}" in href:
                 full = f"https://{domain}" + href if href.startswith("/") else href
                 full_norm = full.rstrip("/")
                 if full_norm != series_url.rstrip("/"):

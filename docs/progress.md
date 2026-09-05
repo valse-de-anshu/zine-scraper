@@ -1,3 +1,24 @@
+# Progress Report - September 05, 2026 (HentaiHaven Dead CDN Detection & Download Speedup)
+
+- **HentaiHaven Stream Health Probe & Download Optimization (`scrapers/hentaihaven/engine.py`, `scrapers/hentaihaven/scraper.py`):**
+  - **Identified Problem**:
+    - On series such as `https://hentaihaven.online/watch/chiisana-tsubomi-no-sono-oku-ni/`, the master `.m3u8` playlist references legacy stream host `https://eng-enano.top/.../c_000.html`.
+    - The hosting domain `eng-enano.top` has expired and is parked for sale on Porkbun auction.
+    - When fetching video segments, `eng-enano.top` returned 2 KB HTML auction pages (`<h1>This domain is for sale.</h1>`).
+    - `yt-dlp` treated each HTML page as a valid media fragment, downloading 373 fragments sequentially at ~600 B/s (~1 fragment/sec), taking 6.5+ minutes per episode downloading useless HTML files before ultimately failing FFmpeg merge.
+  - **Resolution**:
+    - **Fast Pre-Flight Stream Validation (`_validate_stream` in `scrapers/hentaihaven/engine.py`)**:
+      - Probes the initial media fragment of the `.m3u8` playlist via `curl_cffi` before launching `yt-dlp`.
+      - Inspects the returned payload headers and body snippet for HTML indicators (`b"<!doctype"`, `b"<html"`, `b"domain for sale"`, `b"porkbun"`).
+      - If an expired domain or parking page is detected, immediately terminates with `[error]Cannot download video: Stream CDN host is expired/dead (domain parked at auction)[/error]` without hanging.
+    - **16-Way Concurrency Speedup (`scrapers/hentaihaven/engine.py`)**:
+      - Increased `--concurrent-fragments` from `4` to `16` in `yt-dlp`.
+      - Benchmarked on active HentaiHaven CDNs (`octopusmanifest.org`), achieving multi-megabyte saturation and sub-minute episode download times.
+    - **Universal Episode URL Matching (`scrapers/hentaihaven/scraper.py`)**:
+      - Made episode link pattern matching resilient against trailing slashes across `hentaihaven.xxx` and `hentaihaven.online`.
+
+---
+
 # Progress Report - September 05, 2026 (HentaiHaven Next.js Redesign & Direct Stream Download Resolution)
 
 - **HentaiHaven Series Extraction, Next.js JSON-LD Parsing & Direct Native HLS Pipeline (`scrapers/hentaihaven/scraper.py`, `scrapers/hentaihaven/engine.py`, `scrapers/hentaihaven/tui.py`, `scrapers/hentaihaven/workflow.py`):**

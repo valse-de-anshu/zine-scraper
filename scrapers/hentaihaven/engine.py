@@ -283,6 +283,51 @@ class HentaiHavenEngine(VideoEngine):
 
     # ─── Video download ──────────────────────────────────────────────────
 
+    def _validate_stream(self, stream_url: str, depth: int = 0) -> Tuple[bool, str]:
+        """
+        Quickly tests if the HLS playlist has valid media segments rather than
+        expired/dead domains returning HTML parking pages (e.g. Porkbun auction pages).
+        """
+        if depth > 3 or not stream_url:
+            return True, "OK"
+
+        try:
+            r = requests.get(stream_url, headers=self.headers, timeout=10, impersonate="chrome124")
+            if r.status_code != 200:
+                return False, f"Server returned HTTP {r.status_code}"
+
+            first_target = None
+            for line in r.text.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if line.startswith("http"):
+                        first_target = line
+                    else:
+                        base = stream_url.rsplit("/", 1)[0]
+                        first_target = f"{base}/{line}"
+                    break
+
+            if not first_target:
+                return True, "OK"
+
+            # If master playlist pointing to quality index / child playlist
+            if ".m3u8" in first_target or ".txt" in first_target or first_target.endswith(".list"):
+                return self._validate_stream(first_target, depth + 1)
+
+            # Test first actual segment
+            r_seg = requests.get(first_target, headers=self.headers, timeout=10, impersonate="chrome124")
+            if r_seg.status_code != 200:
+                return False, f"Segment host returned HTTP {r_seg.status_code}"
+
+            snippet = r_seg.content[:300].lower()
+            if b"<!doctype" in snippet or b"<html" in snippet or b"domain for sale" in snippet or b"porkbun" in snippet or b"<head" in snippet:
+                return False, "Stream CDN host is expired/dead (domain parked at auction)"
+
+            return True, "OK"
+        except Exception as e:
+            logger.warning(f"Stream validation probe exception: {e}")
+            return True, "OK"
+
     def download_hentaihaven_video(
         self,
         url: str,
@@ -314,6 +359,14 @@ class HentaiHavenEngine(VideoEngine):
             logger.error(f"[HentaiHaven] Could not extract stream URL for {url}")
             return False
 
+        # Validate stream health before downloading to prevent hanging on dead/parked CDNs
+        valid, reason = self._validate_stream(stream_url)
+        if not valid:
+            from core.ui import console
+            console.print(f"[error]Cannot download video: {reason}[/error]")
+            logger.error(f"[HentaiHaven] Stream validation failed for {url}: {reason}")
+            return False
+
         result_path = output_dir / f"{clean_title}.mp4"
         outtmpl = str(output_dir / f"{clean_title}.%(ext)s")
 
@@ -334,12 +387,12 @@ class HentaiHavenEngine(VideoEngine):
             "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "--merge-output-format", "mp4",
             "-f", "bestvideo+bestaudio/best",
-            "--retries", "10",
-            "--fragment-retries", "10",
-            "--concurrent-fragments", "4",
+            "--retries", "5",
+            "--fragment-retries", "5",
+            "--concurrent-fragments", "16",
             "--no-check-certificate",
             "--no-warnings",
-            "--socket-timeout", "15",
+            "--socket-timeout", "10",
         ]
 
         try:
