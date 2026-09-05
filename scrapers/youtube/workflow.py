@@ -553,11 +553,7 @@ def run_workflow(
         time.sleep(0.5)
 
         import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT == 0:
-                console.print("[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
-                sys.exit(0)
-            else:
-                ui._REVOLT_LIMIT -= 1
+        if ui._REVOLT_ACTIVE and ui._REVOLT_LIMIT <= 0:
+            ui.trigger_revolt_exit()
  
     console.print(f"\n[success]✦[/success] Done\n")

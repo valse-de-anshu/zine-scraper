@@ -375,6 +375,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 res_color = "success" if page_data.get("success") else "error"
                 console.print(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
                 completed_history.append(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
+                from core.ui import check_revolt
+                if check_revolt():
+                    return
                 time.sleep(CHAPTER_DELAY)
 
             if success_count > 0:

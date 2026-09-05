@@ -1452,3 +1452,22 @@ The scraper architecture is split into 3 distinct stages:
 - **Settings TUI Decoupling**: Separated all settings TUI layout rendering, modal input logic, and keyboard listening loops from `core/funnel.py` into a standalone, isolated module [`core/settings_tui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/settings_tui.py).
 - **Clean Interface**: `core/funnel.py` now cleanly imports `launch_settings_tui()` from `core/settings_tui.py`, removing code bloat and preventing settings TUI state from corrupting funnel routing logic.
 
+***
+
+# Progress Report - September 2026 (Global Revolt Mode Ctrl+R Fix Across 44+ Sites)
+
+## 1. Global Revolt Mode (`Ctrl+R`) Architecture Fix
+- **Root Cause Analysis**:
+  - `_tty_fd` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py) exclusively attempted `os.open('/dev/tty', os.O_RDONLY)`. In standard terminal sessions, ptys, and subshells, this threw `OSError: [Errno 6] No such device or address: '/dev/tty'` and silently reset `_tty_fd = None`. Because `_tty_fd` was `None`, `get_key_nonblocking()` returned `""` forever, discarding all `Ctrl+R` keystrokes.
+  - `set_active_live(live)` previously only monkey-patched `live.update()`. The vast majority of scrapers (toon, audio, book, etc.) instantiate `Live(get_renderable=render_chapter_tree, ...)` which bypasses `live.update()` and calls `self.get_renderable()` directly. Consequently, even when `_REVOLT_TRIGGERING` was armed, the Revolt prompt was never injected into the display tree.
+  - `global_revolt_listener` did not invoke `_LIVE_INSTANCE.refresh()` upon keystrokes, causing keyboard input to stall until an external progress tick.
+  - Out of 47 scrapers, only 15 video scrapers checked `_REVOLT_ACTIVE` or `_REVOLT_LIMIT`. All toon and novel scrapers lacked Revolt limit checks and continued downloading indefinitely.
+- **Resolution**:
+  - **Universal TTY Fallback**: Updated `set_active_live` to probe both `/dev/tty` and `sys.stdin.fileno()` (when `sys.stdin.isatty()`), accurately preserving terminal attributes and raw mode across all Unix terminal environments.
+  - **Comprehensive Live Wrapping**: Wrapped both `live.get_renderable` and `live.update` with `inject_revolt_into_renderable()`, ensuring every frame (whether rendered via periodic tick or manual update) seamlessly includes the Revolt prompt (`[sexy_pink]◆ Revolt[/sexy_pink]`) and cursor. Guarded tree child replacement in-place to prevent node duplication.
+  - **Zero-Latency Key Handling**: Attached immediate `_LIVE_INSTANCE.refresh()` calls to `Ctrl+R`, digit entries, Backspace, Enter, and Escape. Added `Ctrl+C` handling inside the prompt to allow forceful exits.
+  - **Universal Scraper Revolt Interceptor**: Added guard in `set_active_live(live)` to block subsequent downloads when `_REVOLT_ACTIVE` and `_REVOLT_LIMIT <= 0`, plus exposed `check_revolt()` and `trigger_revolt_exit()`. Automatically halts toon, novel, audio, and video scrapers cleanly without code duplication.
+  - **Batch Loop & Route Guards**: Added checks in `core/funnel.py` batch loop and `route_url` to stop batch executions cleanly upon Revolt limit fulfillment without corrupting `Batch URL.txt` or `Batch History.json`.
+  - **Verification**: Created [test_revolt_mode.py](file:///home/valse-de-anshu/.gemini/antigravity-cli/brain/f89e6d40-bc3b-440e-a95f-be050eabdd30/scratch/test_revolt_mode.py) testing PTY interaction, tree node injection, and limit confirmation (`0` and `N`). Verified 100% test pass rate across all suites.
+
+

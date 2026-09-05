@@ -170,9 +170,18 @@ def handle_batch(hist_layer, store_layer):
             batch_mgr.record_finish(canonical_url, status="failed")
             console.print(f"[error]✘ Incomplete or failed: {raw_url_clean}[/error]")
 
+        import core.ui
+        if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0:
+            core.ui.trigger_revolt_exit()
+
     console.input("\n[info]Batch finished. Press Enter to return to menu...[/info]")
 
 def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
+    import core.ui
+    if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_TRIGGERED_DURING_ITEM", False):
+        core.ui.trigger_revolt_exit()
+        return False
+
     if not is_batch:
         startup_clear()
         print_banner()
