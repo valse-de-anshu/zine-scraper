@@ -5,7 +5,7 @@ import codecs
 import time
 from pathlib import Path
 from bs4 import BeautifulSoup
-from .engine import BaseScraper, urljoin, GREEN, YELLOW, RED, RESET
+from .engine import BaseScraper, urljoin
 
 logger = logging.getLogger("NHentai")
 
