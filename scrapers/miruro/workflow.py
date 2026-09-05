@@ -721,7 +721,6 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             if not domain_success:
                 # [WEB CROSS-SCRAPER FALLBACK]
                 from scrapers.anikoto.cross_scraper import fallback_cross_scraper
-                import re
                 
                 ep_match = re.search(r'ep(?:isode)?\s*-?\s*(\d+)', vid_title, re.IGNORECASE)
                 if not ep_match:
