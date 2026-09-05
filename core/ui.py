@@ -607,17 +607,19 @@ def set_active_live(live):
                             pass
                     continue
 
-        original_get_renderable = live.get_renderable
-        def custom_get_renderable():
-            renderable = original_get_renderable()
-            return inject_revolt_into_renderable(renderable)
-        live.get_renderable = custom_get_renderable
+        if not getattr(live, "_revolt_wrapped", False):
+            live._revolt_wrapped = True
+            original_get_renderable = live.get_renderable
+            def custom_get_renderable():
+                renderable = original_get_renderable()
+                return inject_revolt_into_renderable(renderable)
+            live.get_renderable = custom_get_renderable
 
-        original_update = live.update
-        def custom_update(renderable, refresh=False):
-            wrapped = inject_revolt_into_renderable(renderable)
-            return original_update(wrapped, refresh=refresh)
-        live.update = custom_update
+            original_update = live.update
+            def custom_update(renderable, refresh=False):
+                wrapped = inject_revolt_into_renderable(renderable)
+                return original_update(wrapped, refresh=refresh)
+            live.update = custom_update
     else:
         _LIVE_INSTANCE = None
         # Restore termios configuration when Live visualizer finishes

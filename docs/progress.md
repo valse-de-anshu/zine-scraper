@@ -1,3 +1,20 @@
+# Progress Report - September 06, 2026 (PornHub Duplicate Revolt Panels Elimination & Live Idempotency)
+
+- **PornHub Duplicate Revolt Panels Fix & Live Idempotency (`scrapers/pornhub/workflow.py`, `core/ui.py`):**
+  - **Identified Problem**:
+    - When triggering Revolt mode (`Ctrl+R`) during PornHub downloads, multiple duplicate `╭─ Revolt ───╮` box panels were dumped onto the terminal screen simultaneously alongside the inline progress tree node.
+  - **Root Causes**:
+    1. In `scrapers/pornhub/workflow.py`, an unnecessary outer `Live(Text(""), ..., transient=False)` context was wrapping the entire video loop.
+    2. Because `Text("")` is not a `Tree`, `inject_revolt_into_renderable` constructed a standalone Rich `Panel` (`revolt_panel`). Because `transient=False` was set, every refresh and transition between videos permanently flushed a new Revolt box panel to stdout.
+    3. At the same time, the inner `Live(render_video_tree(), ...)` also injected a Revolt branch node into the Progress tree, creating visual duplication.
+    4. Repeatedly toggling `set_active_live(_outer_live)` across video transitions re-wrapped the update callbacks multiple times.
+  - **Resolution**:
+    - **Removed `_outer_live`**: Eliminated the redundant outer Live wrapper and trailing whitespace prints in `scrapers/pornhub/workflow.py`, aligning with standard video workflows across the suite.
+    - **`set_active_live` Idempotency**: Added `_revolt_wrapped` guard in `core/ui.py:set_active_live()` to ensure Live renderable wrappers are never applied more than once on any instance.
+    - **Clean Inline Revolt**: Revolt mode now cleanly renders strictly as a single inline node inside the active Progress tree (`◆ Revolt`) without ghost panels or stdout pollution.
+
+---
+
 # Progress Report - September 06, 2026 (PornHub Pre-Flight VPN Prompt & Revolt Exit)
 
 - **PornHub Pre-Flight VPN Verification & Clean Revolt Exit (`scrapers/pornhub/tui.py`):**
