@@ -1,3 +1,31 @@
+# Progress Report - September 05, 2026 (HentaiHavenCo Episode Discovery, TUI Selection & Stream Download Resolution)
+
+- **HentaiHavenCo Episode Discovery, Full Franchise Linking & Stream Download Pipeline (`scrapers/hentaihaven_co/scraper.py`, `scrapers/hentaihaven_co/engine.py`, `scrapers/hentaihaven_co/tui.py`, `scrapers/hentaihaven_co/workflow.py`):**
+  - **Identified Problem**:
+    - When passing an episode URL like `https://hentaihaven.co/watch/solow-futago-shimai-to-katei-kyoshi-episode-3/`, only 1 episode was reported, and it was misidentified as `Episode 1` instead of `Episode 3`.
+    - The scraper relied on site search with title strings that failed on hyphenated/underscored titles (`so_low`), returning 0 results and falling back to a hardcoded `ep_num: 1`.
+    - `tui.py` had an `elif len(videos) == 1:` branch that completely skipped the `Single Episode` vs `Whole Franchise` prompt, automatically defaulting to Quick grab without user consent.
+    - Video downloads hung on `Result -> ● Starting...` because the Playwright token generator ran with Chrome 120 while `HentaiHavenCoEngine` and yt-dlp called the CDN with Chrome 124 headers and no `Referer`, causing the Cloudflare CDN (`r2.1hanime.com`) to reject requests with HTTP 403 Challenge.
+    - Workflow trees and single episode filenames displayed ambiguous titles like `Episode 1` instead of including the series prefix.
+  - **Resolution**:
+    - **DOM-Based Franchise & Episode Discovery (`scrapers/hentaihaven_co/scraper.py`)**:
+      - Extracts all franchise episodes directly from the page DOM via `.more_from_series .mfs_item`, capturing exact URLs, titles, and thumbnails.
+      - Automatically checks parent `/series/{slug}/` pages to discover all catalog episodes.
+      - Dynamically extracts the exact episode number from the URL slug (`episode-(\d+)`), eliminating hardcoded episode indices.
+      - Captures true series title (`So_low Futago Shimai to Katei Kyoshi`), official series cover poster (`/uploads/img_6a79ebfd9273a8.34102915.jpg`), Brand/Studio (`nur`), release date, and tags directly from `.info_bottom`.
+    - **Always-Prompt TUI Selection (`scrapers/hentaihaven_co/tui.py`)**:
+      - Removed the `elif len(videos) == 1:` bypass. The user is now always prompted with `Single Episode` (Quick grab) vs `Whole Franchise` (Vacuum).
+      - Selecting `Single Episode` automatically targets the requested episode or opens the interactive episode selector.
+      - Cleaned up duplicate input return prompts.
+    - **Synchronized Browser Fingerprint & Stream Delivery (`scrapers/hentaihaven_co/engine.py`)**:
+      - Aligned User-Agent across `HentaiHavenCoEngine` and `playwright_extractor.py` to `Chrome/120.0.0.0`.
+      - Injected mandatory `Referer: https://nhplayer.com/` into yt-dlp download headers, satisfying CDN token verification and resolving HTTP 206 stream downloads.
+      - Standardized root cover file to `cover.jpg`.
+    - **Series-Prefixed Quick Grab Naming (`scrapers/hentaihaven_co/workflow.py`)**:
+      - Single episode quick grabs and render trees now correctly prefix the series name (e.g. `So_low Futago Shimai to Katei Kyoshi - Episode 3.mp4`).
+
+---
+
 # Progress Report - September 05, 2026 (HentaiHaven Dead CDN Detection & Download Speedup)
 
 - **HentaiHaven Stream Health Probe & Download Optimization (`scrapers/hentaihaven/engine.py`, `scrapers/hentaihaven/scraper.py`):**

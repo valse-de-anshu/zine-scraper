@@ -17,10 +17,10 @@ def _decode(raw: str) -> str:
 class HentaiHavenCoEngine(VideoEngine):
     def __init__(self):
         super().__init__(headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://hentaihaven.co/"
         })
-        self.session = requests.Session(impersonate="chrome")
+        self.session = requests.Session(impersonate="chrome120")
         self.session.headers.update(self.headers)
 
     def extract_video_info(self, url: str) -> Dict[str, Any]:
@@ -87,7 +87,7 @@ class HentaiHavenCoEngine(VideoEngine):
             json.dump(metadata_content, f, indent=2, ensure_ascii=False)
 
         if not skip_cover and avatar_url:
-            cover_path = root_dir / "cover.png"
+            cover_path = root_dir / "cover.jpg"
             if not cover_path.exists():
                 self.download_avatar(avatar_url, cover_path)
 
@@ -138,7 +138,6 @@ class HentaiHavenCoEngine(VideoEngine):
             clean_title = url.strip("/").split("/")[-1]
 
         result_path = output_dir / f"{clean_title}.mp4"
-        cover_path = output_dir / "cover.png"
 
         try:
             m3u8_url = self._extract_nhplayer_m3u8(url)
@@ -161,7 +160,8 @@ class HentaiHavenCoEngine(VideoEngine):
                     except Exception as e:
                         logger.error(f"Failed to fetch subtitle {sub_url}: {e}")
 
-            self.headers.pop("Referer", None)
+            self.headers["Referer"] = "https://nhplayer.com/"
+            self.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             
             success = self.download_video(
                 url=url,
