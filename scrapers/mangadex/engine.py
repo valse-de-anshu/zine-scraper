@@ -236,6 +236,8 @@ class BaseScraper:
             return {"total": total_pages, "downloaded": 0, "missing": total_pages, "success": False}
 
         # Slicing & Final Renaming Pipeline inside temp buffer
+        if stats_callback:
+            stats_callback({"status": "baking"})
         final_pages_dir = temp_dir / "final"
         final_pages_dir.mkdir(parents=True, exist_ok=True)
         

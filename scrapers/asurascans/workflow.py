@@ -194,6 +194,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     from rich.progress import Progress, TextColumn, TaskProgressColumn
     from core.ui import MinimalPulseBar, set_active_live
 
+    console.show_cursor(False)
     for ch_num, link in to_process:
         try:
             val = float(ch_num)
@@ -241,6 +242,11 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                     frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
                     frame = frames[int(time.time() * 10) % len(frames)]
                     res_branch.add(f"[success]{frame}[/success] [sexy_pink]almost done with baking...[/sexy_pink]")
+                elif page_data.get("status") == "loading" or page_data["total"] == 0:
+                    import time
+                    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                    frame = frames[int(time.time() * 10) % len(frames)]
+                    res_branch.add(f"[info]{frame}[/info] [info]Loading chapter stream...[/info]")
                 else:
                     total = page_data["total"] if page_data["total"] > 0 else None
                     progress_bar.update(task_id, total=total, completed=page_data["downloaded"])
@@ -260,16 +266,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             _chapter_error = [None]
 
             global _LIVE_INSTANCE
-            with Live(render_chapter_tree(), console=console, refresh_per_second=12, transient=True) as live:
+            with Live(get_renderable=render_chapter_tree, console=console, refresh_per_second=12, transient=True) as live:
                 _LIVE_INSTANCE = live
                 set_active_live(live)
 
                 def stats_callback(stats: dict):
                     page_data.update(stats)
-                    try:
-                        live.update(render_chapter_tree())
-                    except Exception:
-                        pass
 
                 try:
                     result = scraper.process_chapter(
@@ -312,6 +314,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         console.print(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
         completed_history.append(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
         time.sleep(CHAPTER_DELAY)
+
+    console.show_cursor(True)
 
     if success_count > 0:
         console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved\n")

@@ -300,6 +300,8 @@ class MangaDexScraper(BaseScraper):
 
     def process_chapter(self, ch_url: str, folder, ch_num: str, live=None, stats_callback=None) -> dict:
         """Downloads all images for a specific chapter via MangaDex@Home."""
+        if stats_callback:
+            stats_callback({"status": "loading"})
         ch_id_match = re.search(r"/chapter/([0-9a-fA-F\-]{36})", ch_url)
         if not ch_id_match:
             logger.error(f"Cannot extract chapter UUID from {ch_url}")
