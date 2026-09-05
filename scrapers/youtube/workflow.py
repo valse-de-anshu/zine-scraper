@@ -554,6 +554,6 @@ def run_workflow(
 
         import core.ui as ui
         if ui._REVOLT_ACTIVE and ui._REVOLT_LIMIT <= 0:
-            ui.trigger_revolt_exit()
+            ui.trigger_revolt_exit(title=vid_title)
  
     console.print(f"\n[success]✦[/success] Done\n")

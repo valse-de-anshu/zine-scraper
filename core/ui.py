@@ -414,7 +414,7 @@ def inject_revolt_into_renderable(renderable):
         revolt_panel = Panel(revolt_msg, border_style="warning", title="[sexy_pink]Revolt[/sexy_pink]", title_align="left")
         return Group(revolt_panel, renderable)
 
-def trigger_revolt_exit():
+def trigger_revolt_exit(title: Optional[str] = None):
     global _LIVE_INSTANCE
     if _LIVE_INSTANCE:
         try:
@@ -439,6 +439,15 @@ def trigger_revolt_exit():
             pass
     console.print("\n[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
     sys.stdout.flush()
+
+    # Dispatch OS notification for Revolt completion
+    try:
+        from butler.notify import send_os_notification
+        msg = f"Finished downloads for {title} and stopped cleanly." if title else "Revolt limit reached. Downloads stopped cleanly."
+        send_os_notification("Zine Scraper — Revolt", msg, is_success=True)
+    except Exception:
+        pass
+
     try:
         from core.history import BatchHistoryManager
         if BatchHistoryManager._instance:
@@ -447,13 +456,13 @@ def trigger_revolt_exit():
         pass
     os._exit(0)
 
-def check_revolt() -> bool:
+def check_revolt(title: Optional[str] = None) -> bool:
     """Check if Revolt mode is active. If limit has reached 0, triggers clean exit."""
     global _REVOLT_ACTIVE, _REVOLT_LIMIT
     if not _REVOLT_ACTIVE:
         return False
     if _REVOLT_LIMIT <= 0:
-        trigger_revolt_exit()
+        trigger_revolt_exit(title=title)
         return True
     _REVOLT_LIMIT -= 1
     return False
