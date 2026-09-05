@@ -1,3 +1,28 @@
+# Progress Report - September 06, 2026 (Anime HLS Stream Multi-Server Waterfall & Chunk Validation)
+
+- **Anime Multi-Server Stream Resolution & FFmpeg Exit Status 183 Resolution (`scrapers/anitaku/`, `scrapers/anikai/`, `scrapers/anineko/`, `scrapers/hianime/`):**
+  - **Identified Problem**:
+    - When downloading episodes from Anitaku (e.g. `https://anitaku.online/category/rich-girl-caretaker-im-secretly-the-caregiver-of-the-most-popular-girl-in-this-rich-kid-school`), Episode 1 downloaded successfully, but Episode 2 crashed with:
+      `HLS Fast download failed: Command '['/usr/bin/ffmpeg', '-y', '-i', '...EP 2 ...ts', '-c', 'copy', '...EP 2 ...mp4']' returned non-zero exit status 183.`
+    - Direct `print()` statements in `AnitakuEngine` dumped the raw subprocess exception and internal command arrays straight into stdout, clobbering the Rich live rendering tree.
+    - Anitaku's default `HD-1` server (`vivibebe.site`) hosted segments on ByteDance's ad CDN (`p16-ad-sg.ibyteimg.com`), which returned HTTP 403 `{"code":1004,"error":"domain forbidden"}`.
+    - `download_chunk` in `_fast_hls_download` never validated HTTP status codes or minimum chunk sizes, downloading 40-byte error JSONs into `.ts` chunk files and treating them as valid video.
+    - FFmpeg failed with exit status 183 (`Invalid data found when processing input`) when attempting to demux the concatenated JSON error strings.
+    - `AnitakuEngine` lacked server waterfalling and only attempted the first discovered player iframe.
+  - **Resolution**:
+    - **Multi-Server Waterfall Discovery (`scrapers/anitaku/engine.py`, `scrapers/anitaku/workflow.py`)**:
+      - Implemented `resolve_episode_streams(episode_url)` returning all working mirrors sorted by priority (`bibiemb` Cloudflare mirrors first, `vivibebe` / `vidstreaming` fallback).
+      - Updated `workflow.py` to iterate through candidate streams if a server fails.
+      - Added direct regex m3u8 extraction without Playwright for `bibiemb.xyz`.
+    - **Strict Chunk HTTP & Size Validation**:
+      - Added `if c_resp.status_code != 200 or len(c_resp.content) < 100:` checks across `anitaku`, `anikai`, `anineko`, and `hianime`. Invalid/forbidden chunks are rejected immediately.
+    - **Clean Logging & Subprocess Sanitization**:
+      - Replaced raw `print()` calls in `AnitakuEngine` with `logger.debug`, preventing terminal clobbering during background retries.
+    - **Guaranteed Temp Cleanup**:
+      - Added `finally:` blocks ensuring `parts_dir` and temporary `.ts` buffers in `💩/` are wiped even if stream downloading fails.
+
+---
+
 # Progress Report - September 06, 2026 (Anime Workflow Scoping Audit & UnboundLocalError Resolution)
 
 - **Comprehensive Scope Sanitization Across All Anime Platforms (`scrapers/miruro`, `scrapers/anikoto`, `scrapers/hianime`, `scrapers/anitaku`, `scrapers/anineko`, `scrapers/anikai`):**

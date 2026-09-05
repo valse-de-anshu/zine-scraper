@@ -31,15 +31,17 @@ HEADERS = {
 
 
 def _server_priority(url: str) -> int:
-    """Prefer vivibebe first (we have a direct regex extractor). Fallback chain after that."""
-    if "vivibebe" in url or "vidstreaming" in url:
+    """Prefer Cloudflare / bibiemb first, then vivibebe / vidstreaming (direct regex extractors)."""
+    if "bibiemb" in url:
         return 0
-    if "otakuhg" in url or "streamhg" in url:
+    if "vivibebe" in url or "vidstreaming" in url or "vibe" in url:
         return 1
-    if "otakuvid" in url or "earnvids" in url:
+    if "otakuhg" in url or "streamhg" in url:
         return 2
-    if "playmogo" in url or "dood" in url:
+    if "otakuvid" in url or "earnvids" in url:
         return 3
+    if "playmogo" in url or "dood" in url:
+        return 4
     return 10
 
 
@@ -96,8 +98,8 @@ class AninekoEngine(VideoEngine):
 
         for embed_url, tab in embed_entries:
             try:
-                # ── vivibebe / vidstreaming: direct regex extraction ──────────
-                if "vivibebe" in embed_url or "vidstreaming" in embed_url:
+                # ── bibiemb / vivibebe / vidstreaming: direct regex extraction ──────────
+                if any(k in embed_url for k in ["bibiemb", "vivibebe", "vidstreaming", "vibe"]):
                     r_embed = None
                     for attempt in range(3):
                         try:
@@ -269,6 +271,9 @@ class AninekoEngine(VideoEngine):
                 for _ in range(4):
                     try:
                         c_resp = requests.get(c_url, headers=headers, timeout=20)
+                        if c_resp.status_code != 200 or len(c_resp.content) < 100:
+                            time.sleep(1)
+                            continue
                         data = c_resp.content
                         # Strip obfuscated PNG header (vivibebe CDN protection)
                         if data.startswith(b'\x89PNG\r\n\x1a\n'):
@@ -334,5 +339,9 @@ class AninekoEngine(VideoEngine):
         except Exception as e:
             # Re-raise so the UI can display the exact failure reason (e.g. missing module)
             raise RuntimeError(f"HLS Engine Error: {e}")
+        finally:
+            shutil.rmtree(parts_dir, ignore_errors=True)
+            temp_ts = tmp_path.with_suffix(".ts")
+            temp_ts.unlink(missing_ok=True)
             
         return False

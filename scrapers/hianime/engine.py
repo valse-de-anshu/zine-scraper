@@ -266,6 +266,9 @@ class HianimeEngine(VideoEngine):
                 for _ in range(4):
                     try:
                         c_resp = requests.get(c_url, headers=headers, timeout=20)
+                        if c_resp.status_code != 200 or len(c_resp.content) < 100:
+                            time.sleep(1)
+                            continue
                         data = c_resp.content
                         # Strip obfuscated PNG header (vivibebe CDN protection)
                         if data.startswith(b'\x89PNG\r\n\x1a\n'):
@@ -331,5 +334,9 @@ class HianimeEngine(VideoEngine):
         except Exception as e:
             # Re-raise so the UI can display the exact failure reason (e.g. missing module)
             raise RuntimeError(f"HLS Engine Error: {e}")
+        finally:
+            shutil.rmtree(parts_dir, ignore_errors=True)
+            temp_ts = tmp_path.with_suffix(".ts")
+            temp_ts.unlink(missing_ok=True)
             
         return False

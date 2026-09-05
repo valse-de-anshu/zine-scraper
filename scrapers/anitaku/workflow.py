@@ -482,97 +482,104 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                     pass
 
             domain_success = False
-            # ── Resolve stream (no spinner — tree itself shows "Resolving") ──
-            raw_stream_url = None
-            referer = None
-            stream_info = None
             progress_data["phase"] = "resolving"
             progress_data["status"] = f"Resolving..."
             try:
                 live.update(render_video_tree())
             except Exception:
                 pass
-            
-            if hasattr(scraper.engine, "resolve_episode_stream"):
-                try:
-                    stream_info = scraper.engine.resolve_episode_stream(vid_url)
-                    if stream_info and stream_info.get("m3u8_url"):
-                        raw_stream_url = stream_info["m3u8_url"]
-                        referer = stream_info.get("embed_referer")
-                except Exception as e:
-                    console.print(f"[warning]Stream resolve error: {e}[/warning]")
 
-            if hasattr(scraper.engine, "resolve_episode_stream") and not raw_stream_url:
-                progress_data["status"] = f"Failed to resolve"
-                continue
-            else:
+            candidate_streams = []
+            if hasattr(scraper.engine, "resolve_episode_streams"):
+                try:
+                    candidate_streams = scraper.engine.resolve_episode_streams(vid_url)
+                except Exception as e:
+                    logger.debug(f"[Anitaku] Stream resolve error: {e}")
+            elif hasattr(scraper.engine, "resolve_episode_stream"):
+                try:
+                    s = scraper.engine.resolve_episode_stream(vid_url)
+                    if s and s.get("m3u8_url"):
+                        candidate_streams = [s]
+                except Exception as e:
+                    logger.debug(f"[Anitaku] Stream resolve error: {e}")
+
+            if not candidate_streams:
+                candidate_streams = [{"m3u8_url": None, "embed_referer": None, "subtitles": [], "server_name": "Direct"}]
+
+            for s_idx, stream_info in enumerate(candidate_streams):
+                if domain_success:
+                    break
+
+                raw_stream_url = stream_info.get("m3u8_url")
+                referer = stream_info.get("embed_referer")
+                server_name = stream_info.get("server_name", f"Server {s_idx+1}")
+
                 if referer:
                     scraper.engine.headers["Referer"] = referer
                     scraper.engine.headers["Origin"]  = referer.rstrip("/")
 
-                    # ── Pick quality for this episode ────────────────────────────
-                    effective_stream_url = raw_stream_url
-                    if chosen_quality_url and raw_stream_url:
-                        try:
-                            ep_qualities = _fetch_hls_qualities(raw_stream_url, scraper.engine.headers)
-                            if ep_qualities:
-                                chosen_res = re.search(r'(\d{3,4})x(\d{3,4})', chosen_quality_url)
-                                chosen_h   = int(chosen_res.group(2)) if chosen_res else 0
-                                if chosen_h:
-                                    best = next((q for q in ep_qualities
-                                                 if f"{chosen_h}p" == q["label"]), None)
-                                    if best:
-                                        effective_stream_url = best["url"]
-                        except Exception:
-                            pass
+                effective_stream_url = raw_stream_url
+                if chosen_quality_url and raw_stream_url:
+                    try:
+                        ep_qualities = _fetch_hls_qualities(raw_stream_url, scraper.engine.headers)
+                        if ep_qualities:
+                            chosen_res = re.search(r'(\d{3,4})x(\d{3,4})', chosen_quality_url)
+                            chosen_h   = int(chosen_res.group(2)) if chosen_res else 0
+                            if chosen_h:
+                                best = next((q for q in ep_qualities if f"{chosen_h}p" == q["label"]), None)
+                                if best:
+                                    effective_stream_url = best["url"]
+                    except Exception:
+                        pass
 
-                    subtitles = stream_info.get("subtitles", []) if stream_info else []
+                subtitles = stream_info.get("subtitles", [])
 
-                    # ── Wrap stats_callback to inject baking phase ───────────────
-                    def baking_callback():
-                        """Called by _download_custom_hls when ffmpeg starts."""
-                        progress_data["phase"] = "baking"
-                        try:
-                            live.update(render_video_tree())
-                        except Exception:
-                            pass
+                def baking_callback():
+                    """Called by _download_custom_hls when ffmpeg starts."""
+                    progress_data["phase"] = "baking"
+                    try:
+                        live.update(render_video_tree())
+                    except Exception:
+                        pass
 
-                    progress_data["phase"] = "downloading"
-                    progress_data["status"] = ""
+                progress_data["phase"] = "downloading"
+                progress_data["status"] = f"Streaming {server_name}" if len(candidate_streams) > 1 else ""
+                try:
                     live.update(render_video_tree())
+                except Exception:
+                    pass
 
-                    for attempt in range(1, 4):
-                        if attempt > 1:
-                            progress_data["retry"] = attempt - 1
-                            time.sleep(2)
-                        try:
-                            success = scraper.engine.download_video(
-                                vid_url, folder, stats_callback,
-                                raw_stream_url=effective_stream_url,
-                                is_audio=is_music,
-                                custom_thumbnail=None,
-                                fixed_title=vid_title,
-                                fixed_artist=None,
-                                format_override="best[ext=mp4]/best",
-                                baking_callback=baking_callback,
-                            )
-                            if success:
-                                tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
-                                progress_data["success"] = True
-                                progress_data["done"]    = True
-                                success_count += 1
-                                domain_success = True
-                                if subtitles:
-                                    _download_subtitles(subtitles, resolved_file_path,
-                                                        scraper.engine.headers)
-                                break
-                        except Exception as e:
-                            progress_data["status"] = str(e)
-                            if not handle_internet_loss():
-                                break
-                                
+                for attempt in range(1, 3):
+                    if attempt > 1:
+                        progress_data["retry"] = attempt - 1
+                        time.sleep(1)
+                    try:
+                        success = scraper.engine.download_video(
+                            vid_url, folder, stats_callback,
+                            raw_stream_url=effective_stream_url,
+                            is_audio=is_music,
+                            custom_thumbnail=None,
+                            fixed_title=vid_title,
+                            fixed_artist=None,
+                            format_override="best[ext=mp4]/best",
+                            baking_callback=baking_callback,
+                        )
+                        if success:
+                            tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
+                            progress_data["success"] = True
+                            progress_data["done"]    = True
+                            success_count += 1
+                            domain_success = True
+                            if subtitles:
+                                _download_subtitles(subtitles, resolved_file_path, scraper.engine.headers)
+                            break
+                    except Exception as e:
+                        progress_data["status"] = str(e)
+                        if not handle_internet_loss():
+                            break
+
             if not domain_success:
-                progress_data["status"] = "All alternative domains failed"
+                progress_data["status"] = "All servers failed"
                 progress_data["success"] = False
 
             live_active[0] = False
