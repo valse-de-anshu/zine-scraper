@@ -1559,5 +1559,17 @@ The scraper architecture is split into 3 distinct stages:
   - Stripped rogue revolt decrementing threads from [`core/history.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/history.py).
   - Created [test_revolt_lifecycle.py](file:///home/valse-de-anshu/.gemini/antigravity-cli/brain/f89e6d40-bc3b-440e-a95f-be050eabdd30/scratch/test_revolt_lifecycle.py) validating concurrency atomicity, single printout guarantees, limit 0 completion, and limit 1 multi-item quota. 100% test pass rate.
 
+***
+
+# Progress Report - September 2026 (Elimination of OS Notification Console Logging & Scraper Root Logger Hijacking)
+
+## 1. Notification Console Noise Elimination
+- **Root Cause**: [`butler/notify.py`](file:///home/valse-de-anshu/.config/zine%20scraper/butler/notify.py) contained `logging.info(f"OS Notification dispatched: [{title}] {message}")`. Meanwhile, 10 legacy toon engines attached a custom `ColorHandler(sys.stdout)` with timestamp formatting (`%(asctime)s | %(message)s`) directly to the Python root logger (`logging.getLogger()`). Whenever a desktop notification was dispatched at the end of a download, the root logger intercepted this info log and dumped `HH:MM:SS | OS Notification dispatched: [...]` directly onto the terminal screen above the completion prompt.
+- **Resolution**:
+  - Removed `logging.info` from [`butler/notify.py`](file:///home/valse-de-anshu/.config/zine%20scraper/butler/notify.py). OS notification dispatch is now 100% quiet and never writes to stdout/stderr.
+  - Stripped `ColorHandler(sys.stdout)` and root logger manipulation from all remaining 10 scraper engines (`hentai18`, `hentai20`, `kunmanga`, `projectsuki`, `asurascans`, `oppai_stream_toon`, `manhwaus`, `mangak`, `manhuaplus`, `fanfox`) as well as `nhentai`, `weebcentral`, and `asmhentai`.
+  - Verified that zero console noise is produced during notification dispatch or scraper engine execution across all 44+ site TUIs.
+
+
 
 

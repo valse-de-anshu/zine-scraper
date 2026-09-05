@@ -33,40 +33,7 @@ CHUNK_HEIGHT = 2000           # As per user script
 # ─────────────────────────────────────────────────────────────────────────────
 # Colors & Logging
 # ─────────────────────────────────────────────────────────────────────────────
-CYAN   = "\033[96m"
-GREEN  = "\033[92m"
-YELLOW = "\033[93m"
-RED    = "\033[91m"
-BOLD   = "\033[1m"
-DIM    = "\033[2m"
-RESET  = "\033[0m"
 
-class ColorHandler(logging.StreamHandler):
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            if record.levelno >= logging.ERROR:
-                msg = f"{RED}{msg}{RESET}"
-            elif record.levelno >= logging.WARNING:
-                msg = f"{YELLOW}{msg}{RESET}"
-            elif record.levelno >= logging.INFO:
-                if "Successfully" in msg or "Saved" in msg or "Done" in msg:
-                    msg = f"{GREEN}{msg}{RESET}"
-                else:
-                    msg = f"{CYAN}{msg}{RESET}"
-            sys.stdout.write(msg + self.terminator)
-            self.flush()
-        except Exception:
-            self.handleError(record)
-
-# Setup logging
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-for handler in root_logger.handlers[:]:
-    root_logger.removeHandler(handler)
-handler = ColorHandler(sys.stdout)
-handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%H:%M:%S"))
-root_logger.addHandler(handler)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

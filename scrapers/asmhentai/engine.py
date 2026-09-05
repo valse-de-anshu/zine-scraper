@@ -46,12 +46,6 @@ HEADERS = {
     "Sec-Fetch-Site": "cross-site",
 }
 
-# Setup logging — silent (no stdout handler)
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-for handler in root_logger.handlers[:]:
-    root_logger.removeHandler(handler)
-
 
 class BaseScraper:
     scraper_type = "toon"
