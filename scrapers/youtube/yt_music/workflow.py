@@ -46,6 +46,8 @@ def run_workflow(
             title = metadata.get("Title") or metadata.get("Album") or metadata.get("Channel/Series", "YouTube Music")
             scraper.metadata = metadata
             scraper.title = title
+            if hasattr(tracker, "set_title") and title and title != "YouTube Music":
+                tracker.set_title(scraper.url, title)
         except Exception as e:
             metadata_error = e
 
@@ -135,7 +137,7 @@ def run_workflow(
         console.print(f"[warning]No tracks found for {url}[/warning]")
         return
 
-    choice, selected_videos = get_track_selection(videos, is_vacuum=is_vacuum, is_batch=is_batch)
+    choice, selected_videos = get_track_selection(videos, is_vacuum=is_vacuum, is_batch=is_batch, verified_ids=verified_ids)
     if choice == "BACK":
         return
 
@@ -379,11 +381,8 @@ def run_workflow(
 
         # Global Revolt shutdown check
         import core.ui as ui
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT <= 0:
-                ui.clean_exit_revolt()
-            else:
-                ui._REVOLT_LIMIT -= 1
+        if ui.check_revolt(title=vid_title):
+            return
 
         time.sleep(0.1)
 

@@ -1,8 +1,13 @@
+import logging
+import re
 import requests
+from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from core.base_scraper import UnifiedBaseScraper
 from .engine import HanimeRedEngine
+
+logger = logging.getLogger(__name__)
 
 class HanimeRedScraper(UnifiedBaseScraper):
     def __init__(self, url: str):
@@ -20,133 +25,205 @@ class HanimeRedScraper(UnifiedBaseScraper):
         return "series"
 
     def get_metadata_and_videos(self, playlist_limit=None, playlist_start=None, enrich_metadata=True) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-        # Use yt-dlp to grab metadata for the main requested video
-        info = self.engine.extract_video_info(self.url)
-        
-        # Try to extract base series name from URL (e.g. enjo-kouhai-episode-11 -> enjo-kouhai)
-        import re
-        from bs4 import BeautifulSoup
-        
+        # Check if URL is a /serie/ or /series/ catalog page vs episode page
+        is_serie_url = bool(re.search(r'/serie(?:s)?/', self.url))
+
+        # Slug extraction
         slug_match = re.search(r'/([^/]+)/?$', self.url)
         slug = slug_match.group(1) if slug_match else ""
-        
         base_slug = slug
         if "-episode-" in slug:
             base_slug = slug.split("-episode-")[0]
-            
-        series_title = info.get("title", "HanimeRed Video")
-        series_title = re.sub(r'(?i)\s*-?\s*episode\s*\d+.*', '', series_title).strip()
-            
-        self.title = series_title
-        self._folder_name = re.sub(r'[<>:"/\\|?*]', '', series_title).strip()
-        
-        cover_url = info.get("thumbnail")
-        
+
+        res = self.session.get(self.url, timeout=15)
+        soup = BeautifulSoup(res.text, 'html.parser')
+
+        series_title = ""
+        cover_url = ""
         studio = ""
         summary = ""
         tags_str = ""
         html_date = ""
+        ep_urls = []
 
-        # Fetch the page to find other episodes and missing cover
-        try:
-            res = self.session.get(self.url, timeout=15)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            
-            if not cover_url:
+        if is_serie_url:
+            h1 = soup.find('h1')
+            if h1 and h1.text.strip():
+                series_title = h1.text.strip()
+            else:
+                title_tag = soup.find('title')
+                if title_tag:
+                    series_title = title_tag.text.split('-')[0].strip()
+            if not series_title:
+                series_title = base_slug.replace('-', ' ').title()
+
+            # Find all episode links on this series page
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if not href.startswith("http"):
+                    href = "https://hanime.red" + href
+                if any(x in href for x in ["/serie/", "/series/", "/tags", "/login", "/register", "/hentai/", "/ai-hentai"]):
+                    continue
+                if href.rstrip("/") == "https://hanime.red":
+                    continue
+                # Match episode cards (contain img child, have episode keyword, or contain base slug)
+                if a.find("img") or "episode" in href.lower() or (base_slug and f"/{base_slug}" in href):
+                    if href not in ep_urls:
+                        ep_urls.append(href)
+
+            # Sort episodes naturally (Episode 1, Episode 2, ...)
+            def extract_ep_num(u):
+                m = re.search(r'-episode-(\d+)', u)
+                return int(m.group(1)) if m else 999
+            ep_urls.sort(key=extract_ep_num)
+
+            # Cover from wp-post-image or og:image
+            post_img = soup.find('img', class_='wp-post-image')
+            if post_img and post_img.get('src'):
+                cover_url = post_img['src']
+            else:
                 og_img = soup.find('meta', property='og:image')
                 if og_img and og_img.get('content'):
                     cover_url = og_img['content']
-                else:
-                    post_img = soup.find('img', class_='wp-post-image')
-                    if post_img and post_img.get('src'):
-                        cover_url = post_img['src']
-                        
-            # --- Extract additional metadata ---
+
+            # Enrich series metadata by querying Episode 1 if episodes were found
+            if ep_urls:
+                try:
+                    ep1_res = self.session.get(ep_urls[0], timeout=15)
+                    ep1_soup = BeautifulSoup(ep1_res.text, 'html.parser')
+                    for label in ep1_soup.find_all(string=lambda text: text and "Brand" in text and "Uploads" not in text):
+                        if label.parent and label.parent.find_next_sibling():
+                            studio = label.parent.find_next_sibling().text.strip()
+                            break
+                    for label in ep1_soup.find_all(string=lambda text: text and "Release Date" in text):
+                        if label.parent and label.parent.find_next_sibling():
+                            html_date = label.parent.find_next_sibling().text.strip()
+                            break
+                    for p in ep1_soup.find_all('p'):
+                        text = p.text.strip()
+                        if len(text) > 50:
+                            summary = text
+                            break
+                    tag_links = ep1_soup.find_all('a', href=lambda h: h and '/tag/' in h.lower())
+                    tags_list = [t.text.strip() for t in tag_links if t.text.strip()]
+                    tags_str = ", ".join(dict.fromkeys(tags_list))
+                    if not cover_url:
+                        ep1_img = ep1_soup.find('img', class_='wp-post-image')
+                        if ep1_img and ep1_img.get('src'):
+                            cover_url = ep1_img['src']
+                except Exception as e:
+                    logger.debug(f"Failed to enrich metadata from episode 1: {e}")
+        else:
+            # Episode URL or standalone video page
+            # Check if page links to a parent /serie/
+            serie_a = soup.find("a", href=lambda h: h and "/serie/" in h)
+            if serie_a:
+                series_title = serie_a.text.strip()
+                serie_href = serie_a["href"]
+                try:
+                    s_res = self.session.get(serie_href, timeout=15)
+                    s_soup = BeautifulSoup(s_res.text, 'html.parser')
+                    for a in s_soup.find_all("a", href=True):
+                        href = a["href"]
+                        if not href.startswith("http"):
+                            href = "https://hanime.red" + href
+                        if any(x in href for x in ["/serie/", "/series/", "/tags", "/login", "/register", "/hentai/", "/ai-hentai"]):
+                            continue
+                        if href.rstrip("/") == "https://hanime.red":
+                            continue
+                        if a.find("img") or "episode" in href.lower() or (base_slug and f"/{base_slug}" in href):
+                            if href not in ep_urls:
+                                ep_urls.append(href)
+                except Exception as e:
+                    logger.debug(f"Failed to fetch series page {serie_href}: {e}")
+
+            h1 = soup.find('h1')
+            ep_title = h1.text.strip() if h1 else ""
+
+            if not series_title:
+                series_title = re.sub(r'(?i)\s*-?\s*episode\s*\d+.*', '', ep_title).strip()
+            if not series_title:
+                series_title = base_slug.replace('-', ' ').title()
+
+            # Ensure current episode is in ep_urls
+            if self.url not in ep_urls:
+                ep_urls.append(self.url)
+
+            # Sort episodes naturally
+            def extract_ep_num(u):
+                m = re.search(r'-episode-(\d+)', u)
+                return int(m.group(1)) if m else 999
+            ep_urls.sort(key=extract_ep_num)
+
+            # Extract metadata from current page
             for label in soup.find_all(string=lambda text: text and "Brand" in text and "Uploads" not in text):
                 if label.parent and label.parent.find_next_sibling():
                     studio = label.parent.find_next_sibling().text.strip()
                     break
-                    
             for label in soup.find_all(string=lambda text: text and "Release Date" in text):
                 if label.parent and label.parent.find_next_sibling():
                     html_date = label.parent.find_next_sibling().text.strip()
                     break
-                    
             for p in soup.find_all('p'):
                 text = p.text.strip()
                 if len(text) > 50:
                     summary = text
                     break
-                    
-            tags_list = []
             tag_links = soup.find_all('a', href=lambda h: h and '/tag/' in h.lower())
-            for a in tag_links:
-                t = a.text.strip()
-                if t and t not in tags_list:
-                    tags_list.append(t)
-            tags_str = ", ".join(tags_list)
-            
-            links = soup.find_all("a", href=True)
-            
-            ep_urls = set()
-            for a in links:
-                href = a["href"]
-                if f"/{base_slug}-episode-" in href:
-                    ep_urls.add(href)
-            
-            # If the current URL is not in the set, add it
-            ep_urls.add(self.url)
-            
-            # Find the max episode number
-            max_ep = 1
-            for u in ep_urls:
-                m = re.search(r'-episode-(\d+)', u)
-                if m:
-                    max_ep = max(max_ep, int(m.group(1)))
-            
-            # Fill in the gaps (if the related list truncated some episodes)
-            base_url_pattern = self.url
-            if "-episode-" in self.url:
-                base_url_pattern = re.sub(r'-episode-\d+', '-episode-{}', self.url)
-                for i in range(1, max_ep + 1):
-                    ep_urls.add(base_url_pattern.format(i))
-                    
-            ep_urls = list(ep_urls)
-            
-            # Sort by episode number
-            def extract_ep_num(u):
-                m = re.search(r'-episode-(\d+)', u)
-                return int(m.group(1)) if m else 999
-                
-            ep_urls.sort(key=extract_ep_num)
-        except Exception:
-            ep_urls = [self.url]
+            tags_list = [t.text.strip() for t in tag_links if t.text.strip()]
+            tags_str = ", ".join(dict.fromkeys(tags_list))
+
+            post_img = soup.find('img', class_='wp-post-image')
+            if post_img and post_img.get('src'):
+                cover_url = post_img['src']
+            else:
+                og_img = soup.find('meta', property='og:image')
+                if og_img and og_img.get('content'):
+                    cover_url = og_img['content']
+
+        self.title = series_title
+        self._folder_name = re.sub(r'[<>:"/\\|?*]', '', series_title).strip()
 
         metadata = {
             "Channel/Series": series_title,
             "Source": "HanimeRed",
             "Total Videos": len(ep_urls),
-            "ID": info.get("id", "unknown"),
+            "ID": base_slug or slug or "unknown",
             "Thumbnail": cover_url,
             "Avatar URL": cover_url,
             "Studio": studio,
             "Tags": tags_str,
-            "Description": summary
+            "Description": summary,
+            "URL": self.url
         }
 
         videos = []
         for idx, u in enumerate(ep_urls, 1):
-            import re
             m = re.search(r'-episode-(\d+)', u)
-            ep_num = m.group(1) if m else str(idx)
-            
+            if m:
+                ep_num = m.group(1)
+                vid_title = f"Episode {ep_num}"
+                vid_id = str(ep_num)
+            else:
+                vid_id = str(idx)
+                vid_title = series_title if len(ep_urls) == 1 else f"Episode {idx}"
+
             videos.append({
                 "url": u,
-                "title": f"Episode {ep_num}",
-                "id": str(ep_num),
-                "uploader": "HanimeRed",
+                "title": vid_title,
+                "id": vid_id,
+                "uploader": studio or "HanimeRed",
                 "thumbnail": cover_url,
-                "upload_date": info.get("upload_date") or html_date
+                "upload_date": html_date
             })
 
-        return metadata, videos, {"title": series_title, "url": self.url}
+        info = {
+            "title": series_title,
+            "url": self.url,
+            "id": base_slug or slug or "unknown",
+            "uploader_id": studio or "HanimeRed",
+            "upload_date": html_date,
+            "thumbnail": cover_url
+        }
+
+        return metadata, videos, info

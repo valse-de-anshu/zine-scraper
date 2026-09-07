@@ -64,6 +64,7 @@ class PathAuthority:
         # Logs 
         self._logs_root = self._suite_root / "Logs"
         self._history_file = self._logs_root / "Download History.json"
+        self._batch_history_file = self._logs_root / "Batch History.json"
         self._url_history_file = self._logs_root / "URL History.txt"
 
     # ── Core paths ──────────────────────────────────────────────────────────
@@ -87,6 +88,12 @@ class PathAuthority:
 
     def get_history_file(self) -> Path:
         return self._history_file
+
+    def get_batch_history_file(self) -> Path:
+        return self._batch_history_file
+
+    def get_batch_poop_log(self) -> Path:
+        return self._logs_root / "💩" / "batch_history.json"
 
     def get_config_file(self) -> Path:
         return self._config_file
@@ -211,7 +218,7 @@ def get_category_for_scraper(site_folder: str, is_music: bool = False, is_video:
     _LEGACY_TOON_SITES = {
         "manhuaplus", "manhwaus", "asurascans", "omegascans",
         "kunmanga", "fanfox", "nhentai", "weebcentral", "mangak",
-        "projectsuki", "hentai18", "hentai20"
+        "projectsuki", "hentai18", "hentai20", "manga18fx"
     }
     if site_folder in _LEGACY_TOON_SITES:
         return "toon"
@@ -262,10 +269,15 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
         site_folder = get_site_folder(url) or "generic"
         category = get_category_for_scraper(site_folder, scraper=scraper)
         if category == "toon":
+            is_chapter_link = False
             if hasattr(scraper, "is_chapter_link"):
-                is_chapter_link = scraper.is_chapter_link()
-            else:
-                is_chapter_link = any(x in url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
+                try:
+                    is_chapter_link = bool(scraper.is_chapter_link())
+                except Exception:
+                    is_chapter_link = False
+            if not is_chapter_link:
+                raw_u = getattr(scraper, "original_url", None) or getattr(scraper, "raw_url", None) or url
+                is_chapter_link = any(x in str(raw_u).lower() or x in str(url).lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
             if not is_chapter_link:
                 is_vacuum = True
         else:
@@ -315,7 +327,11 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
     if site_folder.startswith("light_novel."):
         sub_folder = site_folder.split(".")[1]
         return container_root / "Light Novel" / sub_folder
-        
+
+    # Explicit routing for YouTube Music to prevent collision with YouTube video
+    if site_folder.lower() in ["youtube.yt_music", "yt_music"]:
+        return container_root / "YouTube Music"
+
     # If the site folder is nested like "oppai_stream.oppai_stream_toon", clean it up
     if "." in site_folder:
         parts = site_folder.split(".")
@@ -325,7 +341,7 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
             site_folder = hentai_map[parent.lower()]
         else:
             site_folder = parent.title()
-            
+
     # Also clean up standard "oppai_stream_toon" just in case
     if site_folder == "oppai_stream_toon":
         site_folder = "OppaiStream"

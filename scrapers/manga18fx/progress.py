@@ -1,18 +1,15 @@
-"""
-scrapers/light_novel/lightnovelworld/progress.py
--------------------------------------------------
-Rich progress tree for the LightNovelWorld TUI.
-Minimalist — shows title, location, source, chapter count, existing chapters.
-"""
-
+from typing import Any, List, Optional
 from rich.tree import Tree
 from core.ui import console, format_chapter_ranges
-from typing import Any, Optional
 
-
-def render_completion_tree(title: str, folder: Any, source: str,
-                           total_chapters: int, verified_nums: list,
-                           cover_exists: Optional[bool] = None):
+def render_completion_tree(
+    title: str,
+    folder: Any,
+    source: str,
+    total_chapters: int,
+    verified_nums: List[str],
+    cover_exists: Optional[bool] = None
+):
     def align_header(label: str, value: Any) -> str:
         return f"{label:<18} : {value}"
 
@@ -21,7 +18,7 @@ def render_completion_tree(title: str, folder: Any, source: str,
     root_tree.add(align_header("Location", f"[info]{folder.resolve()}[/info]"))
     root_tree.add(align_header("Source", f"[info]{source}[/info]"))
     root_tree.add(align_header("Total Chapters", f"[info]{total_chapters}[/info]"))
-    root_tree.add(align_header("Downloaded", f"[success]{format_chapter_ranges(verified_nums)}[/success]"))
+    root_tree.add(align_header("Existing", f"[success]{format_chapter_ranges(verified_nums)}[/success]"))
 
     if cover_exists is None:
         cover_status = "[unselected]Skipped[/unselected]"

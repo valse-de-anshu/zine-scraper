@@ -215,4 +215,9 @@ class YoutubeScraper:
                 "upload_date": info.get('upload_date')
             })
             
+        if link_type == "single" and videos and videos[0].get("title"):
+            self.title = videos[0]["title"]
+        else:
+            self.title = html.unescape(metadata.get("Playlist") or metadata.get("Channel/Series") or channel_name)
+        self.metadata = metadata
         return metadata, videos, info

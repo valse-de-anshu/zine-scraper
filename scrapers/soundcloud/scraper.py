@@ -46,4 +46,6 @@ class SoundcloudScraper:
             "thumbnail": track_thumb
         }]
             
+        self.title = metadata.get("Channel/Series", "Unknown")
+        self.metadata = metadata
         return metadata, videos, info

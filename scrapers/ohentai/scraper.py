@@ -122,4 +122,6 @@ class OhentaiScraper:
                 "url": self.url
             })
 
+        self.title = title
+        self.metadata = meta
         return meta, videos, info

@@ -5,6 +5,10 @@ from bs4 import BeautifulSoup
 from .engine import BaseScraper, urljoin
 
 class ProjectSukiScraper(BaseScraper):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.series_url = None
+
     def is_chapter_link(self) -> bool:
         return any(x in self.url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
 
@@ -91,7 +95,11 @@ class ProjectSukiScraper(BaseScraper):
                 seen_nums.add(str_num)
         
         if ch_num_from_title and not final_chapters:
-            final_chapters.append((float(ch_num_from_title), ch_num_from_title, self.url))
+            original_url = self.url
+            m_book = re.search(r"/read/(\d+)", original_url)
+            if m_book:
+                self.series_url = f"https://projectsuki.com/book/{m_book.group(1)}"
+            final_chapters.append((float(ch_num_from_title), ch_num_from_title, original_url))
 
         final_chapters.sort(key=lambda x: x[0])
         self.title = title
@@ -136,5 +144,19 @@ class ProjectSukiScraper(BaseScraper):
         except Exception as e:
             logging.warning(f"ProjectSuki API failed: {e}")
 
-        img_urls = list(dict.fromkeys(img_urls))
-        return self.process_chapter_multi(img_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)
+        bad_keywords = (
+            "logo", "banner", "avatar", "icon", "ads", "advert", "sponsor",
+            "spinner", "loading", "placeholder", "pixel", "tracker", "promo"
+        )
+        filtered_urls = []
+        for u in img_urls:
+            if not u or u.startswith("data:"):
+                continue
+            if not u.startswith("http"):
+                continue
+            if any(kw in u.lower() for kw in bad_keywords):
+                continue
+            filtered_urls.append(u)
+
+        filtered_urls = list(dict.fromkeys(filtered_urls))
+        return self.process_chapter_multi(filtered_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)

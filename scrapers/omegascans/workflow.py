@@ -21,6 +21,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     with active_status("[info]Metadata...[/info]", spinner="dots"):
         try:
             title, chapters = scraper.get_title_and_chapters()
+            scraper.title = title
+            if hasattr(tracker, "set_title") and title:
+                tracker.set_title(scraper.url, title)
             
             _is_chapter = False
             if not chapters:
@@ -130,9 +133,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 pass
         cover_status_ui = cover_exists
             
-    if getattr(scraper, '_batch_quick_grab', False):
-        chapters = chapters[:1]
+    from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.url)
+    to_process = apply_chapter_limit(to_process, scraper)
     
     startup_clear()
     print_banner()
@@ -197,6 +200,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     from rich.progress import Progress, TextColumn, TaskProgressColumn
     from core.ui import MinimalPulseBar, set_active_live
 
+    console.show_cursor(False)
     for ch_num, link in to_process:
         try:
             val = float(ch_num)
@@ -240,8 +244,15 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             res_branch = tree.add("[success]○[/success] [menu]Result[/menu]", guide_style="unselected")
             if not page_data["done"]:
                 if page_data.get("status") == "baking":
-                    from rich.spinner import Spinner
-                    res_branch.add(Spinner("dots", text="[sexy_pink]almost done with baking...[/sexy_pink]", style="success"))
+                    import time
+                    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                    frame = frames[int(time.time() * 10) % len(frames)]
+                    res_branch.add(f"[success]{frame}[/success] [sexy_pink]almost done with baking...[/sexy_pink]")
+                elif page_data.get("status") == "loading" or page_data["total"] == 0:
+                    import time
+                    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                    frame = frames[int(time.time() * 10) % len(frames)]
+                    res_branch.add(f"[info]{frame}[/info] [info]Loading chapter stream...[/info]")
                 else:
                     total = page_data["total"] if page_data["total"] > 0 else None
                     progress_bar.update(task_id, total=total, completed=page_data["downloaded"])
@@ -261,16 +272,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             _chapter_error = [None]
 
             global _LIVE_INSTANCE
-            with Live(render_chapter_tree(), console=console, refresh_per_second=12, transient=True) as live:
+            with Live(get_renderable=render_chapter_tree, console=console, refresh_per_second=12, transient=True) as live:
                 _LIVE_INSTANCE = live
                 set_active_live(live)
 
                 def stats_callback(stats: dict):
                     page_data.update(stats)
-                    try:
-                        live.update(render_chapter_tree())
-                    except Exception:
-                        pass
 
                 try:
                     result = scraper.process_chapter(
@@ -280,12 +287,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                     if isinstance(result, dict):
                         page_data.update(result)
                         if result.get("success"):
-                            tracker.mark_downloaded(scraper.url, ch_num)
+                            tracker.mark_downloaded(scraper.url, ch_num, title=title)
                             page_data["done"] = True
                             page_data["success"] = True
                             success_count += 1
                     elif result:
-                        tracker.mark_downloaded(scraper.url, ch_num)
+                        tracker.mark_downloaded(scraper.url, ch_num, title=title)
                         page_data["done"] = True
                         page_data["success"] = True
                         success_count += 1
@@ -312,7 +319,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         res_color = "success" if page_data.get("success") else "error"
         console.print(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
         completed_history.append(f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]")
+        from core.ui import check_revolt
+        if check_revolt(title=title):
+            return
         time.sleep(CHAPTER_DELAY)
+
+    console.show_cursor(True)
 
     if success_count > 0:
         console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved\n")

@@ -117,7 +117,23 @@ class CategoryImportTUI:
             elif len(k) == 1:
                 val += k
 
+    def _get_dimensions(self):
+        term_w = console.size.width if (getattr(console, "size", None) and console.size.width) else 100
+        term_h = console.size.height if (getattr(console, "size", None) and console.size.height) else 24
+        
+        # Available content height inside panel (Panel padding: 2, subtitle: 1, header+spacing: 3)
+        max_content_h = max(10, min(term_h - 7, 20))
+        self.visible_lines = max_content_h - 2
+        
+        # Available width for table (Panel padding: 4, edges: 2)
+        table_w = max(64, min(term_w - 6, 120))
+        left_w = max(24, min(30, table_w // 3))
+        right_w = max(34, table_w - left_w - 4)
+        
+        return max_content_h, table_w, left_w, right_w
+
     def render_left_panel(self) -> Group:
+        max_content_h, _, _, _ = self._get_dimensions()
         lines = []
         if self.state == "TYPE_SELECTION":
             items = self.categories
@@ -128,7 +144,7 @@ class CategoryImportTUI:
         elif self.state == "LOADING_QUALITY":
             lines.append(Text("Probing stream qualities...", style="bold info"))
             lines.append(Text("Please wait..."))
-            while len(lines) < 28:
+            while len(lines) < max_content_h:
                 lines.append(Text(""))
             return Group(*lines)
         else:
@@ -156,20 +172,22 @@ class CategoryImportTUI:
             else:
                 lines.append(Text(f" {scroll_char}   {display_name}", style="unselected"))
                 
-        # Pad left panel to strict fixed height of 28
-        while len(lines) < 28:
+        # Pad left panel to dynamic fixed height
+        while len(lines) < max_content_h:
             lines.append(Text(""))
             
         return Group(*lines)
 
     def render_right_panel(self) -> Group:
+        max_content_h, _, _, right_w = self._get_dimensions()
         lines = []
+        wrap_w = max(30, right_w - 4)
         if self.state == "TYPE_SELECTION":
             cat = self.categories[self.active_index]
-            desc = self._wrap(cat.get("description", ""))
+            desc = self._wrap(cat.get("description", ""), width=wrap_w)
             examples = cat.get("examples", [])
-            pop = self._wrap(cat.get("popularity", ""))
-            tip = self._wrap(cat.get("tip", ""))
+            pop = self._wrap(cat.get("popularity", ""), width=wrap_w)
+            tip = self._wrap(cat.get("tip", ""), width=wrap_w)
             folder_base = cat.get("storage_name", "Unknown")
             
             lines.append(Text(desc, style="white"))
@@ -201,8 +219,8 @@ class CategoryImportTUI:
             folder_base = self.selected_category["storage_name"]
             folder_name = tmpl.get("storage_name", "<Custom Name>")
             
-            info = self._wrap(tmpl.get("description", ""))
-            tip = self._wrap(tmpl.get("tip", ""))
+            info = self._wrap(tmpl.get("description", ""), width=wrap_w)
+            tip = self._wrap(tmpl.get("tip", ""), width=wrap_w)
             examples = self.selected_category.get("examples", [])
             
             lines.append(Text("Selected Template", style="unselected"))
@@ -266,18 +284,18 @@ class CategoryImportTUI:
                 elif self.state == "FOLDER_SELECTION":
                     rendered_lines += 6
                 
-        # Pad right panel to strict fixed height of 28
-        while rendered_lines < 28:
+        # Pad right panel to dynamic fixed height
+        while rendered_lines < max_content_h:
             lines.append(Text(""))
             rendered_lines += 1
 
         return Group(*lines)
 
     def render(self):
-        # By setting the width explicitly on the Table, it mathematically locks the horizontal size.
-        table = Table(show_header=False, show_edge=False, box=None, padding=(0, 4), width=135)
-        table.add_column("Left", width=35, justify="left", vertical="top")
-        table.add_column("Right", width=90, justify="left", vertical="top")
+        max_content_h, table_w, left_w, right_w = self._get_dimensions()
+        table = Table(show_header=False, show_edge=False, box=None, padding=(0, 2), width=table_w)
+        table.add_column("Left", width=left_w, justify="left", vertical="top")
+        table.add_column("Right", width=right_w, justify="left", vertical="top")
         table.add_row(self.render_left_panel(), self.render_right_panel())
         
         title = self.default_title if self.state == "TYPE_SELECTION" else f"ZINE SCRAPER · {self.selected_category['display_name']}"

@@ -5,6 +5,7 @@ import logging
 import subprocess
 import requests
 import asyncio
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -52,39 +53,45 @@ class PinterestEngine:
         username = user_match.group(1).lower()
 
         for target in targets:
-            try:
-                r = session.get(target, headers=self.headers, timeout=10)
-                if r.status_code != 200: continue
+            r = None
+            for attempt in range(3):
+                try:
+                    r = session.get(target, headers=self.headers, timeout=(10, 30))
+                    if r.status_code == 200:
+                        break
+                except Exception:
+                    time.sleep(1 * (attempt + 1))
+            if not r or r.status_code != 200:
+                continue
                 
-                # Find all JSON blocks in script tags
-                json_blocks = re.findall(r'<script id="(?:__PWS_DATA__|__PWS_INITIAL_PROPS__)" type="application/json">(.*?)</script>', r.text)
-                
-                for block in json_blocks:
-                    try:
-                        data = json.loads(block)
-                        
-                        def extract_boards(obj):
-                            if isinstance(obj, dict):
-                                if obj.get('type') == 'board' and 'url' in obj and 'name' in obj:
-                                    b_url = obj['url']
-                                    owner = obj.get('owner', {}).get('username', '').lower()
-                                    # Belongs to user?
-                                    if f"/{username}/" in b_url.lower() or owner == username:
-                                        bid = str(obj.get('id'))
-                                        if bid not in boards_map:
-                                            boards_map[bid] = {
-                                                "url": f"https://www.pinterest.com{b_url}",
-                                                "title": obj['name'],
-                                                "id": bid,
-                                                "pin_count": str(obj.get('pin_count', 'Unknown'))
-                                            }
-                                for v in obj.values(): extract_boards(v)
-                            elif isinstance(obj, list):
-                                for item in obj: extract_boards(item)
-                        
-                        extract_boards(data)
-                    except: continue
-            except: continue
+            # Find all JSON blocks in script tags
+            json_blocks = re.findall(r'<script id="(?:__PWS_DATA__|__PWS_INITIAL_PROPS__)" type="application/json">(.*?)</script>', r.text)
+            
+            for block in json_blocks:
+                try:
+                    data = json.loads(block)
+                    
+                    def extract_boards(obj):
+                        if isinstance(obj, dict):
+                            if obj.get('type') == 'board' and 'url' in obj and 'name' in obj:
+                                b_url = obj['url']
+                                owner = obj.get('owner', {}).get('username', '').lower()
+                                # Belongs to user?
+                                if f"/{username}/" in b_url.lower() or owner == username:
+                                    bid = str(obj.get('id'))
+                                    if bid not in boards_map:
+                                        boards_map[bid] = {
+                                            "url": f"https://www.pinterest.com{b_url}",
+                                            "title": obj['name'],
+                                            "id": bid,
+                                            "pin_count": str(obj.get('pin_count', 'Unknown'))
+                                        }
+                            for v in obj.values(): extract_boards(v)
+                        elif isinstance(obj, list):
+                            for item in obj: extract_boards(item)
+                    
+                    extract_boards(data)
+                except: continue
 
         # Final list sorted by title
         result = list(boards_map.values())
@@ -193,8 +200,9 @@ class PinterestEngine:
                 "User-Agent": self.headers["User-Agent"], 
                 "X-Pinterest-PWS-Handler": "www/[username].js"
             }
+            timeout = aiohttp.ClientTimeout(total=30, sock_connect=10)
             try:
-                async with session.get(url, params=params, headers=headers, timeout=10) as resp:
+                async with session.get(url, params=params, headers=headers, timeout=timeout) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         enrichment = data.get('resource_response', {}).get('data', {})
@@ -359,10 +367,16 @@ class PinterestEngine:
                         user_match = re.search(r"pinterest\.[a-z\.]+/([^/?#]+)", board_url)
                         if user_match:
                             base_url = f"https://www.pinterest.com/{user_match.group(1)}/"
-                            r = requests.get(base_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                            pfp_match = re.search(r'"image_xlarge_url":"([^"]+)"', r.text)
-                            if pfp_match:
-                                board_meta["profile_picture"] = pfp_match.group(1)
+                            for attempt in range(3):
+                                try:
+                                    r = requests.get(base_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=(10, 30))
+                                    if r.status_code == 200:
+                                        pfp_match = re.search(r'"image_xlarge_url":"([^"]+)"', r.text)
+                                        if pfp_match:
+                                            board_meta["profile_picture"] = pfp_match.group(1)
+                                        break
+                                except Exception:
+                                    time.sleep(1)
                     except Exception:
                         pass
                     
@@ -452,16 +466,20 @@ class PinterestEngine:
             "User-Agent": self.headers.get("User-Agent", "Mozilla/5.0"), 
             "X-Pinterest-PWS-Handler": "www/[username].js"
         }
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                raw_pin = data.get("resource_response", {}).get("data", {})
-                if isinstance(raw_pin, dict):
-                    pin_info = self._extract_pin_data(raw_pin)
-                    if pin_info:
-                        return pin_info
-        except Exception as e:
-            logger.error(f"Error extracting single pin {pin_id}: {e}")
+        for attempt in range(3):
+            try:
+                r = requests.get(url, params=params, headers=headers, timeout=(10, 30))
+                if r.status_code == 200:
+                    data = r.json()
+                    raw_pin = data.get("resource_response", {}).get("data", {})
+                    if isinstance(raw_pin, dict):
+                        pin_info = self._extract_pin_data(raw_pin)
+                        if pin_info:
+                            return pin_info
+                    break
+            except Exception as e:
+                if attempt == 2:
+                    logger.error(f"Error extracting single pin {pin_id}: {e}")
+                time.sleep(1 * (attempt + 1))
             
         return {}

@@ -31,15 +31,17 @@ HEADERS = {
 
 
 def _server_priority(url: str) -> int:
-    """Prefer vivibebe first (we have a direct regex extractor). Fallback chain after that."""
-    if "vivibebe" in url or "vidstreaming" in url:
+    """Prefer Cloudflare mirrors (bibiemb) then vivibebe first. Fallback chain after that."""
+    if "bibiemb" in url or "vibe" in url:
         return 0
-    if "otakuhg" in url or "streamhg" in url:
+    if "vivibebe" in url or "vidstreaming" in url:
         return 1
-    if "otakuvid" in url or "earnvids" in url:
+    if "otakuhg" in url or "streamhg" in url:
         return 2
-    if "playmogo" in url or "dood" in url:
+    if "otakuvid" in url or "earnvids" in url:
         return 3
+    if "playmogo" in url or "dood" in url:
+        return 4
     return 10
 
 
@@ -51,23 +53,30 @@ class HianimeEngine(VideoEngine):
     # Stream resolution
     # ──────────────────────────────────────────────────────────────────────────
 
-    def resolve_episode_stream(self, episode_url: str) -> dict | None:
+    def resolve_episode_streams(self, episode_url: str) -> list:
         """
         Fetches the watch page for *episode_url*, collects all data-video embed
-        URLs, sorts them by server priority, and resolves an m3u8 stream URL.
-
-        For vivibebe/vidstreaming we directly regex the embed page JS for
-        `const src = "..."` — instant, no Playwright overhead.
-        For everything else we fall back to the shared Playwright extractor.
+        URLs, sorts them by server priority, and resolves all valid m3u8 stream candidates.
         """
-        h = HEADERS.copy()
+        import logging
+        engine_logger = logging.getLogger(__name__)
 
-        try:
-            r = requests.get(episode_url, headers=h, timeout=15)
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, "lxml")
-        except Exception as e:
-            return None
+        # Fetch episode page with retry
+        soup = None
+        for attempt in range(3):
+            try:
+                r = requests.get(episode_url, headers=HEADERS, timeout=(10, 30))
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, "lxml")
+                break
+            except Exception as e:
+                if attempt == 2:
+                    engine_logger.debug(f"[HianimeEngine] Watch page fetch failed: {e}")
+                    return []
+                time.sleep(1.0 * (attempt + 1))
+
+        if not soup:
+            return []
 
         # Collect all embed URLs from data-video attributes
         embed_entries = []
@@ -75,20 +84,31 @@ class HianimeEngine(VideoEngine):
             data_video = a.get("data-video", "").strip()
             if not data_video:
                 continue
-            tab = a.get("data-tab", "")
-            embed_entries.append((data_video, tab))
+            server_name = a.text.strip()
+            embed_entries.append((data_video, server_name))
 
         if not embed_entries:
-            return None
+            return []
 
-        # Sort: prefer vivibebe, then streamhg, etc.
+        # Sort: prefer bibiemb, then vivibebe, then streamhg, etc.
         embed_entries.sort(key=lambda e: _server_priority(e[0]))
 
-        for embed_url, tab in embed_entries:
+        candidates = []
+        for embed_url, server_name in embed_entries:
             try:
-                # ── vivibebe / vidstreaming: direct regex extraction ──────────
-                if "vivibebe" in embed_url or "vidstreaming" in embed_url:
-                    r_embed = requests.get(embed_url, headers=h, timeout=12)
+                # ── Fast direct regex extraction for bibiemb / vivibebe / vidstreaming ──
+                if any(x in embed_url for x in ("bibiemb", "vibe", "vivibebe", "vidstreaming")):
+                    r_embed = None
+                    for attempt in range(3):
+                        try:
+                            r_embed = requests.get(embed_url, headers=HEADERS, timeout=(10, 25))
+                            r_embed.raise_for_status()
+                            break
+                        except Exception:
+                            if attempt < 2:
+                                time.sleep(1.0 * (attempt + 1))
+                    if not r_embed:
+                        continue
                     # Extract subtitle VTT if embedded in the URL query string
                     sub_match = re.search(r'[?&]sub=([^&]+)', embed_url)
                     subtitle_url = sub_match.group(1) if sub_match else None
@@ -102,34 +122,44 @@ class HianimeEngine(VideoEngine):
                         subtitles = []
                         if subtitle_url:
                             subtitles.append({"url": subtitle_url, "label": "English"})
-                        return {
+                        candidates.append({
                             "m3u8_url": m.group(1),
                             "subtitles": subtitles,
                             "qualities": [],
                             "embed_referer": embed_url,
-                        }
-                    else:
-                        if "cloudflare" in r_embed.text.lower() or "just a moment" in r_embed.text.lower():
-                            raise RuntimeError("Cloudflare block detected on video server")
-                        # If regex failed but no block, let it fall through to Playwright
-
-                # ── All other servers: Playwright fallback ───────────────────
-                from scrapers.playwright_extractor import extract_stream
-                result = asyncio.run(extract_stream(embed_url))
-                stream_url = result.get("url")
-                if stream_url:
-                    return {
-                        "m3u8_url": stream_url,
-                        "subtitles": result.get("subtitles", []),
-                        "qualities": result.get("qualities_urls", []),
-                        "embed_referer": embed_url,
-                    }
-
+                            "server_name": server_name or "Server"
+                        })
+                        continue
             except Exception as e:
-                print(f"[HianimeEngine] Server {embed_url} failed: {e}")
+                engine_logger.debug(f"[HianimeEngine] Fast extraction error on {embed_url}: {e}")
                 continue
 
-        return None
+        # If direct extraction yielded no candidates, fallback to Playwright
+        if not candidates:
+            for embed_url, server_name in embed_entries:
+                try:
+                    from scrapers.playwright_extractor import extract_stream
+                    result = asyncio.run(extract_stream(embed_url))
+                    stream_url = result.get("url")
+                    if stream_url:
+                        candidates.append({
+                            "m3u8_url": stream_url,
+                            "subtitles": result.get("subtitles", []),
+                            "qualities": result.get("qualities_urls", []),
+                            "embed_referer": embed_url,
+                            "server_name": server_name or "Alternative"
+                        })
+                        break
+                except Exception as e:
+                    engine_logger.debug(f"[HianimeEngine] Server {embed_url} failed: {e}")
+                    continue
+
+        return candidates
+
+    def resolve_episode_stream(self, episode_url: str) -> dict | None:
+        """Backwards-compatible wrapper returning the top stream candidate."""
+        streams = self.resolve_episode_streams(episode_url)
+        return streams[0] if streams else None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Download routing
@@ -143,13 +173,19 @@ class HianimeEngine(VideoEngine):
         baking_callback=None, **kwargs
     ) -> bool:
         target = raw_stream_url if raw_stream_url else url
-        if ".m3u8" in target and not is_audio:
-            success = self._fast_hls_download(
-                target, output_dir, progress_hook,
-                fixed_title, custom_thumbnail, baking_callback, **kwargs
-            )
-            if success:
-                return True
+        if target and ".m3u8" in target and not is_audio:
+            try:
+                success = self._fast_hls_download(
+                    target, output_dir, progress_hook,
+                    fixed_title, custom_thumbnail, baking_callback, **kwargs
+                )
+                if success:
+                    return True
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"[HianimeEngine] Fast HLS download failed: {e}")
+            if raw_stream_url:
+                return False
         # Fallback to base VideoEngine (yt-dlp subprocess)
         return super().download_video(
             url, output_dir, progress_hook, raw_stream_url, is_audio,
@@ -187,9 +223,19 @@ class HianimeEngine(VideoEngine):
         from urllib.parse import urljoin
         import re
 
+        def _fetch_playlist(target_url):
+            for attempt in range(3):
+                try:
+                    r = requests.get(target_url, headers=headers, timeout=(10, 30))
+                    r.raise_for_status()
+                    return r.text.splitlines()
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1.0 * (attempt + 1))
+
         try:
-            resp = requests.get(m3u8_url, headers=headers, timeout=15)
-            lines = resp.text.splitlines()
+            lines = _fetch_playlist(m3u8_url)
 
             # If this is a master playlist, pick the highest-bandwidth variant
             real_url = m3u8_url
@@ -214,8 +260,7 @@ class HianimeEngine(VideoEngine):
                 
                 if best_uri:
                     real_url = urljoin(m3u8_url, best_uri)
-                    resp = requests.get(real_url, headers=headers, timeout=15)
-                    lines = resp.text.splitlines()
+                    lines = _fetch_playlist(real_url)
 
             # Build chunk list
             chunks = []
@@ -240,6 +285,9 @@ class HianimeEngine(VideoEngine):
                 for _ in range(4):
                     try:
                         c_resp = requests.get(c_url, headers=headers, timeout=20)
+                        if c_resp.status_code != 200 or len(c_resp.content) < 100:
+                            time.sleep(1)
+                            continue
                         data = c_resp.content
                         # Strip obfuscated PNG header (vivibebe CDN protection)
                         if data.startswith(b'\x89PNG\r\n\x1a\n'):
@@ -305,5 +353,9 @@ class HianimeEngine(VideoEngine):
         except Exception as e:
             # Re-raise so the UI can display the exact failure reason (e.g. missing module)
             raise RuntimeError(f"HLS Engine Error: {e}")
+        finally:
+            shutil.rmtree(parts_dir, ignore_errors=True)
+            temp_ts = tmp_path.with_suffix(".ts")
+            temp_ts.unlink(missing_ok=True)
             
         return False

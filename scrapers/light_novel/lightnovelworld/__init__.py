@@ -1,1 +1,0 @@
-# lightnovelworld scraper package

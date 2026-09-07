@@ -3,10 +3,13 @@ import asyncio
 import re
 import os
 import time
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from bs4 import BeautifulSoup
 from core.video_engine import VideoEngine
+
+logger = logging.getLogger(__name__)
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
@@ -19,71 +22,108 @@ from scrapers.playwright_extractor import extract_stream
 class AnitakuEngine(VideoEngine):
     def __init__(self):
         super().__init__()
-        
-    def resolve_episode_stream(self, episode_url: str) -> dict:
-        """Intercepts embed URLs from the episode page and resolves m3u8."""
+
+    def resolve_episode_streams(self, episode_url: str) -> list:
+        """Intercepts embed URLs from the episode page and resolves all candidate m3u8 streams in priority order."""
         h = HEADERS.copy()
-        r = requests.get(episode_url, headers=h)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = None
+        for attempt in range(3):
+            try:
+                r = requests.get(episode_url, headers=h, timeout=(10, 30))
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, "lxml")
+                break
+            except Exception:
+                if attempt == 2:
+                    return []
+                time.sleep(1.0 * (attempt + 1))
         
-        embed_urls = []
+        if not soup:
+            return []
+
+        embed_items = []
         for li in soup.select(".anime_muti_link ul li a"):
+            server_name = li.text.replace("Choose this server", "").strip()
             embed_url = li.get("data-video")
             if embed_url:
                 if not embed_url.startswith("http"):
                     embed_url = "https:" + embed_url
-                embed_urls.append(embed_url)
+                embed_items.append((server_name, embed_url))
                 
-        # We prioritize vivibebe/vidstreaming because we have a FAST custom extractor for it now!
-        def server_priority(url):
-            if "vivibebe" in url or "vidstreaming" in url: return 0
-            if "otakuhg" in url or "streamhg" in url: return 1
-            if "mp4upload" in url: return 2
-            if "dood" in url: return 3
-            if "playmogo" in url: return 4
+        def server_priority(item):
+            sname, url = item
+            # Prioritize bibiemb (HD-2) over vivibebe (HD-1) because bibiemb streams Cloudflare Workers directly
+            if "bibiemb" in url: return 0
+            if "vivibebe" in url or "vidstreaming" in url: return 1
+            if "otakuhg" in url or "streamhg" in url: return 2
+            if "mp4upload" in url: return 3
+            if "dood" in url: return 4
+            if "playmogo" in url: return 5
             return 10
             
-        embed_urls.sort(key=server_priority)
-                
-        if not embed_urls:
-            return None
-            
-        for embed_url in embed_urls:
-            try:
-                # Fast direct extraction for vivibebe/vidstreaming
-                if "vivibebe" in embed_url or "vidstreaming" in embed_url:
-                    r_embed = requests.get(embed_url, headers=h, timeout=10)
+        embed_items.sort(key=server_priority)
+        candidates = []
+        # First pass: Fast direct extraction (bibiemb, vivibebe, vidstreaming, vibe)
+        for server_name, embed_url in embed_items:
+            if any(k in embed_url for k in ["bibiemb", "vivibebe", "vidstreaming", "vibe"]):
+                try:
+                    r_embed = None
+                    for attempt in range(2):
+                        try:
+                            r_embed = requests.get(embed_url, headers=h, timeout=(5, 15))
+                            r_embed.raise_for_status()
+                            break
+                        except Exception:
+                            time.sleep(0.5)
+                    if not r_embed:
+                        continue
                     m = re.search(r"const\s+src\s*=\s*['\"](.*?)['\"]", r_embed.text)
                     if m:
-                        return {
+                        candidates.append({
                             "m3u8_url": m.group(1),
                             "subtitles": [],
                             "qualities": [],
-                            "embed_referer": embed_url
-                        }
-                
-                # Fallback to Playwright
-                result = asyncio.run(extract_stream(embed_url))
-                stream_url = result.get("url")
-                if stream_url:
-                    return {
-                        "m3u8_url": stream_url,
-                        "subtitles": result.get("subtitles", []),
-                        "qualities": result.get("qualities_urls", []),
-                        "embed_referer": embed_url
-                    }
-            except Exception as e:
-                print(f"[AnitakuEngine] Extraction error on {embed_url}: {e}")
+                            "embed_referer": embed_url,
+                            "server_name": server_name or "HD"
+                        })
+                except Exception as e:
+                    logger.debug(f"[AnitakuEngine] Fast extraction error on {embed_url}: {e}")
+
+        # Only fallback to Playwright if zero fast streams could be extracted
+        if not candidates:
+            for server_name, embed_url in embed_items:
+                try:
+                    result = asyncio.run(extract_stream(embed_url))
+                    stream_url = result.get("url")
+                    if stream_url:
+                        candidates.append({
+                            "m3u8_url": stream_url,
+                            "subtitles": result.get("subtitles", []),
+                            "qualities": result.get("qualities_urls", []),
+                            "embed_referer": embed_url,
+                            "server_name": server_name or "Alternative"
+                        })
+                        break
+                except Exception as e:
+                    logger.debug(f"[AnitakuEngine] Playwright extraction error on {embed_url}: {e}")
                 continue
-        return None
+                
+        return candidates
+
+    def resolve_episode_stream(self, episode_url: str) -> dict:
+        """Backwards-compatible wrapper returning the top stream candidate."""
+        streams = self.resolve_episode_streams(episode_url)
+        return streams[0] if streams else None
 
     def download_video(self, url: str, output_dir: Path, progress_hook=None, raw_stream_url: str = None, is_audio: bool = False, custom_thumbnail: Path = None, fixed_title: str = None, fixed_artist: str = None, format_override: str = None, baking_callback=None, **kwargs) -> bool:
         target = raw_stream_url if raw_stream_url else url
-        if ".m3u8" in target and not is_audio:
+        if target and ".m3u8" in target and not is_audio:
             # We use a blazing fast custom HLS downloader!
             success = self._fast_hls_download(target, output_dir, progress_hook, fixed_title, custom_thumbnail, baking_callback, **kwargs)
             if success:
                 return True
+            if raw_stream_url:
+                return False
             
         # Fallback to base engine
         return super().download_video(url, output_dir, progress_hook, raw_stream_url, is_audio, custom_thumbnail, fixed_title, fixed_artist, format_override, baking_callback, **kwargs)
@@ -113,9 +153,20 @@ class AnitakuEngine(VideoEngine):
         if "embed_referer" in kwargs:
             headers["Referer"] = kwargs["embed_referer"]
             
+        def _fetch_m3u8(target_url):
+            for attempt in range(3):
+                try:
+                    r = requests.get(target_url, headers=headers, timeout=(10, 30))
+                    r.raise_for_status()
+                    return r.text
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1.0 * (attempt + 1))
+
         try:
-            resp = requests.get(m3u8_url, headers=headers, timeout=15)
-            playlist = m3u8.loads(resp.text, uri=m3u8_url)
+            m3u8_text = _fetch_m3u8(m3u8_url)
+            playlist = m3u8.loads(m3u8_text, uri=m3u8_url)
             
             real_url = m3u8_url
             if playlist.is_variant:
@@ -123,8 +174,8 @@ class AnitakuEngine(VideoEngine):
                 real_url = best.absolute_uri if best.absolute_uri else best.uri
                 if not real_url.startswith("http"):
                     real_url = m3u8_url.rsplit("/", 1)[0] + "/" + real_url
-                resp = requests.get(real_url, headers=headers, timeout=15)
-                playlist = m3u8.loads(resp.text, uri=real_url)
+                variant_text = _fetch_m3u8(real_url)
+                playlist = m3u8.loads(variant_text, uri=real_url)
                 
             chunks = []
             for i, segment in enumerate(playlist.segments):
@@ -147,6 +198,9 @@ class AnitakuEngine(VideoEngine):
                 for retry in range(4):
                     try:
                         c_resp = requests.get(c_url, headers=headers, timeout=15)
+                        if c_resp.status_code != 200 or len(c_resp.content) < 100:
+                            time.sleep(1)
+                            continue
                         data = c_resp.content
                         if data.startswith(b'\x89PNG\r\n\x1a\n'):
                             iend_pos = data.find(b'IEND\xaeB`\x82')
@@ -179,6 +233,7 @@ class AnitakuEngine(VideoEngine):
                             })
                             
             if downloaded < total_chunks * 0.95:
+                shutil.rmtree(parts_dir, ignore_errors=True)
                 return False
                 
             if baking_callback:
@@ -210,5 +265,9 @@ class AnitakuEngine(VideoEngine):
                 return True
                 
         except Exception as e:
-            print(f"HLS Fast download failed: {e}")
+            logger.debug(f"[AnitakuEngine] HLS Fast download error: {e}")
+        finally:
+            shutil.rmtree(parts_dir, ignore_errors=True)
+            temp_ts_path = tmp_path.with_suffix(".ts")
+            temp_ts_path.unlink(missing_ok=True)
         return False

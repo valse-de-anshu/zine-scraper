@@ -94,52 +94,77 @@ class HentaiHavenEngine(VideoEngine):
 
     # ─── Single video info ────────────────────────────────────────────────
 
+    def extract_stream_url(self, url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        Extracts (stream_url, title, cover_url) from an episode page without Playwright.
+        """
+        if ".m3u8" in url or ".mp4" in url:
+            return url, None, None
+
+        try:
+            from bs4 import BeautifulSoup
+            r = requests.get(url, headers=self.headers, timeout=15, impersonate="chrome124")
+            r.raise_for_status()
+            html = r.text
+            soup = BeautifulSoup(html, "html.parser")
+
+            stream_url = None
+            title = None
+            cover_url = None
+
+            for s in soup.select('script[type="application/ld+json"]'):
+                try:
+                    data = json.loads(s.string)
+                    if isinstance(data, dict):
+                        if data.get("@type") == "VideoObject":
+                            stream_url = data.get("contentUrl")
+                            title = data.get("name")
+                            thumbs = data.get("thumbnailUrl", [])
+                            if thumbs:
+                                cover_url = thumbs[0]
+                        elif "@graph" in data:
+                            graph = data.get("graph") if isinstance(data.get("graph"), list) else data.get("@graph", [])
+                            for g in graph:
+                                if g.get("@type") == "VideoObject":
+                                    stream_url = g.get("contentUrl")
+                                    title = g.get("name")
+                                    thumbs = g.get("thumbnailUrl", [])
+                                    if thumbs:
+                                        cover_url = thumbs[0]
+                except Exception:
+                    pass
+
+            if not stream_url:
+                source_tag = soup.select_one("source[src*='.m3u8'], source[src*='.mp4'], video source[src]")
+                if source_tag and source_tag.get("src"):
+                    stream_url = source_tag["src"]
+
+            if not stream_url:
+                m3u_match = re.search(r'https?://[^"\'\s<>]+\.m3u8[^"\'\s<>]*', html)
+                if m3u_match:
+                    stream_url = m3u_match.group(0)
+
+            return stream_url, title, cover_url
+        except Exception as e:
+            logger.error(f"[HentaiHaven] Failed to extract stream URL from {url}: {e}")
+            return None, None, None
+
     def extract_video_info(self, url: str) -> Dict[str, Any]:
         """
-        Returns yt-dlp info dict for a single HentaiHaven video.
-        Raises RuntimeError with a clear VPN message if geo-blocked.
+        Returns info dict for a single HentaiHaven video.
         """
-        import sys
-        import subprocess
-        import json
-        extractor_script = Path(__file__).parent.parent / "playwright_extractor.py"
-        python_path = sys.executable
-        import sys
-        venv_python = sys.executable
-        if venv_python.exists():
-            python_path = str(venv_python)
-        try:
-            p = subprocess.run([python_path, str(extractor_script), url], capture_output=True, text=True)
-            if p.returncode != 0:
-                logger.error(f"[HentaiHaven] Playwright extractor failed with exit code {p.returncode}")
-                if p.stderr:
-                    logger.error(f"[HentaiHaven] Playwright stderr: {p.stderr.strip()}")
-            stdout = p.stdout.strip()
-            if "JSON_RESULT:" in stdout:
-                json_str = stdout.split("JSON_RESULT:")[1]
-            else:
-                json_str = stdout
-            data = json.loads(json_str)
-            return {
-                "id": url.strip("/").split("/")[-1],
-                "title": data.get("title", "Unknown").replace(" - HentaiHaven", "").strip(),
-                "webpage_url": url,
-                "url": data.get("url", ""),
-                "upload_date": "20260101",
-                "view_count": 0,
-                "like_count": 0,
-                "duration": 0
-            }
-        except Exception as e:
-            err = str(e)
-            logger.error(f"[HentaiHaven] Playwright extraction crashed: {e}", exc_info=True)
-            if _is_geo_error(err):
-                raise RuntimeError(
-                    "🌐 HentaiHaven appears to be geo-blocked in your region.\n"
-                    "   Please enable a VPN set to an unrestricted country (e.g. US, CA, GB)\n"
-                    "   and try again. Zine cannot bypass geo-restrictions automatically."
-                ) from e
-            raise
+        stream_url, title, cover = self.extract_stream_url(url)
+        return {
+            "id": url.strip("/").split("/")[-1],
+            "title": title or url.strip("/").split("/")[-1],
+            "webpage_url": url,
+            "url": stream_url or url,
+            "thumbnail": cover,
+            "upload_date": "20260101",
+            "view_count": 0,
+            "like_count": 0,
+            "duration": 0,
+        }
 
     # ─── Avatar download ─────────────────────────────────────────────────
 
@@ -250,13 +275,58 @@ class HentaiHavenEngine(VideoEngine):
 
         logger.info(f"HentaiHaven metadata saved to {meta_path}")
 
-        # ── Download cover.png ────────────────────────────────────────
+        # ── Download cover.jpg ────────────────────────────────────────
         if not skip_cover:
-            cover_path = root_dir / "cover.png"
+            cover_path = root_dir / "cover.jpg"
             if not cover_path.exists() and avatar_url:
                 self.download_avatar(avatar_url, cover_path)
 
     # ─── Video download ──────────────────────────────────────────────────
+
+    def _validate_stream(self, stream_url: str, depth: int = 0) -> Tuple[bool, str]:
+        """
+        Quickly tests if the HLS playlist has valid media segments rather than
+        expired/dead domains returning HTML parking pages (e.g. Porkbun auction pages).
+        """
+        if depth > 3 or not stream_url:
+            return True, "OK"
+
+        try:
+            r = requests.get(stream_url, headers=self.headers, timeout=10, impersonate="chrome124")
+            if r.status_code != 200:
+                return False, f"Server returned HTTP {r.status_code}"
+
+            first_target = None
+            for line in r.text.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    if line.startswith("http"):
+                        first_target = line
+                    else:
+                        base = stream_url.rsplit("/", 1)[0]
+                        first_target = f"{base}/{line}"
+                    break
+
+            if not first_target:
+                return True, "OK"
+
+            # If master playlist pointing to quality index / child playlist
+            if ".m3u8" in first_target or ".txt" in first_target or first_target.endswith(".list"):
+                return self._validate_stream(first_target, depth + 1)
+
+            # Test first actual segment
+            r_seg = requests.get(first_target, headers=self.headers, timeout=10, impersonate="chrome124")
+            if r_seg.status_code != 200:
+                return False, f"Segment host returned HTTP {r_seg.status_code}"
+
+            snippet = r_seg.content[:300].lower()
+            if b"<!doctype" in snippet or b"<html" in snippet or b"domain for sale" in snippet or b"porkbun" in snippet or b"<head" in snippet:
+                return False, "Stream CDN host is expired/dead (domain parked at auction)"
+
+            return True, "OK"
+        except Exception as e:
+            logger.warning(f"Stream validation probe exception: {e}")
+            return True, "OK"
 
     def download_hentaihaven_video(
         self,
@@ -267,145 +337,79 @@ class HentaiHavenEngine(VideoEngine):
         fixed_title: Optional[str] = None,
     ) -> bool:
         """
-        Downloads a single HentaiHaven video using yt-dlp subprocess.
-        Quality preference: 1080p → 720p → 480p → best available.
-        Returns True on success.
+        Downloads a single HentaiHaven video using direct stream extraction and yt-dlp native HLS.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if fixed_title:
-            # Use the pre-cleaned title (no HTML entities, no garbage chars)
             clean_title = "".join(
                 c for c in fixed_title if c.isalnum() or c in " .-_()'"
             ).strip()
-            # Final safety: replace illegal filesystem chars
             clean_title = re.sub(r'[<>:"/\\|?*]', '', clean_title).strip()
             if not clean_title:
                 clean_title = "video"
         else:
-            clean_title = "%(title)s [%(id)s]"
+            clean_title = "video"
 
+        stream_url = url
+        if not (".m3u8" in url or ".mp4" in url):
+            stream_url, _, _ = self.extract_stream_url(url)
+
+        if not stream_url:
+            logger.error(f"[HentaiHaven] Could not extract stream URL for {url}")
+            return False
+
+        # Validate stream health before downloading to prevent hanging on dead/parked CDNs
+        valid, reason = self._validate_stream(stream_url)
+        if not valid:
+            from core.ui import console
+            console.print(f"[error]Cannot download video: {reason}[/error]")
+            logger.error(f"[HentaiHaven] Stream validation failed for {url}: {reason}")
+            return False
+
+        result_path = output_dir / f"{clean_title}.mp4"
         outtmpl = str(output_dir / f"{clean_title}.%(ext)s")
 
-        # Format string: prefer mp4 at target height
-        height_map = {"1080p": "1080", "720p": "720", "480p": "480", "360p": "360"}
-        h = height_map.get(quality, "1080")
-        fmt = (
-            f"bestvideo[height<={h}][ext=mp4]+bestaudio/"
-            f"bestvideo[height<={h}]+bestaudio/"
-            f"best[height<={h}]/"
-            f"best"
-        )
+        import shutil
+        yt_dlp_path = shutil.which("yt-dlp") or "yt-dlp"
 
-        temp_batch = tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".txt", encoding="utf-8"
-        )
+        m_domain = re.search(r"https?://([^/]+)", url)
+        domain = m_domain.group(1) if m_domain else "hentaihaven.xxx"
+        referer = f"https://{domain}/"
+
+        cmd = [
+            yt_dlp_path,
+            stream_url,
+            "-o", outtmpl,
+            "--hls-prefer-native",
+            "--add-header", f"Referer:{referer}",
+            "--add-header", f"Origin:{referer.rstrip('/')}",
+            "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "--merge-output-format", "mp4",
+            "-f", "bestvideo+bestaudio/best",
+            "--retries", "5",
+            "--fragment-retries", "5",
+            "--concurrent-fragments", "16",
+            "--no-check-certificate",
+            "--no-warnings",
+            "--socket-timeout", "10",
+        ]
+
         try:
-            import sys
-            import shutil
-            import subprocess
-            import json
-            import sys
-            from pathlib import Path
-            python_path = sys.executable
-            venv_python = Path(sys.executable)
-            if venv_python.exists():
-                python_path = str(venv_python)
-            
-            yt_dlp_path = shutil.which("yt-dlp")
-            if not yt_dlp_path:
-                raise RuntimeError("yt-dlp not found in PATH or virtual environment")
-
-            extractor_script = Path(__file__).parent.parent / "playwright_extractor.py"
-            p = subprocess.run(
-                [python_path, str(extractor_script), url],
-                capture_output=True, text=True
-            )
-            try:
-                stdout = p.stdout.strip()
-                if "JSON_RESULT:" in stdout:
-                    json_line = stdout.split("JSON_RESULT:")[1].strip().split('\n')[0]
-                else:
-                    json_line = stdout
-                data = json.loads(json_line)
-                stream_url = data.get("url", "")
-                subtitles = data.get("subtitles", [])
-                
-                # Manually download subtitles since we use custom HLS or direct links
-                if subtitles:
-                    import requests
-                    for i, sub in enumerate(subtitles):
-                        sub_url = sub.get("url") if isinstance(sub, dict) else sub
-                        if not sub_url: continue
-                        ext = ".vtt" if ".vtt" in sub_url.lower() else ".srt"
-                        lang = sub.get("label", "en") if isinstance(sub, dict) else "en"
-                        sub_dest = output_dir / f"{clean_title}.{lang}{ext}"
-                        try:
-                            r = requests.get(sub_url, headers=self.headers, timeout=10)
-                            if r.status_code == 200:
-                                sub_dest.write_bytes(r.content)
-                        except Exception as e:
-                            logger.error(f"Failed to fetch subtitle {sub_url}: {e}")
-                            
-            except Exception as e:
-                logger.error(f"[HentaiHaven Download] Failed to parse playwright output: {e}")
-                stream_url = ""
-
-            if not stream_url or "http" not in stream_url:
-                logger.error(f"Playwright could not find stream for {url}. Output was: {p.stdout.strip()}")
-                return False
-
-            if ".m3u8" in stream_url:
-                result_path = output_dir / f"{clean_title}.mp4" if fixed_title else output_dir / "downloaded.mp4"
-                cover_path = output_dir / "cover.png"
-                
-                def baking_cb():
-                    progress_hook({"status": "baking", "baking": True, "done": False, "total_bytes": 1, "downloaded_bytes": 1})
-                
-                return self._download_custom_hls(
-                    playlist_url=stream_url,
-                    tmp_path=result_path,
-                    progress_hook=progress_hook,
-                    fixed_title=fixed_title,
-                    custom_thumbnail=None,
-                    baking_callback=baking_cb
-                )
-
-            temp_batch.write(stream_url + "\n")
-            temp_batch.close()
-
-            cmd = [
-                yt_dlp_path,
-                "--plugin-dirs", str(Path(__file__).parent.parent.parent / "plugins"),
-                "--batch-file", temp_batch.name,
-                "-o", outtmpl,
-                "-f", fmt,
-                "--impersonate", "chrome",
-                "--merge-output-format", "mp4",
-                "--no-playlist",
-                "--all-subs",
-                "--embed-subs",
-                "--embed-metadata",
-                "--retries", "10",
-                "--fragment-retries", "10",
-                "--concurrent-fragments", "4",
-                "--no-check-certificate",
-                "--no-warnings",
-                "--socket-timeout", "10",
-            ]
-            for k, v in self.headers.items():
-                cmd.extend(["--add-header", f"{k}:{v}"])
-
-            result_path = output_dir / f"{clean_title}.mp4" if fixed_title else None
             success = self._run_ytdlp_subprocess(
-                cmd, progress_hook, str(result_path) if result_path else str(output_dir)
+                cmd, progress_hook, str(result_path)
             )
-            
-            if success and result_path and result_path.exists():
-                pass
-                    
-            return success
 
+            if success and result_path.exists() and result_path.stat().st_size > 1000:
+                return True
+
+            for candidate in output_dir.glob(f"{clean_title}.*"):
+                if candidate.suffix.lower() in [".mp4", ".mkv", ".webm"] and candidate.stat().st_size > 1000:
+                    if candidate.suffix.lower() != ".mp4":
+                        candidate.rename(result_path)
+                    return True
+
+            return False
         except Exception as e:
             err = str(e)
             if _is_geo_error(err):
@@ -416,9 +420,3 @@ class HentaiHavenEngine(VideoEngine):
             else:
                 logger.error(f"HentaiHaven download failed for {url}: {e}")
             return False
-        finally:
-            if os.path.exists(temp_batch.name):
-                try:
-                    os.unlink(temp_batch.name)
-                except Exception:
-                    pass

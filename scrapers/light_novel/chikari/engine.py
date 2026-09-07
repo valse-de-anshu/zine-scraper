@@ -46,7 +46,7 @@ class ChikariBaseEngine:
     def get_soup(self, url: str) -> BeautifulSoup:
         for attempt in range(5):
             try:
-                r = self.session.get(url, timeout=30)
+                r = self.session.get(url, timeout=(10, 30))
                 r.raise_for_status()
                 r.encoding = "utf-8"
                 return BeautifulSoup(r.text, "lxml")
@@ -57,7 +57,7 @@ class ChikariBaseEngine:
     def get_json(self, url: str) -> dict:
         for attempt in range(5):
             try:
-                r = self.session.get(url, timeout=30)
+                r = self.session.get(url, timeout=(10, 30))
                 r.raise_for_status()
                 return r.json()
             except Exception:
@@ -73,7 +73,7 @@ class ChikariBaseEngine:
                 return True
         for attempt in range(3):
             try:
-                r = self.session.get(cover_url, timeout=30)
+                r = self.session.get(cover_url, timeout=(10, 30))
                 r.raise_for_status()
                 data = r.content
                 if len(data) > 500:

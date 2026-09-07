@@ -71,4 +71,6 @@ class IdagioScraper:
                 "thumbnail": thumbnail
             })
             
+        self.title = metadata.get("Channel/Series", "Unknown")
+        self.metadata = metadata
         return metadata, videos, info

@@ -5,8 +5,7 @@ Hanime TUI — Hentai-category flow.
 
 Route logic (entirely user-driven, NOT URL-driven):
   Single Episode         → Quick Grab → video only, flat folder, no metadata
-  Whole Franchise (Flat) → Vacuum     → all episodes in one series folder
-  Nested Subfolders      → Vacuum     → all episodes in nested season subfolders
+  Whole Franchise        → Vacuum     → all episodes in video/ subfolder
 
 The Vacuum / Quick Grab label is NEVER shown. Label is always "Hentai".
 Save Location prompt is NEVER shown — path is derived automatically from user choice.
@@ -92,8 +91,7 @@ def handle_hanime_tui(
         if __import__("sys").stdin.isatty():
             choice = Selector([
                 ("Single Episode", "single"),
-                ("Whole Franchise (Flat Folder)", "flat"),
-                ("Whole Franchise (Nested Subfolders)", "nested"),
+                ("Whole Franchise", "franchise"),
             ], "Download", vertical=True).select()
 
             if choice == "single":
@@ -106,10 +104,11 @@ def handle_hanime_tui(
                 metadata["Total Videos"] = len(videos)
                 scraper.is_playlist = False
                 is_vacuum = False
-            else:
-                scraper.franchise_structure = choice
+            elif choice == "franchise":
                 scraper.is_playlist = True
                 is_vacuum = True
+            else:
+                return
         else:
             scraper.is_playlist = True
             is_vacuum = True

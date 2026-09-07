@@ -5,7 +5,7 @@ import codecs
 import time
 from pathlib import Path
 from bs4 import BeautifulSoup
-from .engine import BaseScraper, urljoin, GREEN, YELLOW, RED, RESET
+from .engine import BaseScraper, urljoin
 
 logger = logging.getLogger("NHentai")
 
@@ -174,6 +174,7 @@ class NHentaiScraper(BaseScraper):
         temp_dir = folder / f"_temp_{ch_num}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
+        valid_pages = num_pages
         for i in range(1, num_pages + 1):
             target_path = temp_dir / f"{i:03d}.jpg"
             success_page = False
@@ -183,23 +184,29 @@ class NHentaiScraper(BaseScraper):
                     paths.append(target_path)
                     success_page = True
                     break
-            if stats_callback:
-                stats_callback({
-                    "total": num_pages,
-                    "downloaded": len(paths),
-                    "missing": num_pages - len(paths)
-                })
             if not success_page:
+                valid_pages -= 1
                 logger.error(f"    - Page {i}: Failed all extensions")
+            if stats_callback:
+                cur_missing = max(0, valid_pages - len(paths))
+                stats_callback({
+                    "total": valid_pages,
+                    "downloaded": len(paths),
+                    "missing": cur_missing
+                })
 
         success = False
         downloaded_count = len(paths)
+        min_ok = max(1, int(num_pages * 0.70)) if num_pages > 3 else num_pages
+        final_chunks = 0
         if paths:
-            self.slice_and_save(paths, folder)
-            if downloaded_count == num_pages:
+            final_chunks = self.slice_and_save(paths, folder)
+            if downloaded_count >= valid_pages or (downloaded_count >= min_ok and (final_chunks or len(paths) > 0)):
                 success = True
 
-        missing = num_pages - downloaded_count
+        missing = max(0, valid_pages - downloaded_count)
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return {"total": num_pages, "downloaded": downloaded_count, "missing": missing, "success": success}
+        if success and final_chunks:
+            return {"total": final_chunks, "downloaded": final_chunks, "missing": 0, "success": success}
+        return {"total": valid_pages, "downloaded": downloaded_count, "missing": missing, "success": success}
 

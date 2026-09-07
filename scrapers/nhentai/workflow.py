@@ -21,6 +21,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     with active_status("[info]Metadata...[/info]", spinner="dots"):
         try:
             title, chapters = scraper.get_title_and_chapters()
+            scraper.title = title
+            if hasattr(tracker, "set_title") and title:
+                tracker.set_title(scraper.url, title)
             
             _is_chapter = False
             if not chapters:
@@ -124,9 +127,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 pass
         cover_status_ui = cover_exists
             
-    if getattr(scraper, '_batch_quick_grab', False):
-        chapters = chapters[:1]
+    from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.url)
+    to_process = apply_chapter_limit(to_process, scraper)
     
     startup_clear()
     print_banner()
@@ -272,12 +275,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                     if isinstance(result, dict):
                         page_data.update(result)
                         if result.get("success"):
-                            tracker.mark_downloaded(scraper.url, ch_num)
+                            tracker.mark_downloaded(scraper.url, ch_num, title=title)
                             page_data["done"] = True
                             page_data["success"] = True
                             success_count += 1
                     elif result:
-                        tracker.mark_downloaded(scraper.url, ch_num)
+                        tracker.mark_downloaded(scraper.url, ch_num, title=title)
                         page_data["done"] = True
                         page_data["success"] = True
                         success_count += 1

@@ -73,8 +73,8 @@ def get_save_path(
 
         try:
             custom_base = Path(custom_path_str)
-            is_vacuum = getattr(scraper, "get_link_type", lambda: "")() in ["model", "franchise", "playlist"]
-            custom_ph_root = (custom_base / "hanime_red") if is_vacuum else custom_base
+            is_vacuum = getattr(scraper, "get_link_type", lambda: "")() in ["model", "franchise", "playlist", "series"]
+            custom_ph_root = (custom_base / "HanimeRed") if is_vacuum else custom_base
             store_layer.create_directory(custom_ph_root)
             for _ in range(2):
                 sys.stdout.write("\033[1A\033[2K")

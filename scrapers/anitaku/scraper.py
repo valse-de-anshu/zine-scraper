@@ -13,12 +13,26 @@ class AnitakuScraper:
         self._host = "https://anitaku.online"
         self.engine = AnitakuEngine()
         
+    def _get(self, url: str, **kwargs) -> requests.Response:
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        h = kwargs.pop("headers", None) or HEADERS.copy()
+        h.setdefault("Referer", self._host)
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, headers=h, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     def get_metadata_and_videos(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-        h = HEADERS.copy()
-        h["Referer"] = self._host
-        
-        r = requests.get(self.url, headers=h)
-        r.raise_for_status()
+        r = self._get(self.url)
         soup = BeautifulSoup(r.text, "lxml")
         
         # If episode page, grab category link to get proper metadata
@@ -26,13 +40,13 @@ class AnitakuScraper:
             anime_link = soup.select_one(".anime-info a")
             if anime_link:
                 self.url = self._host + anime_link.get("href")
-                r = requests.get(self.url, headers=h)
+                r = self._get(self.url)
                 soup = BeautifulSoup(r.text, "lxml")
             else:
                 for a in soup.select("a"):
                     if "/category/" in a.get("href", ""):
                         self.url = self._host + a.get("href")
-                        r = requests.get(self.url, headers=h)
+                        r = self._get(self.url)
                         soup = BeautifulSoup(r.text, "lxml")
                         break
                         
@@ -93,4 +107,6 @@ class AnitakuScraper:
         if videos:
             metadata["Total Videos"] = len(videos)
             
+        self.title = title
+        self.metadata = metadata
         return metadata, videos, {}

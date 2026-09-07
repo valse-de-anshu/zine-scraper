@@ -1,3 +1,489 @@
+# Progress Report - September 07, 2026 (Manga18fx Scraper Suite Addition & Isolation)
+
+- **Manga18fx Self-Contained Scraper Suite Addition (`scrapers/manga18fx/`):**
+  - **Overview**:
+    - Added dedicated scraper for `https://manga18fx.com/`, supporting mixed NSFW and SFW manga, manhwa, and webtoons.
+    - Implemented strictly across the 8 canonical, self-contained files specified in `AGENTS.md` with zero parasite files and zero cross-scraper dependencies:
+      - `__init__.py`: Package exports (`Manga18fxScraper`, `run_workflow`, `get_save_path`, `handle_tui`).
+      - `engine.py`: Network session with Chrome headers, thread pool concurrency, continuous vertical canvas stitching and 2000px chunk slicing inside centralized `💩/` buffer (`PathAuthority().get_temp_root()`).
+      - `scraper.py`: `Manga18fxScraper` class with self-contained cover extraction, metadata parsing (genres, authors, descriptions), ascending chronological chapter ordering, and support for both full series URLs and direct single-chapter URLs.
+      - `location.py`: Interactive directory routing supporting SFW vs NSFW selection, Ongoing vs Completed, Default vs Custom locations, and `=` toggle for Quick grab. Headless/batch mode auto-detects NSFW classification via genre tags.
+      - `verification.py`: Local disk image verification (`Chapter<n>`) and history tracker synchronization.
+      - `progress.py`: Tokyo Night Storm pre-flight completion tree (`render_completion_tree`).
+      - `workflow.py`: Multi-track Live progress tree, `MinimalPulseBar` for chunk downloading, braille spinner (`almost done with baking...`) for vertical slicing, Whistleblower recovery callback, and network loss resilience.
+      - `tui.py`: Site TUI entrypoint delegating to `run_workflow`.
+  - **Core Integration**:
+    - Registered `"manga18fx.com": "manga18fx"` in `core/site_map.py`.
+    - Added `"manga18fx"` to `_LEGACY_TOON_SITES` in `core/paths.py`.
+    - Added Manga18fx metadata entry to Category 8 (18+ Toon) in `core/site_tui.py`.
+
+---
+
+# Progress Report - September 06, 2026 (PornHub Duplicate Revolt Panels Elimination & Live Idempotency)
+
+- **PornHub Duplicate Revolt Panels Fix & Live Idempotency (`scrapers/pornhub/workflow.py`, `core/ui.py`):**
+  - **Identified Problem**:
+    - When triggering Revolt mode (`Ctrl+R`) during PornHub downloads, multiple duplicate `╭─ Revolt ───╮` box panels were dumped onto the terminal screen simultaneously alongside the inline progress tree node.
+  - **Root Causes**:
+    1. In `scrapers/pornhub/workflow.py`, an unnecessary outer `Live(Text(""), ..., transient=False)` context was wrapping the entire video loop.
+    2. Because `Text("")` is not a `Tree`, `inject_revolt_into_renderable` constructed a standalone Rich `Panel` (`revolt_panel`). Because `transient=False` was set, every refresh and transition between videos permanently flushed a new Revolt box panel to stdout.
+    3. At the same time, the inner `Live(render_video_tree(), ...)` also injected a Revolt branch node into the Progress tree, creating visual duplication.
+    4. Repeatedly toggling `set_active_live(_outer_live)` across video transitions re-wrapped the update callbacks multiple times.
+  - **Resolution**:
+    - **Removed `_outer_live`**: Eliminated the redundant outer Live wrapper and trailing whitespace prints in `scrapers/pornhub/workflow.py`, aligning with standard video workflows across the suite.
+    - **`set_active_live` Idempotency**: Added `_revolt_wrapped` guard in `core/ui.py:set_active_live()` to ensure Live renderable wrappers are never applied more than once on any instance.
+    - **Clean Inline Revolt**: Revolt mode now cleanly renders strictly as a single inline node inside the active Progress tree (`◆ Revolt`) without ghost panels or stdout pollution.
+
+---
+
+# Progress Report - September 06, 2026 (PornHub Pre-Flight VPN Prompt & Revolt Exit)
+
+- **PornHub Pre-Flight VPN Verification & Clean Revolt Exit (`scrapers/pornhub/tui.py`):**
+  - **Identified Problem**:
+    - When a user inputs a PornHub URL without an active VPN in restricted regions, the scraper immediately initiates network queries during Stage 1 metadata fetching, resulting in abrupt geo-blocking runtime exceptions or timeouts.
+  - **Resolution**:
+    - **Stage 0 Pre-Flight Prompt**: Integrated an immediate interactive `Selector` prompt (`VPN active? [Yes] [No]`) before initiating any metadata loading or network requests.
+    - **Normal Flow on Confirmation**: Selecting `Yes` proceeds directly to normal interactive TUI metadata extraction, quality selection, and download routing.
+    - **Revolt-Style Clean Exit on Deferral**: Selecting `No` (or cancelling) logs and outputs `turn the vpn on then come back once u are equiped with vpn `, restores the terminal cursor and canonical modes, and executes an immediate quiet exit (`os._exit(0)`).
+    - **Guarded for Batch & TTY**: Guarded by `sys.stdin.isatty()` and `not is_batch_mode` to prevent hanging automated or headless batch runs.
+
+---
+
+# Progress Report - September 06, 2026 (AniNeko & AniKai Stream Resolution Typo & Multi-Server Waterfall)
+
+- **AniNeko & AniKai Stream Resolution Fix & Multi-Server Waterfall (`scrapers/anineko/`, `scrapers/anikai/`):**
+  - **Identified Problem**:
+    - When downloading anime episodes from AniNeko (e.g. `https://anineko.to/watch/gals-cant-be-kind-to-otaku`), all episodes failed immediately with:
+      `● Gals Can't Be Kind to Otaku - Episode X.mp4 (Error: Failed to resolve)`
+    - Both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py` had an identical issue.
+  - **Root Causes**:
+    1. In both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py` (lines 72, 106), HTTP requests were invoked with `headers=h` instead of `headers=HEADERS`.
+    2. Because variable `h` was undefined, python raised `NameError: name 'h' is not defined`. This was caught silently by `try...except Exception:` blocks, returning `None` and marking each episode with `Failed to resolve`.
+    3. Both engines lacked `resolve_episode_streams()` to discover multiple alternative servers (`HD-2 bibiemb`, `HD-1 vivibebe`, etc.).
+    4. `workflow.py` did not waterfall through candidate streams if an individual server had issues or was blocked.
+  - **Resolution**:
+    - **Headers Typo Resolution**: Fixed undefined `headers=h` -> `headers=HEADERS` across all watch page and embed extraction calls in both `scrapers/anineko/engine.py` and `scrapers/anikai/engine.py`.
+    - **Multi-Server Candidate Discovery (`resolve_episode_streams`)**: Added multi-stream candidate discovery in both engines, discovering both `HD-2` and `HD-1` mirrors with direct regex stream extraction (`bibiemb`, `vibe`, `vivibebe`, `vidstreaming`).
+    - **Multi-Server Waterfall (`workflow.py`)**: Updated `run_workflow` in both `scrapers/anineko/workflow.py` and `scrapers/anikai/workflow.py` to seamlessly waterfall across all candidate streams.
+    - **Episode Title Numbering Alignment (`scrapers/anineko/scraper.py`, `scrapers/anikai/scraper.py`)**: Standardized episode filename formatting from `{Series} - Episode {num}` to `EP {num} - {Series}` (e.g. `EP 1 - Gals Can't Be Kind to Otaku!?`), matching Anitaku, Miruro, and HiAnime conventions for clean natural sorting.
+    - **Verification**: Verified live on `https://anineko.to/watch/gals-cant-be-kind-to-otaku/ep-1`, successfully discovering 4 valid candidate m3u8 streams across HD-2 and HD-1 mirrors.
+
+---
+
+# Progress Report - September 06, 2026 (HiAnime Stream Resolution Typo & Multi-Server Waterfall)
+
+- **HiAnime Stream Resolution Fix & Multi-Server Waterfall (`scrapers/hianime/engine.py`, `scrapers/hianime/workflow.py`):**
+  - **Identified Problem**:
+    - When attempting to download episodes from HiAnime (e.g. `https://hianime.ad/anime/ushiro-no-shoumen-kamui-san`), every single episode immediately failed with:
+      `● Ep X - ... (Error: Failed to resolve)`.
+    - **Root Causes**:
+      1. In `scrapers/hianime/engine.py`, lines 67 and 101 had a typo passing undefined variable `headers=h` instead of `headers=HEADERS` to `requests.get()`.
+      2. This caused `NameError: name 'h' is not defined` on every stream resolution request. The exception was caught by a generic `try...except` block, silently returning `None` and causing the workflow to report `Failed to resolve`.
+      3. `_server_priority` and the direct regex extractor lacked support for `bibiemb.xyz` Cloudflare mirror servers, which stream video directly without Cloudflare bot challenges or ByteDance 403 blocks.
+      4. `workflow.py` only attempted the first discovered stream and lacked multi-stream fallback iteration.
+  - **Resolution**:
+    - **Headers Typo Resolution**: Replaced undefined `headers=h` with `headers=HEADERS` across all watch page and embed extraction requests.
+    - **Multi-Server Candidate Discovery (`resolve_episode_streams`)**: Implemented multi-stream resolution discovering all working mirrors (`HD-2 bibiemb`, `HD-1 vivibebe`, etc.).
+    - **Direct Regex Extraction for Cloudflare Mirrors**: Added direct regex m3u8 extraction for `bibiemb.xyz` and `vibe` servers without Playwright overhead.
+    - **Multi-Server Waterfalling (`workflow.py`)**: Updated the episode download loop to waterfall through all candidate streams automatically if any server fails.
+    - **Live Download Verification**: Verified live extraction on all episodes of `Ushiro no Shoumen Kamui-san` and successfully downloaded Episode 1 end-to-end (572 MB 1080p video) with 0 errors.
+
+---
+
+# Progress Report - September 06, 2026 (YouTube Album Waterfall Hardening & Quick Grab Isolation)
+
+- **YouTube Music Album Waterfall Hardening & Quick Grab Directory Isolation (`scrapers/youtube/engine.py`, `scrapers/youtube/workflow.py`, `scrapers/youtube/tui.py`):**
+  - **Identified Problem**:
+    - When downloading a YouTube video as a song via Quick Grab (e.g. `https://youtu.be/DvRGtH6b_ls` - `OMORI - afterword` by `carrot113`), the TUI and terminal logs showed strange, mismatched data:
+      - `Album : Is It Wrong to Try to Pick Up Girls in a Dungeon?, Vol. 1` (a completely unrelated light novel audiobook!).
+      - `Location : /mnt/storage/portable_music/song` (unwanted `/song` subfolder appended to custom Quick Grab folder).
+      - `◆ carrot113` (channel name displayed in the tree instead of the actual song title).
+      - The song title itself was missing from the TUI header entirely.
+    - **Root Causes**:
+      1. `parse_artist_and_title("OMORI - afterword")` parsed `OMORI` as the artist and `afterword` as the song title.
+      2. In `search_album_waterfall`, when querying MusicBrainz for `recording:"afterword" AND artist:"OMORI"`, it matched the light novel author **Fujino Omori** (`大森藤ノ`) whose audiobook release for *Is It Wrong to Try to Pick Up Girls in a Dungeon?, Vol. 1* includes an "Afterword" track.
+      3. `_is_artist_match` was overly permissive (matching single tokens in multi-word author names) and MusicBrainz queries lacked release group filtering (admitting Audiobooks, Spokenword, and Audio dramas as music albums).
+      4. In `workflow.py`, the `elif is_music: sub_folder = folder / "song"` routing ran unconditionally outside the `if is_multi:` check, polluting single Quick Grab downloads with unnecessary `/song` subfolders.
+      5. The tree header in `workflow.py` used `title` (Channel/Series) rather than the video's title in Quick Grab mode.
+  - **Resolution**:
+    - **Audiobook & Spokenword Rejection**: Filtered out `Audiobook`, `Spokenword`, `Audio drama`, and `Interview` release groups from MusicBrainz queries in `search_album_waterfall`.
+    - **Strict Artist Matching (`_is_artist_match`)**: Rewrote artist matching to require full token alignment and collaborative token splitting (`feat.`, `&`, `x`, `/`), preventing surname substrings from matching authors.
+    - **Direct Quick Grab Folder Routing**: Restricted `/song`, `/video`, and `/short` subfolder creation exclusively to `if is_multi:` (Vacuum/Channel/Playlist). In Quick Grab, files save directly into the specified root.
+    - **Prominent Song Title Display**: Added single song/video title display to `draw_yt_header` and `tui_reconstruct`, and passed `history_title` into `render_metadata_tree` so Quick Grab renders `◆ <Song Title>` instead of `◆ <Channel Name>`.
+
+---
+
+# Progress Report - September 06, 2026 (Anime HLS Stream Multi-Server Waterfall & Chunk Validation)
+
+- **Anime Multi-Server Stream Resolution & FFmpeg Exit Status 183 Resolution (`scrapers/anitaku/`, `scrapers/anikai/`, `scrapers/anineko/`, `scrapers/hianime/`):**
+  - **Identified Problem**:
+    - When downloading episodes from Anitaku (e.g. `https://anitaku.online/category/rich-girl-caretaker-im-secretly-the-caregiver-of-the-most-popular-girl-in-this-rich-kid-school`), Episode 1 downloaded successfully, but Episode 2 crashed with:
+      `HLS Fast download failed: Command '['/usr/bin/ffmpeg', '-y', '-i', '...EP 2 ...ts', '-c', 'copy', '...EP 2 ...mp4']' returned non-zero exit status 183.`
+    - Direct `print()` statements in `AnitakuEngine` dumped the raw subprocess exception and internal command arrays straight into stdout, clobbering the Rich live rendering tree.
+    - Anitaku's default `HD-1` server (`vivibebe.site`) hosted segments on ByteDance's ad CDN (`p16-ad-sg.ibyteimg.com`), which returned HTTP 403 `{"code":1004,"error":"domain forbidden"}`.
+    - `download_chunk` in `_fast_hls_download` never validated HTTP status codes or minimum chunk sizes, downloading 40-byte error JSONs into `.ts` chunk files and treating them as valid video.
+    - FFmpeg failed with exit status 183 (`Invalid data found when processing input`) when attempting to demux the concatenated JSON error strings.
+    - `AnitakuEngine` lacked server waterfalling and only attempted the first discovered player iframe.
+  - **Resolution**:
+    - **Multi-Server Waterfall Discovery (`scrapers/anitaku/engine.py`, `scrapers/anitaku/workflow.py`)**:
+      - Implemented `resolve_episode_streams(episode_url)` returning all working mirrors sorted by priority (`bibiemb` Cloudflare mirrors first, `vivibebe` / `vidstreaming` fallback).
+      - Updated `workflow.py` to iterate through candidate streams if a server fails.
+      - Added direct regex m3u8 extraction without Playwright for `bibiemb.xyz`.
+    - **Strict Chunk HTTP & Size Validation**:
+      - Added `if c_resp.status_code != 200 or len(c_resp.content) < 100:` checks across `anitaku`, `anikai`, `anineko`, and `hianime`. Invalid/forbidden chunks are rejected immediately.
+    - **Clean Logging & Subprocess Sanitization**:
+      - Replaced raw `print()` calls in `AnitakuEngine` with `logger.debug`, preventing terminal clobbering during background retries.
+    - **Guaranteed Temp Cleanup**:
+      - Added `finally:` blocks ensuring `parts_dir` and temporary `.ts` buffers in `💩/` are wiped even if stream downloading fails.
+
+---
+
+# Progress Report - September 06, 2026 (Anime Workflow Scoping Audit & UnboundLocalError Resolution)
+
+- **Comprehensive Scope Sanitization Across All Anime Platforms (`scrapers/miruro`, `scrapers/anikoto`, `scrapers/hianime`, `scrapers/anitaku`, `scrapers/anineko`, `scrapers/anikai`):**
+  - **Identified Problem**:
+    - Selecting "Download single episode" in `miruro` threw `Failed to load TUI for miruro: cannot access local variable 're' where it is not associated with a value`.
+    - Investigation revealed a Python scoping issue: when late inner `import` statements (e.g. `import re`, `import sys`, `import time`, `from core.ui import Selector`, `from rich.tree import Tree`) exist anywhere in a function, Python treats those names as local variables throughout the entire function scope. Any reference to that name earlier in the function (such as `re.search` in single-episode detection, or `time.sleep` in error retries) causes an `UnboundLocalError`.
+    - Auditing the other 5 anime platforms (`anikoto`, `hianime`, `anitaku`, `anineko`, `anikai`) showed that all of them shared identical patterns: late inner imports of `time`, `sys`, `threading`, `Selector`, `Tree`, `Live`, `Progress`, `set_active_live`, `clean_part_files`, and `handle_internet_loss`.
+    - In `scrapers/hianime/workflow.py`, an additional typo was discovered: `blink_style` instead of `blink_state` at line 428, which threw a `NameError` during the downloading phase.
+  - **Resolution**:
+    - **Global Module-Level Centralization**:
+      - Centralized all imports at the top of each workflow file: `os`, `sys`, `re`, `json`, `time`, `signal`, `logging`, `threading`, `Path`, `requests`, Rich renderables (`Tree`, `Live`, `Progress`, etc.), and UI components (`CategoryImportTUI`, `CATEGORIES`, `clean_part_files`, `handle_internet_loss`).
+      - Stripped all inner imports across all 6 anime workflow modules.
+    - **HiAnime NameError Fix**:
+      - Corrected `blink_style` to `blink_state` in the indeterminate blinking dot logic.
+    - **Static AST ScopeChecker & Automated Verification**:
+      - Built an automated AST ScopeChecker verifying 0 inner imports across all 6 workflows (100% clean).
+      - Added automated test suite `scratch/test_anime_tui_flow.py` asserting all 6 workflows execute both URL parsing and single-episode / whole-series execution cleanly without exceptions.
+
+---
+
+# Progress Report - September 05, 2026 (Miruro Genres & Synopsis NameError Resolution)
+
+- **Miruro Metadata Resolution (`scrapers/miruro/scraper.py`):**
+  - **Identified Problem**:
+    - When accessing any anime on Miruro (e.g. `https://www.miruro.ru/watch/147103/my-happy-marriage?ep=1`), `scraper.py` failed during `get_metadata_and_videos()` with:
+      `Failed to fetch metadata: name 'genres' is not defined`.
+    - `genres` and `synopsis` were never bound from the retrieved `data` object before constructing the `metadata` and `info` dictionaries.
+  - **Resolution**:
+    - Extracted `genres = data.get('genres') or []` and `synopsis = data.get('description') or ""`.
+    - Cleaned up any embedded HTML markup from `synopsis` using `re.sub(r'<[^>]+>', '', synopsis)` and `html.unescape`.
+    - Fully populated `metadata["Genres"]`, `metadata["Description"]`, and `info["description"]`.
+
+---
+
+# Progress Report - September 05, 2026 (Hentaimama Native AJAX Stream Extraction & Clean Title Resolution)
+
+- **Hentaimama Stream Extraction, Clean Series Title & Pipeline Hardening (`scrapers/hentaimama/engine.py`, `scrapers/hentaimama/scraper.py`, `scrapers/hentaimama/tui.py`, `scrapers/hentaimama/workflow.py`):**
+  - **Identified Problem**:
+    - yt-dlp's built-in extractor failed on `hentaimama.io` episodes (`ERROR: [Hentaimama] ...: Unable to extract ajax data`), causing downloads to immediately abort and fail.
+    - `engine.py` blindly delegated `page_url` to yt-dlp without native stream extraction.
+    - Series title extraction parsed raw `<title>` tags contaminated with SEO strings (`Watch Kanojo Saimin Hentai Online Free – Hentaimama`), contaminating directory names and filenames.
+    - `tui.py` had an `elif len(videos) == 1:` branch bypassing user selection between Single Episode (Quick grab) and Whole Franchise (Vacuum).
+  - **Resolution**:
+    - **Native AJAX & Iframe Stream Extraction (`scrapers/hentaimama/engine.py`)**:
+      - Extracts post ID from episode page scripts (`get_player_contents` / `postId`).
+      - Queries Hentaimama's `admin-ajax.php` player endpoints (`get_player_contents`) across available mirror options.
+      - Traverses the embed iframe (`?dt_embed=...`) and extracts direct high-speed `.mp4` video URLs (`gdvid.info`, `javprovider.com`) from player setup scripts.
+      - Passes the extracted raw stream URL directly to `download_video`, downloading smoothly at full bandwidth without requiring Playwright.
+    - **DOM-Based Series Title & Poster Extraction (`scrapers/hentaimama/scraper.py`)**:
+      - Extracts clean anime title directly from `.dsc-title h1` or `h1` (stripping episode suffixes), yielding clean canonical titles (e.g. `Kanojo Saimin`).
+      - Extracts official high-res poster images from `.dsc-poster img` instead of low-res banners.
+    - **Interactive TUI & Quick Grab Naming (`scrapers/hentaimama/tui.py`, `scrapers/hentaimama/workflow.py`)**:
+      - Removed the `len(videos) == 1` prompt bypass.
+      - Single episode quick grabs and progress trees now format as `Kanojo Saimin - Episode 1.mp4`.
+
+---
+
+# Progress Report - September 05, 2026 (HentaiHavenCo Episode Discovery, TUI Selection & Stream Download Resolution)
+
+- **HentaiHavenCo Episode Discovery, Full Franchise Linking & Stream Download Pipeline (`scrapers/hentaihaven_co/scraper.py`, `scrapers/hentaihaven_co/engine.py`, `scrapers/hentaihaven_co/tui.py`, `scrapers/hentaihaven_co/workflow.py`):**
+  - **Identified Problem**:
+    - When passing an episode URL like `https://hentaihaven.co/watch/solow-futago-shimai-to-katei-kyoshi-episode-3/`, only 1 episode was reported, and it was misidentified as `Episode 1` instead of `Episode 3`.
+    - The scraper relied on site search with title strings that failed on hyphenated/underscored titles (`so_low`), returning 0 results and falling back to a hardcoded `ep_num: 1`.
+    - `tui.py` had an `elif len(videos) == 1:` branch that completely skipped the `Single Episode` vs `Whole Franchise` prompt, automatically defaulting to Quick grab without user consent.
+    - Video downloads hung on `Result -> ● Starting...` because the Playwright token generator ran with Chrome 120 while `HentaiHavenCoEngine` and yt-dlp called the CDN with Chrome 124 headers and no `Referer`, causing the Cloudflare CDN (`r2.1hanime.com`) to reject requests with HTTP 403 Challenge.
+    - Workflow trees and single episode filenames displayed ambiguous titles like `Episode 1` instead of including the series prefix.
+  - **Resolution**:
+    - **DOM-Based Franchise & Episode Discovery (`scrapers/hentaihaven_co/scraper.py`)**:
+      - Extracts all franchise episodes directly from the page DOM via `.more_from_series .mfs_item`, capturing exact URLs, titles, and thumbnails.
+      - Automatically checks parent `/series/{slug}/` pages to discover all catalog episodes.
+      - Dynamically extracts the exact episode number from the URL slug (`episode-(\d+)`), eliminating hardcoded episode indices.
+      - Captures true series title (`So_low Futago Shimai to Katei Kyoshi`), official series cover poster (`/uploads/img_6a79ebfd9273a8.34102915.jpg`), Brand/Studio (`nur`), release date, and tags directly from `.info_bottom`.
+    - **Always-Prompt TUI Selection (`scrapers/hentaihaven_co/tui.py`)**:
+      - Removed the `elif len(videos) == 1:` bypass. The user is now always prompted with `Single Episode` (Quick grab) vs `Whole Franchise` (Vacuum).
+      - Selecting `Single Episode` automatically targets the requested episode or opens the interactive episode selector.
+      - Cleaned up duplicate input return prompts.
+    - **Synchronized Browser Fingerprint & Stream Delivery (`scrapers/hentaihaven_co/engine.py`)**:
+      - Aligned User-Agent across `HentaiHavenCoEngine` and `playwright_extractor.py` to `Chrome/120.0.0.0`.
+      - Injected mandatory `Referer: https://nhplayer.com/` into yt-dlp download headers, satisfying CDN token verification and resolving HTTP 206 stream downloads.
+      - Standardized root cover file to `cover.jpg`.
+    - **Series-Prefixed Quick Grab Naming (`scrapers/hentaihaven_co/workflow.py`)**:
+      - Single episode quick grabs and render trees now correctly prefix the series name (e.g. `So_low Futago Shimai to Katei Kyoshi - Episode 3.mp4`).
+
+---
+
+# Progress Report - September 05, 2026 (HentaiHaven Dead CDN Detection & Download Speedup)
+
+- **HentaiHaven Stream Health Probe & Download Optimization (`scrapers/hentaihaven/engine.py`, `scrapers/hentaihaven/scraper.py`):**
+  - **Identified Problem**:
+    - On series such as `https://hentaihaven.online/watch/chiisana-tsubomi-no-sono-oku-ni/`, the master `.m3u8` playlist references legacy stream host `https://eng-enano.top/.../c_000.html`.
+    - The hosting domain `eng-enano.top` has expired and is parked for sale on Porkbun auction.
+    - When fetching video segments, `eng-enano.top` returned 2 KB HTML auction pages (`<h1>This domain is for sale.</h1>`).
+    - `yt-dlp` treated each HTML page as a valid media fragment, downloading 373 fragments sequentially at ~600 B/s (~1 fragment/sec), taking 6.5+ minutes per episode downloading useless HTML files before ultimately failing FFmpeg merge.
+  - **Resolution**:
+    - **Fast Pre-Flight Stream Validation (`_validate_stream` in `scrapers/hentaihaven/engine.py`)**:
+      - Probes the initial media fragment of the `.m3u8` playlist via `curl_cffi` before launching `yt-dlp`.
+      - Inspects the returned payload headers and body snippet for HTML indicators (`b"<!doctype"`, `b"<html"`, `b"domain for sale"`, `b"porkbun"`).
+      - If an expired domain or parking page is detected, immediately terminates with `[error]Cannot download video: Stream CDN host is expired/dead (domain parked at auction)[/error]` without hanging.
+    - **16-Way Concurrency Speedup (`scrapers/hentaihaven/engine.py`)**:
+      - Increased `--concurrent-fragments` from `4` to `16` in `yt-dlp`.
+      - Benchmarked on active HentaiHaven CDNs (`octopusmanifest.org`), achieving multi-megabyte saturation and sub-minute episode download times.
+    - **Universal Episode URL Matching (`scrapers/hentaihaven/scraper.py`)**:
+      - Made episode link pattern matching resilient against trailing slashes across `hentaihaven.xxx` and `hentaihaven.online`.
+
+---
+
+# Progress Report - September 05, 2026 (HentaiHaven Next.js Redesign & Direct Stream Download Resolution)
+
+- **HentaiHaven Series Extraction, Next.js JSON-LD Parsing & Direct Native HLS Pipeline (`scrapers/hentaihaven/scraper.py`, `scrapers/hentaihaven/engine.py`, `scrapers/hentaihaven/tui.py`, `scrapers/hentaihaven/workflow.py`):**
+  - **Identified Problem**:
+    - HentaiHaven migrated from legacy WordPress Madara (`.post-title h1`, `li.wp-manga-chapter a`) to Next.js (`<h1 ...>Title<span>Episode X</span></h1>`, Tailwind layout).
+    - When passing an episode URL (e.g. `https://hentaihaven.xxx/watch/inaka-ni-wa-kore-kurai-shika-goraku-ga-nai/episode-1/`), selector failure caused the series title to fall back to `self.url.split("/")[-2].title()` (`"Episode-1"`).
+    - Only 1 episode was detected because legacy chapter selectors returned empty.
+    - Download failed because `engine.py` spawned a legacy `playwright_extractor.py` subprocess that hung or was intercepted by ads instead of extracting the stream.
+  - **Resolution**:
+    - **Native Next.js JSON-LD & DOM Extraction (`scrapers/hentaihaven/scraper.py`)**:
+      - Parses `BreadcrumbList`, `ImageObject`, and `VideoObject` from JSON-LD schema blocks.
+      - Discovers the full franchise episode list by querying `https://hentaihaven.xxx/watch/<series_slug>/` and sorting numerically (`Episode 1`, `Episode 2`, ...).
+      - Accurately captures series title (`Inaka ni wa Kore kurai shika Goraku ga Nai`) and the official high-resolution series poster (`https://img.hentaihaven.xxx/images/...`) from the series catalog page instead of episode screenshot thumbnails.
+      - Attaches individual episode screenshot thumbnails (`https://coverlanyvd.org/storage/...`) strictly to each video entry in `videos`, while preserving the official poster for `metadata["Thumbnail"]`, `metadata["Avatar URL"]`, and `cover.jpg`.
+    - **Direct Stream Extraction & Native HLS Download (`scrapers/hentaihaven/engine.py`)**:
+      - Completely removed legacy Playwright extraction.
+      - Extracts master `.m3u8` playlist directly via `curl_cffi` Chrome impersonation from `VideoObject.contentUrl` or `<source>` tag in milliseconds.
+      - Uses `yt-dlp --hls-prefer-native` to reliably download fragmented mp4 (`.html`) segments and merge them with audio without ffmpeg demuxer extension errors.
+      - Normalized series root cover file to `cover.jpg`.
+    - **TUI & Quick Grab Naming (`scrapers/hentaihaven/workflow.py`, `scrapers/hentaihaven/tui.py`)**:
+      - Single episode downloads in Quick Grab are prefixed with the true series name (e.g. `Inaka ni wa Kore kurai shika Goraku ga Nai - Episode 1.mp4`).
+      - Removed duplicate input prompt on completion in TUI.
+
+---
+
+# Progress Report - September 05, 2026 (Hentai Video Platform Folder Architecture & TUI Simplification)
+
+- **Standardized Video Folder Routing Across All 9 Hentai Platforms (`scrapers/hanime/`, `scrapers/hanime_red/`, `scrapers/hentaihaven/`, `scrapers/hentaihaven_co/`, `scrapers/hentaicity/`, `scrapers/hstream/`, `scrapers/oppai_stream/`, `scrapers/hentaimama/`, `scrapers/ohentai/`):**
+  - **Identified Problem**:
+    - Vacuum downloads saved episode `.mp4` video files directly in the root of the series folder alongside `cover.jpg` and `.zine/metadata.json`.
+    - TUI presented confusing options: `Single Episode`, `Whole Franchise (Flat Folder)`, and `Whole Franchise (Nested Subfolders)`.
+  - **Resolution**:
+    - **Clean 2-Option TUI Selection**: Simplified options across all 9 platforms to:
+      1. `Single Episode`: Quick grab directly to `Quick grab/` (with series title prefix to avoid name collisions).
+      2. `Whole Franchise`: Vacuum mode downloading all episodes into `<series folder>/video/`.
+    - **Dedicated `video/` Subfolder Architecture**:
+      - Root folder (`creator_root/`): Contains `cover.jpg` (so Linux file managers like Nautilus/Dolphin render series thumbnails immediately) and `.zine/metadata.json`.
+      - Episode video files (`creator_root/video/`): Contains all episode `.mp4` video files and `.zine/history.json`.
+    - **Automatic Legacy Migration**: On workflow startup, any legacy `.mp4` video files previously saved directly in `creator_root` are automatically migrated into `video/`, preventing duplicate re-downloads and reorganizing existing folders cleanly.
+  - **Verification**: Verified via test suite across all 9 hentai platforms and full regression suite across all 46 scrapers and 81 domains.
+
+---
+
+# Progress Report - September 05, 2026 (HanimeRed Series & NoneType Metadata Crash Resolution)
+
+- **HanimeRed Series & Metadata Loading Resolution (`scrapers/hanime_red/scraper.py`, `plugins/yt_dlp_plugins/.../hanimered.py`, `scrapers/hanime_red/tui.py`, `scrapers/hanime_red/workflow.py`, `scrapers/hanime_red/location.py`):**
+  - **Identified Problem**:
+    - When passing a series URL (e.g. `https://hanime.red/serie/deco-x-deco-the-animation/`), `HanimeRedScraper.get_metadata_and_videos` invoked `self.engine.extract_video_info(self.url)`. Because series catalog pages contain no video player iframe, yt-dlp returned `None`. Calling `info.get("title")` immediately crashed with `AttributeError: 'NoneType' object has no attribute 'get'`.
+    - `HanimeRedIE` regex matched `https://hanime.red/serie` because it was not anchored to exclude `/serie/` or `/series/`.
+    - When a series URL was parsed, `ep_urls.add(self.url)` blindly added the series catalog URL as a video to download.
+    - Quick grab downloads for single episodes lacked series title prefixes, potentially creating ambiguous filenames like `Episode 1.mp4`.
+  - **Resolution**:
+    - **Native HTML Metadata Extraction**: Replaced premature `extract_video_info` call during metadata fetching with direct BeautifulSoup extraction. Scrapes series title from `<h1>`, episode cards, and cover art directly from the catalog page.
+    - **First-Episode Metadata Enrichment**: When parsing a series page, automatically enriches series metadata (Brand/Studio, Release Date, Plot Description, Tags) by fetching Episode 1's page.
+    - **Bidirectional Episode & Series Linking**: Episode URLs now detect the parent `/serie/<slug>/` link to discover all sister episodes in the franchise, enabling single-episode and whole-franchise downloads from either URL format.
+    - **yt-dlp Extractor Regex Hardening**: Updated `HanimeRedIE._VALID_URL` to exclude `/serie/`, `/series/`, `/tags-page/`, `/hentai/`, `/login-page/`, and `/register-page/` paths so it only targets actual playable video episodes.
+    - **TUI Episode Selection**: If the user enters a series URL and chooses "Single Episode", an interactive episode picker allows selecting which episode to download rather than defaulting blindly to Episode 1.
+    - **Quick Grab Filename Collision Protection**: When downloading single episodes via Quick Grab, filenames are prefixed with the series title (e.g. `Deco x Deco The Animation - Episode 1.mp4`).
+    - **Location Root & Custom Path Normalization**: Normalized save paths to `Vacuum/Hentai/HanimeRed` and supported the `"series"` link type.
+
+---
+
+# Progress Report - September 05, 2026 (YouTube Music Isolation, MultiSelector Tuple Resilience & Site-Wide Time Imports)
+
+- **YouTube Music Folder Resolution & Collision Prevention (`core/paths.py`, `scrapers/youtube/yt_music/location.py`):**
+  - **Identified Problem**: Dotted site identifiers like `"youtube.yt_music"` were reduced to `parts[0].title()` (`"Youtube"`), causing YouTube Music albums and playlists to dump into `Vacuum/Youtube` alongside video downloads instead of `Vacuum/YouTube Music`.
+  - **Resolution**:
+    - Added explicit routing in `core/paths.py:get_container_root` mapping `"youtube.yt_music"` and `"yt_music"` to `container_root / "YouTube Music"`.
+    - Added safety guard in `scrapers/youtube/yt_music/location.py` ensuring `base.parent / "YouTube Music"` is resolved if `base.name.lower() == "youtube"`.
+
+- **MultiSelector Tuple Normalization & Track Selection Fix (`core/ui.py`, `scrapers/youtube/yt_music/tui.py`):**
+  - **Identified Problem**: In `scrapers/youtube/yt_music/tui.py`, selecting individual tracks passed a list of tuples `[(label, video), ...]` to `MultiSelector`, crashing with `AttributeError: 'tuple' object has no attribute 'get'`.
+  - **Resolution**:
+    - Converted `multi_options` in `scrapers/youtube/yt_music/tui.py` to dictionary format with `"name"`, `"desc"`, `"right_text"`, `"video"` payload, and a `"Back"` option.
+    - Hardened `MultiSelector.__init__` in `core/ui.py` with automatic tuple-to-dict normalization, making `MultiSelector` crash-proof against tuple options across the entire codebase.
+
+- **YouTube Music Track Range & Count Selection (`scrapers/youtube/yt_music/tui.py`, `scrapers/youtube/yt_music/workflow.py`):**
+  - **Identified Problem**: In "Select Range", entering a single number (e.g. `2`) was treated as picking index 2 (`videos[1]`), downloading only 1 track instead of 2 songs.
+  - **Resolution**:
+    - Upgraded range parser to interpret a single number `N` as count: selects the next `N` un-downloaded tracks (or first `N` tracks if fresh).
+    - Preserved explicit range slicing (`1-3`, `2-4`) and added comma-separated track selection (`1, 3, 5`).
+    - Passed `verified_ids` into `get_track_selection` so count selections skip already existing files on disk and accurately download the desired number of tracks.
+
+- **Eliminated Missing `time` Imports Across All Scrapers (`scrapers/youtube/yt_music/engine.py`, `scrapers/pinterest/engine.py`, `scrapers/kunmanga/scraper.py`, `scrapers/oppai_stream/engine.py`):**
+  - Added missing `import time` across `yt_music/engine.py` (crashed in `fetch_youtube_subtitles`), `pinterest/engine.py` (crashed in `time.sleep` retries), `kunmanga/scraper.py` (crashed in `time.sleep` retries), and `oppai_stream/engine.py` (crashed in `time.sleep` retries).
+  - Verified via full repository AST parse that 0 missing `time` imports remain across all modules.
+
+---
+
+# Progress Report - September 05, 2026 (Decommissioned Defunct LightNovelWorld Platform)
+
+- **Complete Decommissioning of Defunct `lightnovelworld.org` Platform:**
+  - **Reason**: The official platform `lightnovelworld.org` has completely shut down and is no longer accessible.
+  - **Removed Package & Mappings**:
+    - Deleted obsolete package directory [`scrapers/light_novel/lightnovelworld/`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/light_novel/lightnovelworld/) (`engine.py`, `scraper.py`, `workflow.py`, `tui.py`, `location.py`, `verification.py`, `progress.py`).
+    - Removed `lightnovelworld.org` domain routing entry from [`core/site_map.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/site_map.py).
+    - Removed `LightNovelWorld` entry from the interactive Light Novel site explorer menu in [`core/site_tui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/site_tui.py).
+    - Updated [`scrapers/light_novel/README.md`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/light_novel/README.md) and [`README.md`](file:///home/valse-de-anshu/.config/zine%20scraper/README.md) to eliminate references to the defunct platform.
+    - Updated [`scrapers/light_novel/__init__.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/light_novel/__init__.py).
+    - Verified all 46 active scrapers and 81 domain mappings pass comprehensive test suites.
+
+---
+
+# Progress Report - September 05, 2026 (MangaDex Multi-Language Folder Pruning & Multi-Language Summary Logging)
+
+- **MangaDex Multi-Language Workflow & Folder Isolation (`scrapers/mangadex/workflow.py`, `core/ui.py`):**
+  - **Eliminated Phantom Base Folder Creation**:
+    - Previously, `location_manager.create_directory(base_folder)` was called prematurely before interactive language selection occurred. When multiple languages were chosen, chapters were routed to `Title [lang]`, leaving an empty, untagged `Title` base folder lingering in the library.
+    - Deferred folder creation until the active language folder is determined.
+    - Added empty base folder pruning check (`if len(chosen_langs) > 1: base_folder.rmdir()`) if an empty base directory was created by previous runs.
+  - **Streamlined Multi-Language TUI & Clean Summary Presentation**:
+    - Eliminated redundant multi-tree and divider stacking in the terminal scrollback.
+    - Each language download lifecycle cleanly transitions with `startup_clear()`, keeping focus on the active language's real-time progress.
+    - Upon completing all selected languages, the screen cleanly clears and renders the comprehensive `◆ Multi-Language Download Summary` table under the series banner, presenting all language statistics without repetitive log clutter.
+  - **Rich Markup Tag Escaping**:
+    - Wrapped titles, folder paths, and language tags in `escape()` across `render_completion_tree` and headers, preventing Rich from misinterpreting language brackets like `[en]`, `[vi]`, and `[id]` as BBCode style tags and stripping them from output.
+  - **Comprehensive Multi-Language Summary Table**:
+    - Renders the post-run summary table via Rich (`◆ Multi-Language Download Summary`) with Tokyo Night styling, showing columns for Language, Code (`[en]`), Downloaded / Total chapter counts, and per-language completion status (`Complete`, `Partial`, `Already up to date`, `Failed`).
+  - **Hardened Chapter Limit Flags (`core/ui.py`)**:
+    - Enhanced `apply_chapter_limit` to explicitly verify `isinstance(chapter_limit, int) and chapter_limit > 0` before slicing chapters.
+
+---
+
+# Progress Report - September 05, 2026 (Eliminated Page Count Freezes & Phantom Link Hanging Across All Toon & Manga Scrapers)
+
+- **Comprehensive Phantom Link & Page Count Discrepancy Resolution Across 15 Toon & Manga Engines:**
+  - **Identified Problem**: Webtoon, manhua, and manga platforms often include tracking pixels, decoy banner links, ads, or count overshoots (e.g. scraper discovers 17 URLs when only 15 real pages exist). Once the 15 real pages finished downloading, scrapers would hang at 15 for minutes or hours waiting for the phantom links, before eventually marking the chapter as failed and retrying the whole chapter from scratch 3 times.
+  - **Root Causes Fixed**:
+    1. **Phantom / Tracker / Ad Links**: HTML parsers and API endpoints were collecting `data:image/...` placeholders, tracking pixels (`pixel.wp.com`, `adzerk`, `doubleclick`, `adsterra`, `exoclick`, `trafficjunky`), loaders (`spinner`, `placeholder`, `loading`), and API count mismatches.
+    2. **Blocking Retries & Long Timeouts on Dead Links**: `download_image` previously used 3 retries with `timeout=30` (or `timeout=(10, 60)` in OmegaScans), meaning each non-existent image blocked worker threads for 90–140 seconds.
+    3. **`res_code == 0` Never Decrementing `valid_pages`**: Exceptions/timeouts in `download_image` returned `0` instead of `-1`, preventing `valid_pages` from decrementing and leaving the UI stuck at `15/17`.
+    4. **Strict Equality Trap (`len(paths) == valid_pages`)**: When 15 out of 17 images downloaded, strict equality checks failed the chapter, deleted the temp directory, and triggered 3 chapter-level retries in `workflow.py`.
+    5. **`consecutive_failures` Poisoning**: `self.consecutive_failures` was an instance-level variable never reset per chapter, permanently breaking all subsequent chapters once 5 cumulative failures were reached.
+  - **Site-Level Isolation Compliant Upgrades Across 15 Scrapers**:
+    - **`scrapers/omegascans/`**: Added `BAD_OMEGA_KEYWORDS` filter; reduced image timeout from `(10, 60)` to `(8, 20)`; implemented dynamic total reporting `valid_total = max(dl_count, total - failed)`; added tolerant completion (`downloaded_count >= valid_total or (downloaded_count >= min_ok and slices > 0)` where `min_ok = max(1, int(total * 0.70))`).
+    - **`scrapers/asurascans/`**: Added `timeout=(8, 15)`, fast `-1` rejection on 4xx/5xx/errors, reset `consecutive_failures = 0` per chapter, dynamic `valid_pages` decrementing, and >=70% slice tolerance.
+    - **`scrapers/kunmanga/`**: Added comprehensive ad/tracker keyword filtering in `scraper.py`, updated `engine.py` with `timeout=(8, 15)`, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/mangak/`**: Added CDN verification and ad/tracker keyword filtering in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/weebcentral/`**: Added `broken_image` and tracker filtering in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/fanfox/`**: Added ad/tracker filtering in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/projectsuki/`**: Added bad keywords filtering and data URL rejection in `scraper.py`, updated `engine.py` with fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/nhentai/`**: Updated `_download_with_retry` and `engine.py` with dynamic `valid_pages` decrementing, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/asmhentai/`**: Updated `_download_with_retry` and `engine.py` with dynamic `valid_pages` decrementing, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/mangadex/`**: Updated `engine.py` with `timeout=(8, 15)`, fast `-1` drop, dynamic total calculation `valid_pages -= 1` on missing/failed images, and seamless slicing.
+    - **`scrapers/hentai18/`**: Added comprehensive ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/hentai20/`**: Added comprehensive ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/oppai_stream/oppai_stream_toon/`**: Resilient count probe with `timeout=(10, 30)`, extension probe with `timeout=(5, 10)`, fast `-1` drop, and >=70% slice tolerance.
+    - **`scrapers/manhuaplus/`**: Added ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+    - **`scrapers/manhwaus/`**: Added ad/tracker keyword filtering, fast `-1` drop, per-chapter failure counter reset, and >=70% slice tolerance.
+
+---
+
+# Progress Report - September 05, 2026 (Site-Wide Network Resilience, Resilient Timeouts & Retry Loops)
+
+- **Systematic Timeout Resilience Across Scrapers (`(10, 30)` Connect & Read Timeouts):**
+  - **Identified Vulnerability**: Multiple scrapers across anime, manga/comics, light novels, and image categories used rigid, short timeouts (`timeout=10` or `15`) or un-timeouted requests with zero retries, causing read timeouts and aborted downloads during Cloudflare congestion or slow origin servers.
+  - **Site-Level Isolation Compliant Upgrades**:
+    - **`scrapers/hianime/`**: Added self-contained `_get` helper with 3 retries and `(10, 30)` timeout across episode lists, AJAX server resolvers, embed pages, and m3u8 playlist fetching.
+    - **`scrapers/anineko/`**: Added `_get` helper with retries and `(10, 30)` timeout in scraper and engine for episode streams and playlist parsing.
+    - **`scrapers/anikoto/`**: Added `_get` helper with retries and `(10, 30)` timeout across base URL checks, `/ajax/episode/list`, and `/ajax/server/list`.
+    - **`scrapers/anitaku/`**: Added `_get` helper with retries and `(10, 30)` timeout across episode stream resolution and m3u8 playlist fetching.
+    - **`scrapers/anikai/`**: Added `_get` helper with retries and `(10, 30)` timeout across episode stream resolution and m3u8 playlist fetching.
+    - **`scrapers/hentaihaven/`**: Upgraded `fetch(url)` timeout to `(10, 30)`.
+    - **`scrapers/oppai_stream/`**: Added `_get` helper with retries and `(10, 30)` timeout in scraper and engine for stream URL extraction.
+    - **`scrapers/light_novel/chikari/`**: Added `_request_get` with 3 retries and `(10, 30)` timeout in `ChikariScraper` across series discovery, chapter pagination, novel read endpoint, and comic page downloads; updated `ChikariBaseEngine` (`get_soup`, `get_json`, `download_cover`) with `(10, 30)` timeouts.
+    - **`scrapers/pinterest/`**: Upgraded user board discovery, single pin extraction, and profile picture downloads in `engine.py` and `workflow.py` with 3-attempt retry loops and `(10, 30)` timeouts; upgraded async pin enrichment with `aiohttp.ClientTimeout(total=30, sock_connect=10)`.
+
+---
+
+# Progress Report - September 05, 2026 (Eliminated False-Positive Notifications & OmegaScans Timeout Resilience)
+
+- **Eliminated False-Positive Success Notifications (`core/funnel.py`):**
+  - **Root Cause Resolution**: Previously, `patched_input` fired a success desktop notification if `"[info]"`, `"finished"`, or `"return"` appeared anywhere in the prompt, causing error prompts (e.g. `\n[info]Press Enter to return...[/info]`) and unconditional post-TUI execution to dispatch false `"Finished downloading: <url>"` notifications even when metadata timed out or zero chapters were downloaded.
+  - **Accurate Download Counter & Verification**: Integrated an active `download_count` interceptor on `hist_layer.mark_downloaded` and safe polymorphic guards (`check_has_downloaded()`). Success notifications are now strictly dispatched only when items were actually downloaded or the series was already up to date.
+  - **Intelligent Error Dispatch**: Captures errors printed to the console (e.g. `Failed to fetch metadata`, `Read timed out`, `No chapters saved`) and dispatches native OS error notifications (`"Zine Scraper Error"`, `"Download failed: <error>"`, `is_success=False`) instead of misleading success messages.
+  - **Batch History Accuracy**: If a download run fails with 0 items downloaded, `BatchHistoryManager` records `status="failed"` rather than falsely marking the run as `"completed"`.
+  - **Menu Navigation Silence**: Cleanly returning or backing out of menus without downloads or errors no longer triggers any notification.
+
+- **OmegaScans API Timeout Resilience & Retries (`scrapers/omegascans/`):**
+  - **Exponential Backoff & Retries**: Implemented `_request_get` across series, chapter list, and chapter stream endpoints with 3 retries and increased timeout `(10, 30)` to handle Cloudflare and slow network responses on `api.omegascans.org`.
+  - **Session Connection Pooling**: Mounted an `HTTPAdapter` with automatic retry handling for transient HTTP 429 and 5xx status codes in `make_api_session()`.
+
+---
+
+# Progress Report - September 05, 2026 (MangaDex Multi-Language MultiSelector, Braille Animation & Cursor Visibility)
+
+- **MangaDex Multi-Language Selection (`scrapers/mangadex/`):**
+  - **`MultiSelector` Integration**: Replaced single-choice language `Selector` with `MultiSelector` (matching `scrapers/archive/`), allowing users to check multiple languages simultaneously via Spacebar and confirm via Enter.
+  - **Multi-Version Library Isolation**: When multiple languages are selected (e.g. English and Japanese), the scraper downloads each language version into its own dedicated folder (e.g. `Title [en]` and `Title [ja]`), each containing its own cover, chapters, and `.zine/meta.json` with localized `"language": chosen_lang`.
+  - **Backward Compatibility**: Selecting a single language preserves standard naming (`Title`) without appending any language tags.
+  - **History Isolation**: Multi-language downloads track chapter IDs with language namespaces (`url#<lang>`), preventing downloads of chapter 1 in one language from falsely marking chapter 1 in another language as skipped.
+
+- **Dynamic Live Braille Spinner & Baking States (`scrapers/mangadex/`, `scrapers/asurascans/`, `scrapers/omegascans/`):**
+  - **Rotating Braille Spinner**: Integrated animated 10-frame braille spinner (`["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]`) into `render_chapter_tree` for active resolving and baking states.
+  - **Smooth 12Hz Ticking via Callable `get_renderable`**: Replaced static Tree instances in `Live(render_chapter_tree(), ...)` with `Live(get_renderable=render_chapter_tree, ...)`. Rich continuously invokes `render_chapter_tree` 12 times a second, keeping the rotating braille animation and pulse bar moving fluidly without freezing while waiting for network streams or slice baking.
+  - **Status Callbacks**: Engines emit `"status": "loading"` while obtaining stream/node tokens and `"status": "baking"` before slicing strips, providing continuous visual feedback.
+
+- **Terminal Cursor Management**:
+  - **Hidden Cursor Protection**: Explicitly wrapped download loops in `console.show_cursor(False)` and `finally: console.show_cursor(True)` across workflows. Eliminates the blinking cursor sitting idly on empty terminal screens between TUI transitions or during downloads.
+
+---
+
+# Progress Report - September 05, 2026 (Batch History Logging, Flag Tracking & Revolt-Resilient Checkpointing)
+
+- **Structural Batch Logging & Dual-Log Synchronization (`core/history.py`, `core/paths.py`, `core/library.py`):**
+  - **Structured JSON Architecture**: Implemented `BatchHistoryManager` providing a dedicated schema for all batch download runs:
+    ```json
+    {
+        "https://domain.com/series-url": {
+            "title": "Series Name",
+            "url": "https://domain.com/series-url",
+            "raw_input": "https://domain.com/series-url --0",
+            "flags": ["--0"],
+            "mode": "Quick grab",
+            "status": "completed",
+            "start_date": "2026-09-05 10:15:00",
+            "finish_date": "2026-09-05 10:16:30",
+            "date": "2026-09-05 10:16:30",
+            "info": ["1", "2", "3"]
+        }
+    }
+    ```
+  - **Dual Log Synchronization**: Automatically synchronizes state across both `Logs/Batch History.json` and `Logs/💩/batch_history.json` on every item update.
+  - **Automatic Scaffolding**: Registered `Logs/Batch History.json` in `core/library.py:scaffold_library()` and added `get_batch_history_file()` / `get_batch_poop_log()` to `PathAuthority`.
+- **Batch Flag Parsing & Download History Integration (`core/history.py`, `core/funnel.py`):**
+  - **Batch Flag Support**: Recognizes line-level flags in `Batch URL.txt` (such as `--0` for Quick grab mode).
+  - **Propagated Flag Tracking**: Bound `_active_batch_flags` during `route_url` execution so both `Download History.json` and `Batch History.json` record `"flags": ["--0"]` without breaking polymorphic method signatures across scrapers.
+- **Atomic Per-Item Checkpointing & Revolt Resilience (`core/funnel.py`, `core/history.py`):**
+  - **Atomic Checkpointing**: Replaced delayed batch-end rewriting with immediate per-item rewriting. As soon as a URL finishes, it is pruned from `Batch URL.txt`.
+  - **Interruption & Revolt Resilience (`Ctrl+R`)**: If a user hits `Ctrl+R` or terminates mid-batch, completed URLs remain removed from `Batch URL.txt`. Unfinished URLs retain their downloaded chapters in `Download History.json` and `info: [...]` in `Batch History.json`.
+  - **Non-Destructive Resume**: Re-running batch never destroys previous folder structures or metadata. `HistoryLayer` and scraper verification checks skip previously downloaded chapters and seamlessly download only the remaining chapters before marking the series completed.
+
+- **Chapter URL Quick Grab Routing & State Optimization (`core/paths.py`, `core/funnel.py`, `scrapers/omegascans/`, `scrapers/asurascans/`, `scrapers/projectsuki/`, `scrapers/manhuaplus/`, `scrapers/mangak/`):**
+  - **Git History Audit & Root Cause**: In commit `04d7359`, `scraper.url` was preserved as the input URL and `is_chapter_link()` operated purely on `self.url`. However, a subsequent change attempted to normalize history by directly mutating `scraper.url` to the series root during metadata extraction. This caused dynamic `is_chapter_link()` calls to check the newly-shortened URL and return `False`, misclassifying single chapters as playlists/series and routing them to `Vacuum` mode (prompting for SFW/NSFW).
+  - **Immutable `scraper.url` & `self.series_url`**: Scrapers never mutate `self.url`. When fetching parent series metadata for a chapter, scrapers populate `self.series_url` separately. `is_chapter_link()` remains clean, accurate, and predictable.
+  - **Defensive Container Root Resolution (`core/paths.py`)**: `get_container_root()` now defensively verifies chapter endpoints across `scraper.is_chapter_link()`, `scraper.series_url`, and the passed `url` for chapter keywords (`chapter`, `/c/`, `/read/`, `/ch-`), guaranteeing single chapter URLs always route directly to `Quick grab/`.
+  - **Centralized Normalization**: `HistoryLayer.normalize_url()` centrally converts chapter URLs to canonical series roots, preserving authentic titles in `Download History.json` without requiring scrapers to mutate their own URLs.
+
+---
+
 # Progress Report - September 04, 2026 (MangaDex Scraper Integration, Folder Flattening & Language Selector)
 
 - **MangaDex Platform Scraper Integration (`scrapers/mangadex/`):**
@@ -20,11 +506,21 @@
     - Permanently excluded `secrets.json`, `core/secrets.json`, `.env`, and `.env.*` in `.gitignore` to guarantee API keys are never accidentally committed or pushed.
     - Updated `README.md` documentation and user guide.
     - Completely decoupled hardcoded credentials from `scrapers/mangadex/engine.py`.
-  - **Download History Title Preservation Overhaul (`core/history.py`, `core/funnel.py`, `scrapers/pornhub/`):**
-    - Resolved root cause where authentic titles were overwritten with generic slugs (`"Videos"`, `"PornHub Video (...)"`, or URL slugs) inside `Download History.json`.
-    - Made `save_history` perform a non-destructive merge with disk, protecting authentic titles from being clobbered by stale in-memory states or generic fallback inferences.
-    - Updated `_infer_title` to inspect parent path segments when trailing slugs are generic (`/videos`, `/photos`, `/posts`, etc.), correctly extracting channel and model names (e.g. `Baby Ri` instead of `Videos`).
-    - Added global post-TUI title synchronization in `core/funnel.py:route_url`, automatically registering `scraper.title` into `hist_layer` for all scrapers across the suite.
+  - **Download History Title Preservation Overhaul (`core/history.py`, `core/funnel.py`, `core/cache.py`, `scrapers/`):**
+    - **Suite-Wide Metadata Extractor Funneling**: Audited all 47 scrapers across the suite. Every platform's extracted metadata (title, series name, channel name, book title, board title) from its interactive TUI metadata extractor is now directly funneled into `scraper.title`, `tracker.set_title()`, and `tracker.mark_downloaded(..., title=title)`.
+    - **Active Instance Sync (`core/history.py`, `core/cache.py`)**: Bound active `HistoryLayer` instances via `HistoryLayer._active_instance`, ensuring helper functions like `save_url_to_file()` immediately update and synchronize the active tracker in memory without desyncing.
+    - **Single Video & Quick Grab Accuracy**: Single videos (PornHub, YouTube, AniTaku, Hentaimama, etc.) now correctly register authentic video titles instead of falling back to uploaders or URL slugs in `Download History.json`.
+    - **Disk Merge & Protection**: `save_history()` performs an atomic non-destructive merge with disk, protecting authentic titles from being overwritten by generic fallback inferences.
+  - **Download History Deduplication & Canonical URL Normalization (`core/history.py`, `core/funnel.py`):**
+    - **URL Canonicalization (`normalize_url`)**: Enforced static URL normalization across all history layer operations (`_load_history`, `save_history`, `is_downloaded`, `set_title`, `mark_url_tracked`, `mark_downloaded`, `sync_local_history`), stripping redundant trailing slashes (`/`), trimming whitespace, lowercasing schemes and hostnames, and collapsing single chapter/reader endpoints into their canonical parent series root (AsuraScans, OmegaScans, ProjectSuki, ManhuaPlus, MangaK, ManhwaUS).
+    - **Chapter URL vs. Series Unification**: Single chapter downloads in Quick Grab now resolve their authentic parent series URL and title, unifying chapter numbers (`info: ["1", "2", "211"]`) into a single series entry rather than splitting into fragmented chapter entries.
+    - **AsuraScans Chapter Page Title Fix (`scrapers/asurascans/scraper.py`)**: Fixed missing `<h1>` tags on Asura chapter reader pages causing `"Unknown"` titles in Quick Grab by resolving chapter links (`/comics/{slug}/chapter/{num}`) to the canonical series endpoint, falling back to `<meta property="og:title">`, `<title>`, and slug parsing.
+    - **Trailing Slash Deduplication**: Completely eliminated duplicate entry pairs in `Download History.json` (e.g. `nhentai.net/g/...` vs `nhentai.net/g/.../`, `hentai20.io/.../` vs `hentai20.io/...`).
+    - **Ghost Entry Pruning**: Automatic pruning in `save_history()` for empty entries where no items were downloaded (`info: []`), preventing orphaned chapter URLs from polluting the registry when redirected to canonical series endpoints.
+    - **Redundant Link Field Removal**: Removed redundant nested `"link"` field inside entries in `Download History.json`, keeping only clean, canonical top-level keys.
+  - **Quick Guide & Help Documentation Alphabetization (`core/funnel.py`, `docs/help.md`):**
+    - Standardized all CLI commands alphabetically across both the TUI interactive guide panel and `docs/help.md`: `bake`, `batch`, `exit`, `help`, `lyrs`, `sc-lyrics`, `settings`, `site`, `slice`, `subs`, `tts`.
+    - Added missing documentation for audio manipulation commands (`slice`, `bake`, `lyrs`, `sc-lyrics`).
   - **Site Catalog & Routing Registration**:
     - Added `"mangadex.org": "mangadex"` to `core/site_map.py`.
     - Added MangaDex to Category 2 (Manga) in `core/site_tui.py`.
@@ -1386,3 +1882,105 @@ The scraper architecture is split into 3 distinct stages:
 - **Settings TUI Decoupling**: Separated all settings TUI layout rendering, modal input logic, and keyboard listening loops from `core/funnel.py` into a standalone, isolated module [`core/settings_tui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/settings_tui.py).
 - **Clean Interface**: `core/funnel.py` now cleanly imports `launch_settings_tui()` from `core/settings_tui.py`, removing code bloat and preventing settings TUI state from corrupting funnel routing logic.
 
+***
+
+# Progress Report - September 2026 (Global Revolt Mode Ctrl+R Fix Across 44+ Sites)
+
+## 1. Global Revolt Mode (`Ctrl+R`) Architecture Fix
+- **Root Cause Analysis**:
+  - `_tty_fd` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py) exclusively attempted `os.open('/dev/tty', os.O_RDONLY)`. In standard terminal sessions, ptys, and subshells, this threw `OSError: [Errno 6] No such device or address: '/dev/tty'` and silently reset `_tty_fd = None`. Because `_tty_fd` was `None`, `get_key_nonblocking()` returned `""` forever, discarding all `Ctrl+R` keystrokes.
+  - `set_active_live(live)` previously only monkey-patched `live.update()`. The vast majority of scrapers (toon, audio, book, etc.) instantiate `Live(get_renderable=render_chapter_tree, ...)` which bypasses `live.update()` and calls `self.get_renderable()` directly. Consequently, even when `_REVOLT_TRIGGERING` was armed, the Revolt prompt was never injected into the display tree.
+  - `global_revolt_listener` did not invoke `_LIVE_INSTANCE.refresh()` upon keystrokes, causing keyboard input to stall until an external progress tick.
+  - Out of 47 scrapers, only 15 video scrapers checked `_REVOLT_ACTIVE` or `_REVOLT_LIMIT`. All toon and novel scrapers lacked Revolt limit checks and continued downloading indefinitely.
+- **Resolution**:
+  - **Universal TTY Fallback**: Updated `set_active_live` to probe both `/dev/tty` and `sys.stdin.fileno()` (when `sys.stdin.isatty()`), accurately preserving terminal attributes and raw mode across all Unix terminal environments.
+  - **Comprehensive Live Wrapping**: Wrapped both `live.get_renderable` and `live.update` with `inject_revolt_into_renderable()`, ensuring every frame (whether rendered via periodic tick or manual update) seamlessly includes the Revolt prompt (`[sexy_pink]◆ Revolt[/sexy_pink]`) and cursor. Guarded tree child replacement in-place to prevent node duplication.
+  - **Zero-Latency Key Handling**: Attached immediate `_LIVE_INSTANCE.refresh()` calls to `Ctrl+R`, digit entries, Backspace, Enter, and Escape. Added `Ctrl+C` handling inside the prompt to allow forceful exits.
+  - **Universal Scraper Revolt Interceptor**: Added guard in `set_active_live(live)` to block subsequent downloads when `_REVOLT_ACTIVE` and `_REVOLT_LIMIT <= 0`, plus exposed `check_revolt()` and `trigger_revolt_exit()`. Automatically halts toon, novel, audio, and video scrapers cleanly without code duplication.
+  - **Batch Loop & Route Guards**: Added checks in `core/funnel.py` batch loop and `route_url` to stop batch executions cleanly upon Revolt limit fulfillment without corrupting `Batch URL.txt` or `Batch History.json`.
+  - **Revolt Completion OS Notification**: Integrated `send_os_notification("Zine Scraper — Revolt", ...)` inside `trigger_revolt_exit(title=...)` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py), dispatching native system notifications (Linux notify-send / macOS osascript / Windows Toast) indicating clean completion and including the series or item title.
+  - **Verification**: Created [test_revolt_mode.py](file:///home/valse-de-anshu/.gemini/antigravity-cli/brain/f89e6d40-bc3b-440e-a95f-be050eabdd30/scratch/test_revolt_mode.py) testing PTY interaction, tree node injection, limit confirmation (`0` and `N`), and notification dispatch. Verified 100% test pass rate across all suites.
+
+***
+
+# Progress Report - September 2026 (Revolt Limit 0/1 Lifecycle & Duplicate Log Elimination)
+
+## 1. Revolt Limit 0 Mid-Download Kill Resolution
+- **Root Cause**: Setting Revolt limit `0` during an active chapter download marked `_REVOLT_TRIGGERED_DURING_ITEM = True` while `_REVOLT_LIMIT = 0`. Worker threads downloading chunks or images called `time.sleep()`, invoking `core/funnel.py:patched_sleep()` which triggered `trigger_revolt_exit()` in the middle of chapter slicing/download.
+- **Resolution**:
+  - Introduced `_REVOLT_CURRENT_DONE` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py). When Revolt is activated during an active `Live` session, `_REVOLT_CURRENT_DONE` is set to `False`, guaranteeing the currently running chapter/item finishes 100% cleanly.
+  - Guarded `patched_sleep`, `patched_input`, and post-TUI handlers in [`core/funnel.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/funnel.py) so revolt exits are only evaluated on the main thread when `_LIVE_INSTANCE is None` and `_REVOLT_CURRENT_DONE` is True. Background worker threads can no longer terminate downloads prematurely.
+
+## 2. Revolt Limit 1 Accurate Quota Fulfillment
+- **Root Cause**: `set_active_live(None)` decremented `_REVOLT_LIMIT` immediately upon the current chapter finishing, and subsequent checks decremented it again, causing limit 1 to exit immediately without downloading the additional chapter.
+- **Resolution**:
+  - `set_active_live(None)` now only sets `_REVOLT_CURRENT_DONE = True` without decrementing `_REVOLT_LIMIT` for the item that was active when Revolt was triggered.
+  - Only subsequent items decrement `_REVOLT_LIMIT`, allowing limit 1 to finish the current item + exactly 1 additional item before halting.
+
+## 3. Atomic Single-Print Shutdown & Codebase Harmonization
+- **Root Cause**:
+  - `trigger_revolt_exit()` had no re-entrancy lock. While `send_os_notification()` blocked on `notify-send`, concurrent threads or subsequent handlers invoked `trigger_revolt_exit()` again, printing the shutdown message twice.
+  - 15 video workflows manually printed duplicate `● Revolt shutdown triggered. Exiting cleanly...` and bypassed the centralized handler with raw `sys.exit(0)`.
+  - `core/history.py` contained rogue background threads decrementing `_REVOLT_LIMIT` in persistence methods (`set_title`, `mark_downloaded`, `unmark_downloaded`, `sync_local_history`).
+- **Resolution**:
+  - Added atomic lock `_REVOLT_EXIT_LOCK` and re-entrancy guard `_REVOLT_EXITING` to `trigger_revolt_exit()`.
+  - Standardized all 15 video scrapers (`hianime`, `miruro`, `anikai`, `hanime`, etc.), `omegascans`, and YouTube workflows to use unified `ui.check_revolt(title=title)`.
+  - Stripped rogue revolt decrementing threads from [`core/history.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/history.py).
+  - Created [test_revolt_lifecycle.py](file:///home/valse-de-anshu/.gemini/antigravity-cli/brain/f89e6d40-bc3b-440e-a95f-be050eabdd30/scratch/test_revolt_lifecycle.py) validating concurrency atomicity, single printout guarantees, limit 0 completion, and limit 1 multi-item quota. 100% test pass rate.
+
+***
+
+# Progress Report - September 2026 (Elimination of OS Notification Console Logging & Scraper Root Logger Hijacking)
+
+## 1. Notification Console Noise Elimination
+- **Root Cause**: [`butler/notify.py`](file:///home/valse-de-anshu/.config/zine%20scraper/butler/notify.py) contained `logging.info(f"OS Notification dispatched: [{title}] {message}")`. Meanwhile, 10 legacy toon engines attached a custom `ColorHandler(sys.stdout)` with timestamp formatting (`%(asctime)s | %(message)s`) directly to the Python root logger (`logging.getLogger()`). Whenever a desktop notification was dispatched at the end of a download, the root logger intercepted this info log and dumped `HH:MM:SS | OS Notification dispatched: [...]` directly onto the terminal screen above the completion prompt.
+- **Resolution**:
+  - Removed `logging.info` from [`butler/notify.py`](file:///home/valse-de-anshu/.config/zine%20scraper/butler/notify.py). OS notification dispatch is now 100% quiet and never writes to stdout/stderr.
+  - Stripped `ColorHandler(sys.stdout)` and root logger manipulation from all remaining 10 scraper engines (`hentai18`, `hentai20`, `kunmanga`, `projectsuki`, `asurascans`, `oppai_stream_toon`, `manhwaus`, `mangak`, `manhuaplus`, `fanfox`) as well as `nhentai`, `weebcentral`, and `asmhentai`.
+  - Verified that zero console noise is produced during notification dispatch or scraper engine execution across all 44+ site TUIs.
+
+***
+
+# Progress Report - September 2026 (Vertical Selector Alignment & Subchapters UI Fix)
+
+## 1. Vertical Selector Misalignment Fix
+- **Root Cause**: In [`core/ui.py:Selector._render()`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py), the `vertical=True` branch computed `indent = " " * (self.align_width + 2)`. When `filter_subchapters()` called `Selector(..., title="Download subchapters as well?", vertical=True, align_width=29)`, `align_width=29` generated an excessive indentation of 31 spaces on every option line below the title, pushing the options far to the right.
+- **Resolution**:
+  - Updated `Selector._render()` in [`core/ui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/ui.py) so that vertical lists display the title cleanly on its own line (`title:\n`) and indent choices by standard 2 spaces (`indent = "  "`), achieving natural alignment across all vertical menus.
+  - Removed redundant `align_width=29` argument from `filter_subchapters()`.
+
+***
+
+# Progress Report - September 2026 (MangaDex Multi-Language Crash Resolution)
+
+## 1. MangaDex Multi-Language `NameError: lang_code` Fix
+- **Root Cause**: In [`scrapers/mangadex/workflow.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/mangadex/workflow.py), line 379 invoked `check_revolt(title=f"{title} [{lang_code}]")`. However, the loop variable iterating over selected languages was named `chosen_lang`, not `lang_code`. As soon as the first language finished downloading its first chapter, Python raised `NameError: name 'lang_code' is not defined`, aborting the chapter loop and terminating the language sequence before subsequent languages could start.
+- **Resolution**:
+  - Updated line 379 in [`scrapers/mangadex/workflow.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/mangadex/workflow.py) to reference `chosen_lang` (`check_revolt(title=f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title)`).
+  - Verified multi-language downloading end-to-end with multiple selected languages (e.g., English and Vietnamese), confirming both languages download sequentially with zero errors.
+
+***
+
+# Progress Report - September 2026 (Anime Interactive TUI Standardization & Responsive Import Wizard)
+
+## 1. Interactive TUI Restoration & Harmonization Across All Anime Scrapers
+- **Root Cause**:
+  - Across the 6 anime platforms (`miruro`, `anikoto`, `hianime`, `anitaku`, `anineko`, `anikai`), the interactive TUI experience had diverged:
+    - Mode selection lacked the pre-flight Tokyo Night Storm metadata header (`Menu: Anime`, `URL`, `Series`, `Episodes`).
+    - Single episode URL filtering used raw substring checks (e.g. `f"?ep={ep_num}" in url`), which incorrectly matched episode 1 against episodes 10, 11, 12, etc.
+    - Quality probing in `CategoryImportTUI` was disconnected (`quality_callback=None`), rendering quality selection in the import wizard inert.
+    - Completion header logs printed `Menu : Vacuum` instead of `Menu : Anime`.
+- **Resolution**:
+  - Implemented `_draw_header(menu="Anime")` rendering Tokyo Night Storm metadata headers prior to mode selection across all anime workflows.
+  - Standardized 2-stage mode selection (`Download single episode` vs `Download whole series`) with robust regex boundary matching (`(?:[?&]ep=|/ep-|/episode-|-episode-)(\d+)`) preventing substring collisions.
+  - Removed annoying resolution selection prompt (`quality_callback`) from the import wizard; all anime downloads automatically default to the highest resolution (`format_override="best[ext=mp4]/best"`) without prompting.
+  - Removed redundant inner `import re` inside `run_workflow` in `scrapers/miruro/workflow.py`, fixing `UnboundLocalError: cannot access local variable 're' where it is not associated with a value` when selecting single episode mode.
+  - Updated completion logs to display `[menu]Menu[/menu] : [site]Anime[/site]`.
+
+## 2. Responsive Terminal Layout for `CategoryImportTUI`
+- **Root Cause**:
+  - `CategoryImportTUI` in [`core/import_tui.py`](file:///home/valse-de-anshu/.config/zine%20scraper/core/import_tui.py) used hardcoded heights (padding to 28 lines) and a 135-column table width. On standard 24-line or 80-column terminal windows, this caused vertical overflow, jitter, line jumping, and visual boundary truncation on every live frame update.
+- **Resolution**:
+  - Implemented dynamic dimension querying (`_get_dimensions()`) using `console.size` to dynamically constrain height (between 10 and 20 lines) and width (between 64 and 120 columns).
+  - Dynamically calculated left/right panel padding and right-panel text wrapping to guarantee render frames remain strictly within terminal bounds with zero flicker.
+  - Verified batch mode isolation: when `is_batch=True` or `not sys.stdin.isatty()`, all interactive selectors and the wizard are completely bypassed.

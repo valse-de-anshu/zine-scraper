@@ -8,7 +8,7 @@ from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.utils import js_to_json
 
 class HanimeRedIE(InfoExtractor):
-    _VALID_URL = r'https://hanime.red/(?P<id>[0-9a-z\-]+)'
+    _VALID_URL = r'https?://(?:www\.)?hanime\.red/(?!serie(?:s)?/|tags-page/|hentai/|login-page/|register-page/)(?P<id>[0-9a-z\-]+)/?$'
 
     @staticmethod
     def _proof_of_work(s):

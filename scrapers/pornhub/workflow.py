@@ -185,222 +185,208 @@ def run_workflow(
     set_tui_callback(tui_reconstruct)
 
     # ── Main download loop ────────────────────────────────────────────────
-    # Keep a persistent outer Live so the Revolt Ctrl+R listener is never
-    # deaf between videos (the listener requires _LIVE_INSTANCE != None).
-    from rich.text import Text
-    console.print(" ")
-    console.print(" ")
+    for idx, video in enumerate(videos, 1):
+        vid_id    = str(video.get("id") or idx)
+        vid_title = video.get("title") or f"Video {idx}"
+        vid_url   = video.get("url") or ""
 
-    with Live(Text(""), console=console, refresh_per_second=4, transient=False) as _outer_live:
-        set_active_live(_outer_live)
+        if not vid_url:
+            logger.warning(f"Skipping video {idx} — no URL")
+            continue
 
-        for idx, video in enumerate(videos, 1):
-            vid_id    = str(video.get("id") or idx)
-            vid_title = video.get("title") or f"Video {idx}"
-            vid_url   = video.get("url") or ""
+        # Resolve target file path (collision-free title → id)
+        resolved_file_path, is_downloaded = tracker.resolve_download_path(
+            sub_folder, vid_id, vid_title, ext,
+            date_str=video.get("upload_date")
+        )
+        display_name = resolved_file_path.name
 
-            if not vid_url:
-                logger.warning(f"Skipping video {idx} — no URL")
-                continue
+        # ── Step 1 + 2 check: already done? ─────────────────────────────
+        if is_downloaded:
+            tracker.mark_downloaded(scraper.url, vid_id, title=title)
+            hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
+            console.print(hist_log)
+            completed_history.append(hist_log)
+            continue
 
-            # Resolve target file path (collision-free title → id)
-            resolved_file_path, is_downloaded = tracker.resolve_download_path(
-                sub_folder, vid_id, vid_title, ext,
-                date_str=video.get("upload_date")
-            )
-            display_name = resolved_file_path.name
+        # ── Progress data ────────────────────────────────────────────────
+        progress_data = {
+            "total_bytes":      0,
+            "downloaded_bytes": 0,
+            "done":    False,
+            "success": False,
+            "status":  "Starting...",
+            "baking":  False,
+            "speed":   0,
+            "eta":     None,
+            "retry":   0,
+        }
 
-            # ── Step 1 + 2 check: already done? ─────────────────────────────
-            if is_downloaded:
-                tracker.mark_downloaded(scraper.url, vid_id, title=title)
-                hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
-                console.print(hist_log)
-                completed_history.append(hist_log)
-                continue
+        progress_bar = Progress(
+            MinimalPulseBar(bar_width=50),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            transient=False,
+        )
+        task_id = progress_bar.add_task("Downloading", total=None)
 
-            # ── Progress data ────────────────────────────────────────────────
-            progress_data = {
-                "total_bytes":      0,
-                "downloaded_bytes": 0,
-                "done":    False,
-                "success": False,
-                "status":  "Starting...",
-                "baking":  False,
-                "speed":   0,
-                "eta":     None,
-                "retry":   0,
-            }
+        def render_video_tree() -> Tree:
+            tree = Tree(f"[info]●[/info] [menu]Progress[/menu]", guide_style="unselected")
+            tree.add(align_header("Current", vid_title))
+            tree.add(align_header("Retry",   f"[warning]{progress_data['retry']}[/warning]"))
+            res_branch = tree.add("[success]○[/success] [menu]Result[/menu]", guide_style="unselected")
 
-            progress_bar = Progress(
-                MinimalPulseBar(bar_width=50),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                transient=False,
-            )
-            task_id = progress_bar.add_task("Downloading", total=None)
+            if not progress_data["done"]:
+                total      = progress_data["total_bytes"]
+                downloaded = progress_data["downloaded_bytes"]
 
-            def render_video_tree() -> Tree:
-                tree = Tree(f"[info]●[/info] [menu]Progress[/menu]", guide_style="unselected")
-                tree.add(align_header("Current", vid_title))
-                tree.add(align_header("Retry",   f"[warning]{progress_data['retry']}[/warning]"))
-                res_branch = tree.add("[success]○[/success] [menu]Result[/menu]", guide_style="unselected")
-
-                if not progress_data["done"]:
-                    total      = progress_data["total_bytes"]
-                    downloaded = progress_data["downloaded_bytes"]
-
-                    if progress_data.get("baking"):
-                        blink_state = int(time.time() * 6) % 3
-                        ball_style  = ["success", "warning", "unselected"][blink_state]
-                        res_branch.add(f"[{ball_style}]●[/{ball_style}] Almost done with baking...")
-                    else:
-                        progress_bar.update(
-                            task_id,
-                            total       = total or None,
-                            completed   = downloaded,
-                            description = progress_data["status"],
-                            speed       = progress_data.get("speed", 0),
-                            eta         = progress_data.get("eta"),
-                        )
-                        res_branch.add(progress_bar)
+                if progress_data.get("baking"):
+                    blink_state = int(time.time() * 6) % 3
+                    ball_style  = ["success", "warning", "unselected"][blink_state]
+                    res_branch.add(f"[{ball_style}]●[/{ball_style}] Almost done with baking...")
                 else:
-                    success   = progress_data.get("success", False)
-                    res_color = "success" if success else "error"
-                    res_text  = "Complete" if success else "Failed"
-                    res_branch.add(f"[{res_color}]● {res_text}[/{res_color}]")
+                    progress_bar.update(
+                        task_id,
+                        total       = total or None,
+                        completed   = downloaded,
+                        description = progress_data["status"],
+                        speed       = progress_data.get("speed", 0),
+                        eta         = progress_data.get("eta"),
+                    )
+                    res_branch.add(progress_bar)
+            else:
+                success   = progress_data.get("success", False)
+                res_color = "success" if success else "error"
+                res_text  = "Complete" if success else "Failed"
+                res_branch.add(f"[{res_color}]● {res_text}[/{res_color}]")
 
-                return tree
+            return tree
 
-            # ── yt-dlp progress hook ─────────────────────────────────────────
-            completed_files: dict = {}
+        # ── yt-dlp progress hook ─────────────────────────────────────────
+        completed_files: dict = {}
 
-            def yt_dlp_hook(d):
-                filename = d.get("filename")
-                if d["status"] == "downloading":
-                    progress_data["status"]           = "Downloading"
-                    downloaded_now                    = d.get("downloaded_bytes", 0)
-                    total_now                         = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-                    completed_files[filename]         = {"downloaded": downloaded_now, "total": total_now}
-                    progress_data["downloaded_bytes"] = sum(f["downloaded"] for f in completed_files.values())
-                    progress_data["total_bytes"]      = sum(f["total"]      for f in completed_files.values())
-                    progress_data["speed"]            = d.get("speed", 0)
-                    progress_data["eta"]              = d.get("eta")
+        def yt_dlp_hook(d):
+            filename = d.get("filename")
+            if d["status"] == "downloading":
+                progress_data["status"]           = "Downloading"
+                downloaded_now                    = d.get("downloaded_bytes", 0)
+                total_now                         = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                completed_files[filename]         = {"downloaded": downloaded_now, "total": total_now}
+                progress_data["downloaded_bytes"] = sum(f["downloaded"] for f in completed_files.values())
+                progress_data["total_bytes"]      = sum(f["total"]      for f in completed_files.values())
+                progress_data["speed"]            = d.get("speed", 0)
+                progress_data["eta"]              = d.get("eta")
 
-                elif d["status"] == "finished":
-                    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-                    if filename not in completed_files:
-                        completed_files[filename] = {"downloaded": total, "total": total}
-                    else:
-                        if completed_files[filename]["total"] == 0:
-                            completed_files[filename]["total"] = total
-                        completed_files[filename]["downloaded"] = completed_files[filename]["total"]
-                    progress_data["downloaded_bytes"] = sum(f["downloaded"] for f in completed_files.values())
-                    progress_data["total_bytes"]      = sum(f["total"]      for f in completed_files.values())
-                    progress_data["speed"]  = 0
-                    progress_data["eta"]    = 0
-                    progress_data["status"] = "Almost done with baking..."
-                    progress_data["baking"] = True
+            elif d["status"] == "finished":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                if filename not in completed_files:
+                    completed_files[filename] = {"downloaded": total, "total": total}
+                else:
+                    if completed_files[filename]["total"] == 0:
+                        completed_files[filename]["total"] = total
+                    completed_files[filename]["downloaded"] = completed_files[filename]["total"]
+                progress_data["downloaded_bytes"] = sum(f["downloaded"] for f in completed_files.values())
+                progress_data["total_bytes"]      = sum(f["total"]      for f in completed_files.values())
+                progress_data["speed"]  = 0
+                progress_data["eta"]    = 0
+                progress_data["status"] = "Almost done with baking..."
+                progress_data["baking"] = True
 
-                elif d["status"] == "error":
-                    progress_data["status"] = "Error"
+            elif d["status"] == "error":
+                progress_data["status"] = "Error"
 
-            # ── Download with retry loop ─────────────────────────────────────
-            download_error = None
-            import core.ui as ui
-            ui._REVOLT_LISTENER_ACTIVE = True
+        # ── Download with retry loop ─────────────────────────────────────
+        download_error = None
+        import core.ui as ui
+        ui._REVOLT_LISTENER_ACTIVE = True
 
-            try:
-                attempt = 0
-                while True:
-                    progress_data["retry"] = attempt
-                    if attempt > 0:
-                        progress_data["status"]  = "Resuming..."
-                        progress_data["baking"]  = False
-                        progress_data["done"]    = False
-                        progress_data["success"] = False
-                        completed_files.clear()
+        try:
+            attempt = 0
+            while True:
+                progress_data["retry"] = attempt
+                if attempt > 0:
+                    progress_data["status"]  = "Resuming..."
+                    progress_data["baking"]  = False
+                    progress_data["done"]    = False
+                    progress_data["success"] = False
+                    completed_files.clear()
 
-                    with Live(render_video_tree(), console=console, refresh_per_second=10, transient=True) as live:
-                        set_active_live(live)
+                with Live(render_video_tree(), console=console, refresh_per_second=10, transient=True) as live:
+                    set_active_live(live)
 
-                        live_active = [True]
+                    live_active = [True]
 
-                        def refresh_loop():
-                            while live_active[0]:
-                                try:
-                                    live.update(render_video_tree())
-                                except Exception:
-                                    pass
-                                time.sleep(0.1)
-
-                        refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
-                        refresh_thread.start()
-
-                        def active_hook(d):
-                            yt_dlp_hook(d)
+                    def refresh_loop():
+                        while live_active[0]:
                             try:
                                 live.update(render_video_tree())
                             except Exception:
                                 pass
+                            time.sleep(0.1)
 
+                    refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
+                    refresh_thread.start()
+
+                    def active_hook(d):
+                        yt_dlp_hook(d)
                         try:
-                            success = scraper.engine.download_pornhub_video(
-                                vid_url,
-                                sub_folder,
-                                active_hook,
-                                quality=quality,
-                                fixed_title=resolved_file_path.stem,
-                            )
-                        except Exception as download_exc:
-                            err_str = str(download_exc).lower()
-                            if "403" in err_str or "forbidden" in err_str:
-                                logger.warning(f"403 Forbidden for {vid_url} — skipping")
-                                progress_data["done"]    = True
-                                progress_data["success"] = False
-                                success = False
-                                break
-                            raise
-                        finally:
-                            live_active[0] = False
+                            live.update(render_video_tree())
+                        except Exception:
+                            pass
 
-                    # Restore outer live so Revolt listener stays active between videos
-                    set_active_live(_outer_live)
-
-                    if success:
-                        tracker.mark_downloaded(scraper.url, vid_id, title=title)
-                        progress_data["success"] = True
-                        break
-                    else:
-                        from core.video_engine import handle_internet_loss
-                        if not handle_internet_loss():
+                    try:
+                        success = scraper.engine.download_pornhub_video(
+                            vid_url,
+                            sub_folder,
+                            active_hook,
+                            quality=quality,
+                            fixed_title=resolved_file_path.stem,
+                        )
+                    except Exception as download_exc:
+                        err_str = str(download_exc).lower()
+                        if "403" in err_str or "forbidden" in err_str:
+                            logger.warning(f"403 Forbidden for {vid_url} — skipping")
+                            progress_data["done"]    = True
+                            progress_data["success"] = False
+                            success = False
                             break
-                    attempt += 1
+                        raise
+                    finally:
+                        live_active[0] = False
 
-            except (Exception, KeyboardInterrupt) as e:
-                progress_data["done"] = True
-                if isinstance(e, KeyboardInterrupt):
-                    raise
-                download_error = e
-            finally:
-                progress_data["done"] = True
-                set_active_live(_outer_live)
-                ui._REVOLT_LISTENER_ACTIVE = False
+                set_active_live(None)
 
-            if download_error:
-                console.print(f"[error]Download failed: {download_error}[/error]")
-
-            res_color = "success" if progress_data.get("success") else "error"
-            hist_log  = f"  [{res_color}]●[/{res_color}] [unselected]{display_name}[/unselected]"
-            console.print(hist_log)
-            completed_history.append(hist_log)
-            time.sleep(0.3)
-
-            # ── Revolt shutdown check (per-video, after each download) ────────
-            if ui._REVOLT_ACTIVE:
-                if ui._REVOLT_LIMIT == 0:
-                    console.print("[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
-                    sys.exit(0)
+                if success:
+                    tracker.mark_downloaded(scraper.url, vid_id, title=title)
+                    progress_data["success"] = True
+                    break
                 else:
-                    ui._REVOLT_LIMIT -= 1
+                    from core.video_engine import handle_internet_loss
+                    if not handle_internet_loss():
+                        break
+                attempt += 1
+
+        except (Exception, KeyboardInterrupt) as e:
+            progress_data["done"] = True
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            download_error = e
+        finally:
+            progress_data["done"] = True
+            set_active_live(None)
+            ui._REVOLT_LISTENER_ACTIVE = False
+
+        if download_error:
+            console.print(f"[error]Download failed: {download_error}[/error]")
+
+        res_color = "success" if progress_data.get("success") else "error"
+        hist_log  = f"  [{res_color}]●[/{res_color}] [unselected]{display_name}[/unselected]"
+        console.print(hist_log)
+        completed_history.append(hist_log)
+        time.sleep(0.3)
+
+        # ── Revolt shutdown check (per-video, after each download) ────────
+        if ui.check_revolt(title=title):
+            return
 
     set_active_live(None)
     console.print(f"\n[success]✦[/success] Done\n")

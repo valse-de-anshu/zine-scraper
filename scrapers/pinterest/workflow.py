@@ -34,6 +34,10 @@ def run_workflow(
     for board_idx, board in enumerate(selected_boards, 1):
         board_url   = board["url"]
         board_title = board.get("name") or board.get("title", "Unknown Board")
+        if hasattr(tracker, "set_title") and board_title and board_title != "Unknown Board":
+            tracker.set_title(board_url, board_title)
+            if hasattr(scraper, "url") and scraper.url:
+                tracker.set_title(scraper.url, f"{profile_name} - {board_title}" if profile_name else board_title)
 
         is_single_pin = getattr(scraper, "get_link_type", lambda: "")() in ("single", "pin")
         if is_single_pin:
@@ -119,11 +123,17 @@ def run_workflow(
                 try:
                     import requests
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                    r = requests.get(pfp_url, headers=headers, timeout=10)
-                    if r.status_code == 200:
-                        with open(pfp_path, "wb") as f:
-                            f.write(r.content)
-                        global_logs.append(f"  [success]✔ Downloaded Profile Picture for {profile_name}[/success]")
+                    for attempt in range(3):
+                        try:
+                            r = requests.get(pfp_url, headers=headers, timeout=(10, 30))
+                            if r.status_code == 200:
+                                with open(pfp_path, "wb") as f:
+                                    f.write(r.content)
+                                global_logs.append(f"  [success]✔ Downloaded Profile Picture for {profile_name}[/success]")
+                                break
+                        except Exception:
+                            if attempt < 2:
+                                time.sleep(1)
                 except Exception as e:
                     logger.debug(f"Failed to download profile picture: {e}")
             else:
@@ -185,7 +195,7 @@ def run_workflow(
             filename = pin_path.name
 
             if is_downloaded:
-                tracker.mark_downloaded(board_url, str(pin_id))
+                tracker.mark_downloaded(board_url, str(pin_id), title=board_title)
                 console.print(f"  [unselected]File exists: {filename}[/unselected]")
                 continue
 
@@ -227,7 +237,7 @@ def run_workflow(
                 try:
                     success = scraper.download_asset(pin_url, str(pin_path), stats_callback=stats_hook, is_video=is_video)
                     if success:
-                        tracker.mark_downloaded(board_url, str(pin_id))
+                        tracker.mark_downloaded(board_url, str(pin_id), title=board_title)
                         state["progress"]["success"] = True
                         state["pins_downloaded"] += 1
                 except Exception as e:

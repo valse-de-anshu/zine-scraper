@@ -23,6 +23,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             title = metadata.get("Channel/Series", "Unknown")
             scraper.metadata = metadata
             scraper.title = title
+            if hasattr(tracker, "set_title") and title and title != "Unknown":
+                tracker.set_title(scraper.url, title)
         except Exception as e:
             metadata_error = e
 
@@ -131,7 +133,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         display_name = resolved_file_path.name
         
         if is_in_verified:
-            tracker.mark_downloaded(scraper.url, str(vid_id))
+            tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
             console.print(f"  [unselected]File exists: {display_name}[/unselected]")
             continue
             
@@ -234,7 +236,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                         fixed_artist=None
                     )
                     if success:
-                        tracker.mark_downloaded(scraper.url, str(vid_id))
+                        tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
                         progress_data["success"] = True
                         progress_data["done"] = True
                         success_count += 1

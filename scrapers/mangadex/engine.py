@@ -137,14 +137,14 @@ class BaseScraper:
 
     def download_image(self, src: str, path: Path) -> int:
         """Download image into given path, preserving authentic format and avoiding zero-byte writes."""
-        for attempt in range(4):
+        for attempt in range(2):
             try:
-                time.sleep(self.IMAGE_DELAY + random.uniform(0.02, 0.08))
-                r = self.dl_session.get(src, stream=True, timeout=30)
+                time.sleep(self.IMAGE_DELAY + random.uniform(0.01, 0.05))
+                r = self.dl_session.get(src, stream=True, timeout=(8, 15))
                 if r.status_code == 429:
-                    time.sleep(2.0 * (attempt + 1))
+                    time.sleep(1.0 * (attempt + 1))
                     continue
-                if r.status_code in (403, 404):
+                if r.status_code in (403, 404, 410, 500, 502, 503, 504):
                     return -1
                 r.raise_for_status()
 
@@ -164,8 +164,9 @@ class BaseScraper:
             except Exception:
                 if path.exists():
                     path.unlink(missing_ok=True)
-                time.sleep(1.0)
-        return 0
+                if attempt == 0:
+                    time.sleep(0.3)
+        return -1
 
     def download_cover(self, folder: Path):
         """Downloads cover art into target folder using centralized temp directory buffer."""
@@ -188,7 +189,7 @@ class BaseScraper:
                 if self.download_image(cover_url, temp_path) == 1:
                     success = True
                     break
-                time.sleep(1.5)
+                time.sleep(1.0)
 
             if success and temp_path.exists():
                 final_cover = folder / temp_path.name
@@ -203,6 +204,7 @@ class BaseScraper:
         temp_dir.mkdir(parents=True, exist_ok=True)
         
         total_pages = len(img_urls)
+        valid_pages = total_pages
         if stats_callback:
             stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
 
@@ -217,7 +219,6 @@ class BaseScraper:
             return idx, status, actual_path
 
         dl_count = 0
-        missing_count = 0
 
         with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             futures = [executor.submit(dl_task, i + 1, url) for i, url in enumerate(img_urls)]
@@ -227,15 +228,18 @@ class BaseScraper:
                     downloaded_files[idx] = actual_path
                     dl_count += 1
                 else:
-                    missing_count += 1
+                    valid_pages -= 1
                 if stats_callback:
-                    stats_callback({"total": total_pages, "downloaded": dl_count, "missing": missing_count})
+                    cur_missing = max(0, valid_pages - dl_count)
+                    stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": cur_missing})
 
         if dl_count == 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
             return {"total": total_pages, "downloaded": 0, "missing": total_pages, "success": False}
 
         # Slicing & Final Renaming Pipeline inside temp buffer
+        if stats_callback:
+            stats_callback({"status": "baking"})
         final_pages_dir = temp_dir / "final"
         final_pages_dir.mkdir(parents=True, exist_ok=True)
         
@@ -281,9 +285,10 @@ class BaseScraper:
         # Cleanup centralized temp directory
         shutil.rmtree(temp_dir, ignore_errors=True)
 
+        missing = max(0, valid_pages - dl_count)
         return {
-            "total": total_pages,
+            "total": valid_pages,
             "downloaded": dl_count,
-            "missing": missing_count,
+            "missing": missing,
             "success": True
         }

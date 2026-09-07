@@ -11,7 +11,7 @@ def send_os_notification(title: str, message: str, is_success: bool = True):
             # Linux (GNOME, KDE, XFCE, etc.)
             icon = "dialog-information" if is_success else "dialog-error"
             subprocess.run(
-                ["notify-send", "-i", icon, title, message], 
+                ["notify-send", "-a", "Zine Scraper", "-i", icon, title, message], 
                 stdout=subprocess.DEVNULL, 
                 stderr=subprocess.DEVNULL
             )

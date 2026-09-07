@@ -37,6 +37,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     with active_status("[info]Metadata...[/info]", spinner="dots"):
         try:
             title, chapters = scraper.get_title_and_chapters()
+            scraper.title = title
+            if hasattr(tracker, "set_title") and title:
+                tracker.set_title(getattr(scraper, "series_url", scraper.url), title)
+                tracker.set_title(scraper.url, title)
             
             _is_chapter = False
             if not chapters:
@@ -165,7 +169,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
     cover_status_ui = None if is_quick_grab else cover_exists
 
+    from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.series_url)
+    to_process = apply_chapter_limit(to_process, scraper)
 
     startup_clear()
     print_banner()
@@ -252,7 +258,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             try:
                 result = scraper.process_chapter(link, folder, ch_num, live=live, stats_callback=stats_cb)
                 if isinstance(result, dict) and result.get("success"):
-                    tracker.mark_downloaded(scraper.series_url, ch_num)
+                    tracker.mark_downloaded(scraper.series_url, ch_num, title=title)
                     ch_data.update(result)
                     ch_data["done"] = True
                     ch_data["success"] = True
@@ -274,7 +280,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                 try:
                     result = scraper.process_chapter(link, folder, ch_num)
                     if isinstance(result, dict) and result.get("success"):
-                        tracker.mark_downloaded(scraper.series_url, ch_num)
+                        tracker.mark_downloaded(scraper.series_url, ch_num, title=title)
                         ch_data.update(result)
                         ch_data["success"] = True
                         success_count += 1

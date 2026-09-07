@@ -37,38 +37,48 @@ class HentaimamaScraper:
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'lxml')
 
-        title_tag = soup.find('title')
-        if title_tag:
-            title = re.sub(r'(?i)Stream\s+', '', title_tag.text)
-            title = re.sub(r'(?i)\s*hentai\s+with\s+English.*', '', title).strip()
-            title = re.sub(r'(?i)\s*Episode\s*\d+\s*with\s+English.*', '', title).strip()
+        h1_el = soup.select_one(".dsc-title h1, h1")
+        if h1_el and h1_el.text.strip():
+            raw_title = h1_el.text.strip()
+            clean_series = re.sub(r'\s*-\s*Episode\s*\d+.*', '', raw_title, flags=re.I).strip()
+            clean_series = re.sub(r'(?i)\s*hentai\s+with\s+English.*', '', clean_series).strip()
+            title = clean_series or raw_title
         else:
-            title = series_url.strip('/').split('/')[-1].replace('-', ' ').title()
+            title_tag = soup.find('title')
+            if title_tag:
+                title = re.sub(r'(?i)Watch\s+', '', title_tag.text)
+                title = re.sub(r'(?i)Stream\s+', '', title)
+                title = re.sub(r'(?i)\s*Hentai\s+Online\s+Free.*', '', title).strip()
+                title = re.sub(r'(?i)\s*hentai\s+with\s+English.*', '', title).strip()
+                title = re.sub(r'(?i)\s*Episode\s*\d+\s*with\s+English.*', '', title).strip()
+                title = re.sub(r'\s*–\s*Hentaimama.*', '', title).strip()
+            else:
+                title = series_url.strip('/').split('/')[-1].replace('-', ' ').title()
 
         thumbnail = ""
         expected_slug = series_url.strip('/').split('/')[-1]
-        
-        for img in soup.find_all('img'):
-            src = img.get('src', '')
-            if 'base64' in src.lower():
-                continue
-            alt = img.get('alt', '')
-            if (alt and alt.lower() == title.lower()) or ('tvshows' in src) or (expected_slug in src):
+
+        poster_img = soup.select_one(".dsc-poster img, .poster img")
+        if poster_img:
+            src = poster_img.get("data-src") or poster_img.get("src") or ""
+            if src and not src.startswith("data:"):
                 thumbnail = src
-                break
-                
+
         if not thumbnail:
             for img in soup.find_all('img'):
                 src = img.get('src', '')
-                if 'base64' in src.lower():
+                if 'base64' in src.lower() or not src:
                     continue
-                if 'wp-content/uploads' in src and 'poster' not in src.lower():
+                alt = img.get('alt', '')
+                if (alt and alt.lower() == title.lower()) or ('tvshows' in src) or (expected_slug in src):
                     thumbnail = src
                     break
-        
-        if not thumbnail and soup.find('img'):
-            thumbnail = soup.find('img').get('src', '')
-            
+
+        if not thumbnail:
+            og_img = soup.find('meta', property='og:image')
+            if og_img and og_img.get('content'):
+                thumbnail = og_img['content']
+
         if thumbnail and not thumbnail.startswith('http'):
             thumbnail = urllib.parse.urljoin('https://hentaimama.io', thumbnail)
 
@@ -127,4 +137,6 @@ class HentaimamaScraper:
         }
         
         info = {"Total Videos": len(videos)}
+        self.title = title
+        self.metadata = meta
         return meta, videos, info

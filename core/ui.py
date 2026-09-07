@@ -231,9 +231,14 @@ _REVOLT_LIMIT = 0
 _REVOLT_TRIGGERING = False
 _MENU_ACTIVE = False
 _REVOLT_INPUT_BUFFER = ""
+_REVOLT_TRIGGERED_DURING_ITEM = False
+_REVOLT_CURRENT_DONE = False
+_REVOLT_EXIT_LOCK = threading.Lock()
+_REVOLT_EXITING = False
 
 _tty_fd = None
 _old_tty_settings = None
+_is_custom_tty_fd = False
 
 _INTERNET_DOWN = False
 _internet_loss_lock = threading.Lock()
@@ -375,13 +380,107 @@ def global_internet_monitor():
 _monitor_thread = threading.Thread(target=global_internet_monitor, daemon=True)
 _monitor_thread.start()
 
+def inject_revolt_into_renderable(renderable):
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _REVOLT_INPUT_BUFFER
+    from rich.tree import Tree
+    from rich.console import Group
+    from rich.panel import Panel
+
+    if not (_REVOLT_TRIGGERING or _REVOLT_ACTIVE):
+        if isinstance(renderable, Tree) and renderable.children:
+            renderable.children = [c for c in renderable.children if not getattr(c, "_is_revolt_node", False)]
+        return renderable
+
+    if _REVOLT_TRIGGERING:
+        revolt_msg = (
+            f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_REVOLT_INPUT_BUFFER}[/selected]█\n"
+            f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
+        )
+    else:
+        revolt_msg = (
+            f"[warning]Shutting down after {_REVOLT_LIMIT} more file(s)[/warning]"
+            if _REVOLT_LIMIT > 0
+            else "[warning]Shutting down after current file[/warning]"
+        )
+
+    if isinstance(renderable, Tree):
+        node = Tree("[sexy_pink]◆ Revolt[/sexy_pink]", guide_style="unselected")
+        node._is_revolt_node = True
+        for line in revolt_msg.split("\n"):
+            node.add(line)
+        if renderable.children and getattr(renderable.children[0], "_is_revolt_node", False):
+            renderable.children[0] = node
+        else:
+            renderable.children.insert(0, node)
+        return renderable
+    else:
+        revolt_panel = Panel(revolt_msg, border_style="warning", title="[sexy_pink]Revolt[/sexy_pink]", title_align="left")
+        return Group(revolt_panel, renderable)
+
+def trigger_revolt_exit(title: Optional[str] = None):
+    global _REVOLT_EXITING, _LIVE_INSTANCE
+    with _REVOLT_EXIT_LOCK:
+        if _REVOLT_EXITING:
+            return
+        _REVOLT_EXITING = True
+
+    if _LIVE_INSTANCE:
+        try:
+            _LIVE_INSTANCE.stop()
+        except Exception:
+            pass
+        _LIVE_INSTANCE = None
+
+    console.show_cursor(True)
+    import sys, os
+    sys.stdout.write("\033[?25h\033[0m\n")
+    sys.stdout.flush()
+    if os.name != 'nt':
+        try:
+            import termios
+            fd = sys.stdin.fileno()
+            attrs = termios.tcgetattr(fd)
+            attrs[3] = attrs[3] | termios.ICANON | termios.ECHO
+            attrs[1] = attrs[1] | termios.OPOST
+            termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+        except Exception:
+            pass
+    console.print("\n[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
+    sys.stdout.flush()
+
+    # Dispatch OS notification for Revolt completion
+    try:
+        from butler.notify import send_os_notification
+        msg = f"Finished downloads for {title} and stopped cleanly." if title else "Revolt limit reached. Downloads stopped cleanly."
+        send_os_notification("Zine Scraper — Revolt", msg, is_success=True)
+    except Exception:
+        pass
+
+    try:
+        from core.history import BatchHistoryManager
+        if BatchHistoryManager._instance:
+            BatchHistoryManager._instance.flush()
+    except Exception:
+        pass
+    os._exit(0)
+
+def check_revolt(title: Optional[str] = None) -> bool:
+    """Check if Revolt mode is active and limit reached. If so, triggers clean exit."""
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_CURRENT_DONE
+    if not _REVOLT_ACTIVE:
+        return False
+    if _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
+        trigger_revolt_exit(title=title)
+        return True
+    return False
+
 def global_revolt_listener():
     import time
     import sys
-    global _LIVE_INSTANCE, _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _MENU_ACTIVE, _REVOLT_INPUT_BUFFER
+    global _LIVE_INSTANCE, _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _MENU_ACTIVE, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
     while True:
         if _LIVE_INSTANCE is None or _MENU_ACTIVE:
-            time.sleep(0.1)
+            time.sleep(0.04)
             continue
             
         key = get_key_nonblocking()
@@ -392,11 +491,21 @@ def global_revolt_listener():
             if key == '\x12':  # Ctrl+R
                 _REVOLT_TRIGGERING = True
                 _REVOLT_INPUT_BUFFER = ""
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
         else:
             # We are in Revolt typing mode (inline inside Rich Live context)
-            if key == '\x1b' or key == 'ESC':  # Escape key cancels Revolt prompt
+            if key in ('\x1b', 'ESC'):  # Escape key cancels Revolt prompt
                 _REVOLT_TRIGGERING = False
                 _REVOLT_INPUT_BUFFER = ""
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
             elif key in ('\r', '\n'):  # Enter key confirms
                 val = _REVOLT_INPUT_BUFFER.strip()
                 if val:  # Non-empty input activates Revolt limit
@@ -405,78 +514,133 @@ def global_revolt_listener():
                         if limit >= 0:
                             _REVOLT_ACTIVE = True
                             _REVOLT_LIMIT = limit
+                            if _LIVE_INSTANCE is not None:
+                                _REVOLT_CURRENT_DONE = False
+                                _REVOLT_TRIGGERED_DURING_ITEM = True
+                            else:
+                                _REVOLT_CURRENT_DONE = True
+                                _REVOLT_TRIGGERED_DURING_ITEM = False
+                                if limit == 0:
+                                    trigger_revolt_exit()
                     except ValueError:
                         pass
                 else:  # Empty input cancels/backs out of Revolt mode
-                    _REVOLT_TRIGGERING = False
-                    _REVOLT_INPUT_BUFFER = ""
+                    _REVOLT_ACTIVE = False
+                    _REVOLT_LIMIT = 0
+                    _REVOLT_CURRENT_DONE = False
+                    _REVOLT_TRIGGERED_DURING_ITEM = False
                 _REVOLT_TRIGGERING = False
                 _REVOLT_INPUT_BUFFER = ""
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
             elif key in ('\x7f', '\x08'):  # Backspace key deletes last character
                 _REVOLT_INPUT_BUFFER = _REVOLT_INPUT_BUFFER[:-1]
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
+            elif key == '\x03':  # Ctrl+C during revolt prompt forces clean exit
+                clean_exit(forceful=True)
             elif key.isdigit():  # Accept digits only
                 _REVOLT_INPUT_BUFFER += key
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
                 
-        time.sleep(0.05)
+        time.sleep(0.02)
 
 _ctrl_r_thread = threading.Thread(target=global_revolt_listener, daemon=True)
 _ctrl_r_thread.start()
 
 def set_active_live(live):
-    global _LIVE_INSTANCE, _tty_fd, _old_tty_settings
-    _LIVE_INSTANCE = live
-    if live is not None:
-        # Enable custom raw mode (ISIG and OPOST preserved) once for the duration of the Live visualizer
-        import os, termios
-        try:
-            _tty_fd = os.open('/dev/tty', os.O_RDONLY)
-            _old_tty_settings = termios.tcgetattr(_tty_fd)
-            
-            mode = termios.tcgetattr(_tty_fd)
-            mode[0] = mode[0] & ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
-            mode[2] = mode[2] & ~(termios.CSIZE | termios.PARENB)
-            mode[2] = mode[2] | termios.CS8
-            mode[3] = mode[3] & ~(termios.ECHO | termios.ICANON | termios.IEXTEN)
-            mode[3] = mode[3] | termios.ISIG
-            termios.tcsetattr(_tty_fd, termios.TCSADRAIN, mode)
-        except Exception:
-            _tty_fd = None
-            _old_tty_settings = None
+    global _LIVE_INSTANCE, _tty_fd, _old_tty_settings, _is_custom_tty_fd
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
 
-        original_update = live.update
-        def custom_update(renderable, refresh=False):
-            global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _REVOLT_INPUT_BUFFER
-            if _REVOLT_TRIGGERING or _REVOLT_ACTIVE:
-                from rich.tree import Tree
-                from rich.console import Group
-                from rich.panel import Panel
-                
-                if _REVOLT_TRIGGERING:
-                    revolt_msg = f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_REVOLT_INPUT_BUFFER}[/selected]█\n[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
-                else:
-                    revolt_msg = f"[unselected]Shutting down after {_REVOLT_LIMIT} more file(s)[/unselected]" if _REVOLT_LIMIT > 0 else "[unselected]Shutting down after current file[/unselected]"
-                
-                if isinstance(renderable, Tree):
-                    node = Tree("[unselected]◆ Revolt[/unselected]", guide_style="unselected")
-                    for line in revolt_msg.split("\n"):
-                        node.add(line)
-                    renderable.children.insert(0, node)
-                else:
-                    revolt_panel = Panel(revolt_msg, border_style="warning", title="Revolt", title_align="left")
-                    renderable = Group(revolt_panel, renderable)
-            return original_update(renderable, refresh=refresh)
-        live.update = custom_update
+    if live is not None:
+        # If revolt is active and limit is 0 (and an item already finished under revolt), halt before starting next!
+        if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
+            trigger_revolt_exit()
+            return
+
+        _LIVE_INSTANCE = live
+        # Enable custom raw mode (ISIG and OPOST preserved) once for the duration of the Live visualizer
+        if os.name != 'nt':
+            import termios
+            fd = None
+            is_custom = False
+            candidates = [None, "/dev/tty"]
+            for cand in candidates:
+                try:
+                    if cand is None:
+                        if sys.stdin.isatty():
+                            fd = sys.stdin.fileno()
+                            is_custom = False
+                        else:
+                            continue
+                    else:
+                        fd = os.open(cand, os.O_RDONLY)
+                        is_custom = True
+
+                    old = termios.tcgetattr(fd)
+                    mode = termios.tcgetattr(fd)
+                    mode[0] = mode[0] & ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
+                    mode[2] = mode[2] & ~(termios.CSIZE | termios.PARENB)
+                    mode[2] = mode[2] | termios.CS8
+                    mode[3] = mode[3] & ~(termios.ECHO | termios.ICANON | termios.IEXTEN)
+                    mode[3] = mode[3] | termios.ISIG
+                    termios.tcsetattr(fd, termios.TCSADRAIN, mode)
+                    _tty_fd = fd
+                    _old_tty_settings = old
+                    _is_custom_tty_fd = is_custom
+                    break
+                except Exception:
+                    if cand and is_custom and fd is not None:
+                        try:
+                            os.close(fd)
+                        except Exception:
+                            pass
+                    continue
+
+        if not getattr(live, "_revolt_wrapped", False):
+            live._revolt_wrapped = True
+            original_get_renderable = live.get_renderable
+            def custom_get_renderable():
+                renderable = original_get_renderable()
+                return inject_revolt_into_renderable(renderable)
+            live.get_renderable = custom_get_renderable
+
+            original_update = live.update
+            def custom_update(renderable, refresh=False):
+                wrapped = inject_revolt_into_renderable(renderable)
+                return original_update(wrapped, refresh=refresh)
+            live.update = custom_update
     else:
+        _LIVE_INSTANCE = None
         # Restore termios configuration when Live visualizer finishes
-        if _tty_fd is not None and _old_tty_settings is not None:
-            import termios, os
+        if _tty_fd is not None and _old_tty_settings is not None and os.name != 'nt':
+            import termios
             try:
                 termios.tcsetattr(_tty_fd, termios.TCSADRAIN, _old_tty_settings)
-                os.close(_tty_fd)
+                if _is_custom_tty_fd:
+                    os.close(_tty_fd)
             except Exception:
                 pass
-            _tty_fd = None
-            _old_tty_settings = None
+        _tty_fd = None
+        _old_tty_settings = None
+        _is_custom_tty_fd = False
+
+        if _REVOLT_ACTIVE:
+            if not _REVOLT_CURRENT_DONE:
+                _REVOLT_CURRENT_DONE = True
+            else:
+                if _REVOLT_LIMIT > 0:
+                    _REVOLT_LIMIT -= 1
 
 import contextlib
 
@@ -584,8 +748,9 @@ def clean_exit(forceful: bool = False):
              gradient_art = make_gradient_text(art_line, (122, 162, 247), (187, 154, 247), total_length=max_len)
              console.print(gradient_art)
     console.print("")
+    sys.stdout.write("\033[?25h\033[0m\n")
     sys.stdout.flush()
-    sys.exit(0)
+    os._exit(0)
 
 def signal_handler(sig, frame):
     logging.warning("SIGINT (Ctrl+C) received. Forcing clean_exit.")
@@ -780,9 +945,9 @@ class Selector:
     def _render(self) -> Text:
         full_text = Text()
         if self.vertical:
-            title_prefix = f"{self.title:<{self.align_width}}: \n"
-            full_text.append(title_prefix, style="menu")
-            indent = " " * (self.align_width + 2)
+            if self.title:
+                full_text.append(f"{self.title}:\n", style="menu")
+            indent = "  "
             for i, (label, _) in enumerate(self.options):
                 is_last = (i == len(self.options) - 1)
                 newline = "" if is_last else "\n"
@@ -838,8 +1003,18 @@ def align_header(label: str, value: Any) -> str:
 
 class MultiSelector:
     """A multi-selector for file assets (like yazi/nnn) with scrolling support."""
-    def __init__(self, options: List[dict], title: str = "Select Files"):
-        self.options = options
+    def __init__(self, options: List[Any], title: str = "Select Files"):
+        normalized = []
+        for opt in options:
+            if isinstance(opt, dict):
+                normalized.append(opt)
+            elif isinstance(opt, tuple):
+                label = str(opt[0])
+                val = opt[1] if len(opt) > 1 else opt[0]
+                normalized.append({"name": label, "value": val, "size_bytes": 0})
+            else:
+                normalized.append({"name": str(opt), "value": opt, "size_bytes": 0})
+        self.options = normalized
         self.title = title
         self.index = 0
         self.selected = set()
@@ -1587,7 +1762,21 @@ except ImportError:
 
 
 
-def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is_batch: bool = False) -> List[Tuple[str, str]]:
+def apply_chapter_limit(to_process: List[Tuple[str, str]], scraper: Any) -> List[Tuple[str, str]]:
+    """
+    Limits the un-downloaded items/chapters according to active flags.
+    --<N> (e.g. --2, --5) downloads the next N un-downloaded items in systematic order.
+    --0 (Quick grab) downloads the single next item.
+    """
+    chapter_limit = getattr(scraper, '_chapter_limit', None)
+    if isinstance(chapter_limit, int) and chapter_limit > 0:
+        return to_process[:chapter_limit]
+    if getattr(scraper, '_batch_quick_grab', False):
+        return to_process[:1]
+    return to_process
+
+
+def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is_batch: bool = False, scraper: Any = None) -> List[Tuple[str, str]]:
     has_subchapters = False
     for ch_str, _ in chapters:
         try:
@@ -1602,7 +1791,28 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
         return chapters
 
     import sys
+    import re
     if is_batch or not sys.stdin.isatty():
+        return chapters
+
+    # Never prompt if any flags, batch flags, or chapter limits are active
+    has_flags = False
+    if scraper:
+        if getattr(scraper, "_chapter_limit", None) is not None:
+            has_flags = True
+        if getattr(scraper, "_batch_quick_grab", False):
+            has_flags = True
+        if getattr(scraper, "_batch_flags", None):
+            has_flags = True
+
+    from core.history import HistoryLayer
+    if getattr(HistoryLayer, "_active_instance", None) and getattr(HistoryLayer._active_instance, "_active_batch_flags", None):
+        has_flags = True
+
+    if re.search(r"--\d+\b", url):
+        has_flags = True
+
+    if has_flags:
         return chapters
 
     startup_clear()
@@ -1618,7 +1828,6 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
         [("Yes, download subchapters", True), ("No, skip them", False)],
         title="Download subchapters as well?",
         vertical=True,
-        align_width=29
     ).select()
     
     if ans:
@@ -1635,17 +1844,6 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
             
     return new_chapters
 
-def clean_exit_revolt():
-    """Used to exit after the Revolt limit is reached. Performs a clean, silent exit without ASCII art."""
-    global _LIVE_INSTANCE
-    if _LIVE_INSTANCE is not None:
-        try:
-            _LIVE_INSTANCE.stop()
-            _LIVE_INSTANCE = None
-        except Exception:
-            pass
-    # Show cursor
-    print("\033[?25h", end="")
-    sys.stdout.flush()
-    import os
-    os._exit(0)
+def clean_exit_revolt(title: Optional[str] = None):
+    """Used to exit after the Revolt limit is reached. Delegates cleanly to trigger_revolt_exit."""
+    trigger_revolt_exit(title=title)

@@ -290,7 +290,8 @@ class PornHubScraper:
             self.is_playlist = False
 
             uploader = _decode(info.get("uploader") or info.get("channel") or "Unknown")
-            self.title = uploader
+            vid_title = _decode(info.get("title") or "Unknown Video")
+            self.title = vid_title if vid_title != "Unknown Video" else uploader
             self._folder_name = _safe_folder_name(uploader)
 
             thumb = info.get("thumbnail") or ""

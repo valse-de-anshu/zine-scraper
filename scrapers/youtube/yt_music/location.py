@@ -43,6 +43,8 @@ def get_save_path(
         default_root = get_container_root(url, scraper, is_batch)
 
     base = Path(default_root)
+    if base.name.lower() == "youtube":
+        base = base.parent / "YouTube Music"
     link_type = getattr(scraper, "get_link_type", lambda: "")()
 
     if link_type == "single" or not getattr(scraper, "is_playlist", False):

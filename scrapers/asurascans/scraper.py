@@ -8,12 +8,36 @@ logger = logging.getLogger("AsuraScans")
 class AsuraScansScraper(BaseScraper):
     scraper_type = "toon"
 
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.series_url = None
+
     def is_chapter_link(self) -> bool:
         return any(x in self.url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
 
 
     def get_title_and_chapters(self):
-        soup = self.get_soup(self.url)
+        original_url = self.url
+        is_chapter = self.is_chapter_link()
+
+        # If it's a chapter link, resolve to series URL first so we get authentic metadata
+        fetch_url = original_url
+        if is_chapter:
+            m_series = re.search(r"(https?://[^/]+/comics/[^/]+)", original_url)
+            if m_series:
+                self.series_url = m_series.group(1)
+            else:
+                try:
+                    temp_soup = self.get_soup(original_url)
+                    comic_a = temp_soup.select_one("a[href*='/comics/']")
+                    if comic_a:
+                        self.series_url = urljoin("https://asurascans.com", comic_a["href"].split("/chapter/")[0])
+                except Exception:
+                    pass
+            if self.series_url:
+                fetch_url = self.series_url
+
+        soup = self.get_soup(fetch_url)
         self.description = ""
         for selector in ["#syn-target", "div.description-summary", "div.summary-content", "div.post-content", "div.manga-excerpt", "p.summary"]:
             el = soup.select_one(selector)
@@ -37,11 +61,27 @@ class AsuraScansScraper(BaseScraper):
                     author_links.append(t)
         if author_links:
             self.author = ", ".join(list(dict.fromkeys(author_links)))
+
         # Asura typically uses h1.entry-title or similar
         title_tag = soup.select_one("h1.entry-title, h1")
-        title_text = title_tag.get_text(strip=True) if title_tag else "Unknown"
+        title_text = title_tag.get_text(strip=True) if title_tag else ""
+        if not title_text or title_text.lower() == "unknown":
+            og_meta = soup.find("meta", {"property": "og:title"})
+            title_text = og_meta.get("content") if og_meta else (soup.title.get_text(strip=True) if soup.title else "")
         title = re.sub(r"(?i)(read|online|raw|eng|free|manga|manhua|manhwa).*", "", title_text)
         title = re.sub(r"[^\w\s-]", "", title).strip().title()
+        if not title or title.lower() == "unknown":
+            slug = self.url.rstrip("/").split("/")[-1]
+            slug = re.sub(r"-[0-9a-fA-F]{6,}$", "", slug)
+            title = slug.replace("-", " ").title()
+        
+        self.title = title
+
+        # If original URL was a single chapter, return only that chapter
+        if is_chapter:
+            m = re.search(r"/chapter/([\d.]+)", original_url.lower())
+            num = m.group(1) if m else "1"
+            return title, [(num, original_url)]
         
         chapters = []
         # Target all links on the series page
@@ -73,14 +113,6 @@ class AsuraScansScraper(BaseScraper):
                 final_chapters.append((str_num, link))
                 seen_urls.add(link)
                 seen_nums.add(str_num)
-        
-        self.title = title
-        
-        original_url = getattr(self, "url", "")
-        if "/chapter/" in original_url.lower():
-            m = re.search(r"/chapter/([\d.]+)", original_url.lower())
-            if m:
-                return title, [(m.group(1), original_url)]
 
         if not hasattr(self, "tags"): self.tags = []
         if not hasattr(self, "genres"): self.genres = []
@@ -118,10 +150,11 @@ class AsuraScansScraper(BaseScraper):
         imgs = soup.find_all("img")
         for img in imgs:
             src = (img.get("data-src") or img.get("src") or img.get("data-lazy-src") or "").strip()
-            if src and "asura-images/chapters" in src:
-                # Clean up query params if any
+            if src and "asura-images/chapters" in src and not src.startswith("data:"):
                 clean_src = src.split('?')[0]
-                img_urls.append(urljoin(ch_url, clean_src))
+                full_src = urljoin(ch_url, clean_src)
+                if full_src.startswith("http"):
+                    img_urls.append(full_src)
         
         # Method 2: Extract from JSON structure if available (fallback)
         if not img_urls:
@@ -129,7 +162,9 @@ class AsuraScansScraper(BaseScraper):
             json_matches = re.findall(r'&quot;url&quot;:\[\d+,&quot;(https?://[^&]+)&quot;\]', str(soup))
             for match in json_matches:
                 if "asura-images/chapters" in match:
-                    img_urls.append(match.replace("\\/", "/"))
+                    cleaned_u = match.replace("\\/", "/")
+                    if cleaned_u.startswith("http"):
+                        img_urls.append(cleaned_u)
 
         img_urls = list(dict.fromkeys(img_urls))
         if not img_urls:

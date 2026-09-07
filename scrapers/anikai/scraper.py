@@ -21,12 +21,26 @@ class AnikaiScraper:
         self.engine = AnikaiEngine()
         self.is_playlist = False
 
+    def _get(self, url: str, **kwargs) -> requests.Response:
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        h = kwargs.pop("headers", None) or HEADERS.copy()
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, headers=h, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     def get_metadata_and_videos(self) -> tuple[dict, list[dict], dict]:
-        h = HEADERS.copy()
-        
         try:
-            r = requests.get(self.url, headers=h, timeout=15)
-            r.raise_for_status()
+            r = self._get(self.url)
             soup = BeautifulSoup(r.text, "lxml")
         except Exception as e:
             raise RuntimeError(f"Failed to fetch Anikai page: {e}")
@@ -70,10 +84,12 @@ class AnikaiScraper:
             
             parts = el.text.strip().split('\n')
             ep_title = parts[-1].strip() if parts else "Episode"
+            m = re.search(r'(?:Episode|EP)\s*(\d+)', ep_title, re.IGNORECASE)
+            prefix = f"EP {m.group(1)}" if m else ep_title
             
             videos.append({
                 "id": ep_url,
-                "title": f"{title_text} - {ep_title}",
+                "title": f"{prefix} - {title_text}",
                 "url": ep_url,
                 "duration": None
             })
@@ -102,4 +118,6 @@ class AnikaiScraper:
         
         info = {"server_items": server_items}
 
+        self.title = title_text
+        self.metadata = metadata
         return metadata, videos, info

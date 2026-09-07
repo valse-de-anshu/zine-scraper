@@ -43,6 +43,23 @@ class AnikotoScraper:
         self._host = _normalize_host(url)
         self.engine = VideoEngine()  # required by workflow.py for download + header injection
 
+    def _get(self, url: str, **kwargs) -> requests.Response:
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        h = kwargs.pop("headers", None) or HEADERS.copy()
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, headers=h, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     # ------------------------------------------------------------------
     # Public API (matches the contract expected by workflow.py / tui.py)
     # ------------------------------------------------------------------
@@ -59,8 +76,7 @@ class AnikotoScraper:
         h['Referer'] = self.url
 
         # ── Step 1: Page metadata ─────────────────────────────────────
-        r = requests.get(base_url, headers=h)
-        r.raise_for_status()
+        r = self._get(base_url, headers=h)
         soup = BeautifulSoup(r.text, 'lxml')
 
         title_el = soup.select_one('h1.title')
@@ -91,7 +107,7 @@ class AnikotoScraper:
         if anime_id:
             try:
                 ajax_url = f"{self._host}/ajax/episode/list/{anime_id}"
-                r_ajax = requests.get(ajax_url, headers=h)
+                r_ajax = self._get(ajax_url, headers=h)
                 eps_html = r_ajax.json().get('result', '')
                 ep_soup = BeautifulSoup(eps_html, 'lxml')
                 eps = ep_soup.select('ul.ep-range li a')
@@ -131,6 +147,8 @@ class AnikotoScraper:
             "thumbnail": cover,
         }
 
+        self.title = title
+        self.metadata = metadata
         return metadata, videos, info
 
     def resolve_episode_stream(self, episode: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -169,7 +187,7 @@ class AnikotoScraper:
         urls = []
 
         try:
-            r = requests.get(
+            r = self._get(
                 f"{self._host}/ajax/server/list?servers={data_ids}", headers=h
             )
             html = r.json().get('result', '')
@@ -182,7 +200,7 @@ class AnikotoScraper:
 
             for server_el in sub_servers:
                 link_id = server_el['data-link-id']
-                r2 = requests.get(f"{self._host}/ajax/server?get={link_id}", headers=h)
+                r2 = self._get(f"{self._host}/ajax/server?get={link_id}", headers=h)
                 result = r2.json().get('result', {})
                 url = result.get('url', '')
                 if url:

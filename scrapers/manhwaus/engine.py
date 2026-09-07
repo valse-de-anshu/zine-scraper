@@ -33,40 +33,7 @@ CHUNK_HEIGHT = 2000           # As per user script
 # ─────────────────────────────────────────────────────────────────────────────
 # Colors & Logging
 # ─────────────────────────────────────────────────────────────────────────────
-CYAN   = "\033[96m"
-GREEN  = "\033[92m"
-YELLOW = "\033[93m"
-RED    = "\033[91m"
-BOLD   = "\033[1m"
-DIM    = "\033[2m"
-RESET  = "\033[0m"
 
-class ColorHandler(logging.StreamHandler):
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            if record.levelno >= logging.ERROR:
-                msg = f"{RED}{msg}{RESET}"
-            elif record.levelno >= logging.WARNING:
-                msg = f"{YELLOW}{msg}{RESET}"
-            elif record.levelno >= logging.INFO:
-                if "Successfully" in msg or "Saved" in msg or "Done" in msg:
-                    msg = f"{GREEN}{msg}{RESET}"
-                else:
-                    msg = f"{CYAN}{msg}{RESET}"
-            sys.stdout.write(msg + self.terminator)
-            self.flush()
-        except Exception:
-            self.handleError(record)
-
-# Setup logging
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-for handler in root_logger.handlers[:]:
-    root_logger.removeHandler(handler)
-handler = ColorHandler(sys.stdout)
-handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%H:%M:%S"))
-root_logger.addHandler(handler)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -121,30 +88,31 @@ class BaseScraper:
 
     def download_image(self, src: str, path: Path, referer: str = None) -> int:
         """Download a single image, preserving its original format.
-        Returns 1 on success, -1 on dead/fake link, 0 on retriable failure."""
-        if self.consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
-            return 0
+        Returns 1 on success, -1 on dead/fake link or retriable failure."""
+        if not src or not isinstance(src, str) or not src.strip().startswith("http"):
+            return -1
 
-        time.sleep(self.IMAGE_DELAY + random.uniform(0, 0.5))
-        for attempt in range(3):
+        src = src.strip()
+        time.sleep(self.IMAGE_DELAY + random.uniform(0, 0.2))
+        for attempt in range(2):
             try:
                 headers = HEADERS.copy()
 
                 # Attempt 1: Base domain referer
                 headers["Referer"] = f"https://{self.domain}/"
-                r = self.session.get(src, stream=True, timeout=30, headers=headers)
+                r = self.session.get(src, stream=True, timeout=(8, 15), headers=headers)
 
                 if r.status_code == 403 and referer:
                     # Attempt 2: Chapter page as referer
                     headers["Referer"] = referer
-                    r = self.session.get(src, stream=True, timeout=30, headers=headers)
+                    r = self.session.get(src, stream=True, timeout=(8, 15), headers=headers)
 
                 if r.status_code == 403:
                     # Attempt 3: No referer
                     headers.pop("Referer", None)
-                    r = self.session.get(src, stream=True, timeout=30, headers=headers)
+                    r = self.session.get(src, stream=True, timeout=(8, 15), headers=headers)
 
-                if r.status_code in (403, 404):
+                if r.status_code in (400, 403, 404, 410, 422, 500, 502, 503, 504):
                     return -1
 
                 r.raise_for_status()
@@ -164,18 +132,20 @@ class BaseScraper:
                     for chunk in r.iter_content(chunk_size=16384):
                         f.write(chunk)
 
-                if path.stat().st_size < 2000:
-                    path.unlink()
+                if path.stat().st_size < 1500:
+                    path.unlink(missing_ok=True)
                     return -1
 
                 self.consecutive_failures = 0
                 return 1
             except Exception:
-                if path.exists(): path.unlink()
-                time.sleep(1)
+                if path.exists():
+                    path.unlink(missing_ok=True)
+                if attempt == 0:
+                    time.sleep(0.5)
 
-        self.consecutive_failures += 1
-        return 0
+        return -1
+
     def download_cover(self, folder: Path):
         """Download cover image, preserving original format. Skips if any cover.* already exists."""
         cover_url = getattr(self, "cover_url", None)
@@ -206,47 +176,47 @@ class BaseScraper:
                 time.sleep(2)
 
         logging.error("Cover: Failed after 3 tries")
+
     def process_chapter_multi(self, img_urls: List[str], folder: Path, ch_num: str, ch_url: str, live=None, stats_callback=None) -> dict:
+        self.consecutive_failures = 0
         temp_dir = folder / f"_temp_{ch_num}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
         
-        total_pages = len(img_urls)
+        clean_urls = [u for u in img_urls if u and isinstance(u, str) and u.strip().startswith("http")]
+        total_pages = len(clean_urls)
+        
+        if total_pages == 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
         
         # Fire initial callback so UI knows total pages immediately
         if stats_callback:
             stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
         
         def dl_task(idx, src):
-            # Use neutral ext — download_image renames to real format
             p = temp_dir / f"{idx+1:03d}.bin"
             res = self.download_image(src, p, referer=ch_url)
             if res == 1:
-                # Find the renamed file (download_image may have changed the extension)
                 candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
                 actual_p = candidates[0] if candidates else p
                 return (1, actual_p)
-            elif res == -1:
-                return (-1, None)
-            return (0, None)
+            return (-1, None)
 
-        # Perform the download tasks silently in the background
-        # The orchestrator handles the live progress display
         with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
-            futures = [executor.submit(dl_task, i, src) for i, src in enumerate(img_urls)]
+            futures = [executor.submit(dl_task, i, src) for i, src in enumerate(clean_urls)]
             valid_pages = total_pages
             for future in as_completed(futures):
                 res_code, p = future.result()
                 if res_code == 1: 
                     paths.append(p)
-                elif res_code == -1:
+                else:
                     valid_pages -= 1
                     
                 if stats_callback:
-                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": valid_pages - len(paths)})
+                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": max(0, valid_pages - len(paths))})
         
-        success = False
-        missing = valid_pages - len(paths)
+        missing = max(0, valid_pages - len(paths))
         final_chunks = 0
         if paths:
             if stats_callback:
@@ -258,8 +228,9 @@ class BaseScraper:
                         stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
                     time.sleep(0.1)
                 final_chunks = slice_future.result()
-            if len(paths) == valid_pages:
-                success = True
+
+        min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else 1
+        success = (len(paths) >= valid_pages and len(paths) > 0) or (len(paths) >= min_ok and final_chunks > 0)
             
         shutil.rmtree(temp_dir, ignore_errors=True)
         

@@ -254,18 +254,7 @@ SITE_CATEGORIES = [
                 "content": "Web serials / light novels",
                 "tags": "SFW · Light Novel · Archive · REST API",
                 "desc": "Clean API-driven light novel repository. Serves as a dependable backup reader for completed web serials and light novels when primary aggregators go offline."
-            },
-            {
-                "name": "LightNovelWorld",
-                "primary": "lightnovelworld.org",
-                "alts": [],
-                "rating": "8/10",
-                "popularity": "High",
-                "status": "Shutting down",
-                "content": "Web serials (Legacy / Deprecated)",
-                "tags": "SFW · Light Novel · Legacy · Shutting Down",
-                "desc": "Leading historical reader for translated Japanese, Korean, and Chinese web serials. The site is currently shutting down; alternative platforms above are recommended."
-            },
+            }
         ]
     },
     {
@@ -580,6 +569,17 @@ SITE_CATEGORIES = [
                 "content": "Adult manhwa / webtoons",
                 "tags": "NSFW · Manhwa · Webtoon · Romance · Drama",
                 "desc": "Fast-updating reader for localized adult Korean webtoons spanning romance, drama, and modern workplace themes."
+            },
+            {
+                "name": "Manga18fx",
+                "primary": "manga18fx.com",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Adult & SFW manga / manhwa / webtoons",
+                "tags": "NSFW · SFW · Webtoon · Manhwa · Manga · Strips",
+                "desc": "Hybrid platform hosting both adult and all-ages webtoons, manhwa, and manga with continuous vertical strip slicing."
             },
         ]
     },

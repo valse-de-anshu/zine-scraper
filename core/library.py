@@ -102,6 +102,10 @@ def scaffold_library(root: Path, storage) -> None:
     if not history_file.exists():
         storage.write_file(history_file, "{}")
 
+    batch_history_file = logs_dir / "Batch History.json"
+    if not batch_history_file.exists():
+        storage.write_file(batch_history_file, "{}")
+
     # Secrets & API credentials file (strictly gitignored)
     from core.secrets import ensure_secrets_file
     ensure_secrets_file()

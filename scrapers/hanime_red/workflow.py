@@ -59,16 +59,40 @@ def run_workflow(
     """
     from core.paths import resolve_folder_collision
 
-    title = metadata.get("Channel/Series", "Unknown")
+    series_name = metadata.get("Channel/Series", "Unknown")
+    title = series_name
+    if not is_vacuum and videos and videos[0].get("title"):
+        vid_t = videos[0]["title"]
+        if series_name and series_name != "Unknown" and not vid_t.lower().startswith(series_name.lower()):
+            title = f"{series_name} - {vid_t}"
+        else:
+            title = vid_t
+    if title and title != "Unknown":
+        tracker.set_title(scraper.url, title)
+    scraper.title = title
+    scraper.metadata = metadata
     # Use the safe filesystem name (apostrophes/entities cleaned) if available
-    folder_name = getattr(scraper, '_folder_name', None) or title
+    folder_name = getattr(scraper, '_folder_name', None) or series_name
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
+
+    ext = "mp4"
 
     if is_vacuum:
         # Vacuum: create creator subfolder using SAFE folder name (no HTML entities, no illegal chars)
         creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
         creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root
+        sub_folder = creator_root / "video"
+        sub_folder.mkdir(parents=True, exist_ok=True)
+
+        # Migrate any legacy files sitting directly in creator_root to video/
+        try:
+            import shutil
+            for legacy_file in creator_root.glob(f"*.{ext}"):
+                dest_file = sub_folder / legacy_file.name
+                if not dest_file.exists():
+                    shutil.move(str(legacy_file), str(dest_file))
+        except Exception:
+            pass
     else:
         # Quick grab: dump directly into target_root, no creator subfolder
         creator_root = target_root
@@ -171,21 +195,23 @@ def run_workflow(
         # Resolve target file path (collision-free title → id)
         # ── Step 1 + 2 check: already done? ─────────────────────────────
         if is_vacuum:
-            if getattr(scraper, "franchise_structure", "flat") == "nested":
-                sub_folder = creator_root / clean_title
-                sub_folder.mkdir(parents=True, exist_ok=True)
-            else:
-                sub_folder = creator_root
+            sub_folder = creator_root / "video"
+        else:
+            sub_folder = target_root
                 
+        target_vid_title = vid_title
+        if not is_vacuum and series_name and series_name != "Unknown" and not vid_title.lower().startswith(series_name.lower()):
+            target_vid_title = f"{series_name} - {vid_title}"
+
         resolved_file_path, is_downloaded = tracker.resolve_download_path(
-            sub_folder, vid_id, vid_title, ext,
+            sub_folder, vid_id, target_vid_title, ext,
             date_str=video.get("upload_date")
         )
         display_name = resolved_file_path.name
 
         # ── Step 1 + 2 check: already done? ─────────────────────────────
         if is_downloaded:
-            tracker.mark_downloaded(scraper.url, vid_id)
+            tracker.mark_downloaded(scraper.url, vid_id, title=title)
             hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
             console.print(hist_log)
             completed_history.append(hist_log)
@@ -342,7 +368,7 @@ def run_workflow(
                 set_active_live(None)
 
                 if success:
-                    tracker.mark_downloaded(scraper.url, vid_id)
+                    tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
                     break
                 else:
@@ -372,11 +398,7 @@ def run_workflow(
         completed_history.append(hist_log)
         time.sleep(0.3)
 
-        if ui._REVOLT_ACTIVE:
-            if ui._REVOLT_LIMIT == 0:
-                console.print("[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
-                sys.exit(0)
-            else:
-                ui._REVOLT_LIMIT -= 1
+        if ui.check_revolt(title=title):
+            return
 
     console.print(f"\n[success]✦[/success] Done\n")

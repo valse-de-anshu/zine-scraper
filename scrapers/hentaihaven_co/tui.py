@@ -1,12 +1,11 @@
 """
-scrapers/hentaihaven/tui.py
-------------------------
-HentaiHaven TUI — Hentai-category flow.
+scrapers/hentaihaven_co/tui.py
+------------------------------
+HentaiHaven.co TUI — Hentai-category flow.
 
 Route logic (entirely user-driven, NOT URL-driven):
   Single Episode         → Quick Grab → video only, flat folder, no metadata
-  Whole Franchise (Flat) → Vacuum     → all episodes in one series folder
-  Nested Subfolders      → Vacuum     → all episodes in nested season subfolders
+  Whole Franchise        → Vacuum     → all episodes in video/ subfolder
 
 The Vacuum / Quick Grab label is NEVER shown. Label is always "Hentai".
 Save Location prompt is NEVER shown — path is derived automatically from user choice.
@@ -85,30 +84,33 @@ def handle_hentaihaven_tui(
         # In batch mode: download all flat, no prompt
         scraper.is_playlist = True
         is_vacuum = True
-    elif len(videos) == 1:
-        # Only one episode exists — skip the prompt, just download it
-        scraper.is_playlist = False
-        is_vacuum = False
     else:
-
-        if __import__("sys").stdin.isatty():
+        if sys.stdin.isatty():
             choice = Selector([
                 ("Single Episode", "single"),
-                ("Whole Franchise (Flat Folder)", "flat"),
-                ("Whole Franchise (Nested Subfolders)", "nested"),
+                ("Whole Franchise", "franchise"),
             ], "Download", vertical=True).select()
 
             if choice == "single":
                 norm_url = url.rstrip("/")
                 filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
-                videos[:] = filtered if filtered else videos[:1]
+                if not filtered and len(videos) > 1 and sys.stdin.isatty():
+                    ep_options = [(v.get("title", f"Episode {i+1}"), i) for i, v in enumerate(videos)]
+                    selected_idx = Selector(ep_options, "Select Episode", vertical=True).select()
+                    if selected_idx is not None and selected_idx != "toggle":
+                        videos[:] = [videos[selected_idx]]
+                    else:
+                        videos[:] = videos[:1]
+                else:
+                    videos[:] = filtered if filtered else videos[:1]
                 metadata["Total Videos"] = len(videos)
                 scraper.is_playlist = False
                 is_vacuum = False
-            else:
-                scraper.franchise_structure = choice
+            elif choice == "franchise":
                 scraper.is_playlist = True
                 is_vacuum = True
+            else:
+                return
         else:
             # Headless/piped: download all
             scraper.is_playlist = True
@@ -149,14 +151,8 @@ def handle_hentaihaven_tui(
         is_batch_mode=is_batch_mode,
     )
 
-    if not is_batch_mode:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
-
-        pass
-        try:
-            input()
-        except EOFError:
-            pass
+    if not is_batch_mode and sys.stdin.isatty():
+        console.input("\n[info]Download finished. Press Enter to return...[/info]")
 
 def handle_tui(
     url: str,

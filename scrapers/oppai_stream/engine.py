@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, List
 import requests
 import re
 import json
+import time
 import logging
 from core.video_engine import VideoEngine
 
@@ -81,8 +82,16 @@ class OppaiStreamEngine(VideoEngine):
 
     def extract_stream_url(self, page_url: str) -> Optional[str]:
         try:
-            r = self.session.get(page_url, timeout=15)
-            r.raise_for_status()
+            r = None
+            for attempt in range(3):
+                try:
+                    r = self.session.get(page_url, timeout=(10, 30))
+                    r.raise_for_status()
+                    break
+                except Exception:
+                    if attempt == 2:
+                        return None
+                    time.sleep(1.0 * (attempt + 1))
             
             # Look for var availableres = {"4k":"...", "1080":"...", "720":"..."};
             match = re.search(r'var availableres = (\{.*?\});', r.text)

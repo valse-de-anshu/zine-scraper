@@ -5,6 +5,10 @@ from bs4 import BeautifulSoup
 from .engine import BaseScraper, urljoin
 
 class ManhuaPlusScraper(BaseScraper):
+    def __init__(self, url: str):
+        super().__init__(url)
+        self.series_url = None
+
     def is_chapter_link(self) -> bool:
         return any(x in self.url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
 
@@ -89,6 +93,16 @@ class ManhuaPlusScraper(BaseScraper):
             elif "tag" in href:
                 if text not in self.tags: self.tags.append(text)
 
+        if not final_chapters and self.is_chapter_link():
+            original_url = self.url
+            m_series = re.match(r"(https?://[^/]+/manga/[^/]+)", original_url)
+            if m_series:
+                self.series_url = m_series.group(1)
+            title = re.sub(r"(?i)\s*-\s*chapter\s*[\d.]+", "", title).strip()
+            self.title = title
+            m = re.search(r"chapter-([\d]+(?:[\.-][\d]+)?)", original_url.lower())
+            num = m.group(1).replace("-", ".") if m else "1"
+            return title, [(num, original_url)]
 
         return title, [(n, u) for _, n, u in final_chapters]
 
@@ -126,17 +140,30 @@ class ManhuaPlusScraper(BaseScraper):
             except Exception as e:
                 logging.warning(f"AJAX image fetch failed for {ch_url}: {e}")
 
+        bad_keywords = [
+            "logo", "banner", "avatar", "icon", "ads", "button", "loader",
+            "loading", "spinner", "placeholder", "spacer", "pixel.wp.com",
+            "broken_image", "1x1", "transparent.png", "blank.gif", "statcounter",
+            "histats", "analytics", "exoclick", "adsterra", "trafficjunky",
+            "syndication", "mgid", "doubleclick", "next-chapter", "prev-chapter",
+            "discord", "donate", "patreon", "bookmark", "recruit"
+        ]
+
         # 2. Sort images by index
         img_data.sort(key=lambda x: x[0])
-        img_urls = [url for _, url in img_data]
+        img_urls = [url for _, url in img_data if url.startswith("http") and not any(b in url.lower() for b in bad_keywords)]
 
         # 3. Fallback if AJAX returned nothing
         if not img_urls:
             imgs = soup.select("div.page-break img, div.read-container img, div#chapterContent img")
             for img in imgs:
                 src = (img.get("data-src") or img.get("src") or "").strip()
-                if src and "loading" not in src.lower() and "logo" not in src.lower():
-                    img_urls.append(urljoin(ch_url, src))
+                if src and not src.startswith("data:"):
+                    full_src = urljoin(ch_url, src)
+                    if full_src.startswith("http") and not any(x in full_src.lower() for x in bad_keywords):
+                        img_urls.append(full_src)
         
         img_urls = list(dict.fromkeys(img_urls))
+        if not img_urls:
+            return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
         return self.process_chapter_multi(img_urls, folder, ch_num, ch_url, live=live, stats_callback=stats_callback)

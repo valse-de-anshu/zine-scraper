@@ -83,7 +83,7 @@ class OppaiStreamToonScraper(BaseScraper):
             for attempt in range(3):
                 try:
                     api_url = f"https://myspacecat.pictures/manhwa/images.php?f-m={m}&c={c}"
-                    r = self.session.get(api_url, timeout=30, headers={"Referer": "https://read.oppai.stream/"})
+                    r = self.session.get(api_url, timeout=(10, 30), headers={"Referer": "https://read.oppai.stream/"})
                     if r.status_code == 200 and r.text.strip().isdigit():
                         total_images = int(r.text.strip())
                         
@@ -92,11 +92,11 @@ class OppaiStreamToonScraper(BaseScraper):
                         ext = ".jpg" # fallback default
                         for test_ext in [".jpg", ".webp", ".png"]:
                             try:
-                                test_r = self.session.head(base_img_url + "1" + test_ext, timeout=15)
+                                test_r = self.session.head(base_img_url + "1" + test_ext, timeout=(5, 10))
                                 if test_r.status_code == 200:
                                     ext = test_ext
                                     break
-                            except:
+                            except Exception:
                                 pass
                             
                         for i in range(1, total_images + 1):

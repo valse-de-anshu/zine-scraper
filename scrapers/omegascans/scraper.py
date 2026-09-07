@@ -29,6 +29,7 @@ class OmegaScansScraper:
 
     def __init__(self, url: str):
         self.url     = url.rstrip("/")
+        self.series_url: Optional[str] = None
         self.domain  = "omegascans.org"
         self.session = make_api_session()
 
@@ -53,19 +54,20 @@ class OmegaScansScraper:
 
     # ── URL inspection ────────────────────────────────────────────────────────
 
-    def _parse_url(self) -> Tuple[str, Optional[str]]:
+    def _parse_url(self, target_url: Optional[str] = None) -> Tuple[str, Optional[str]]:
         """
-        Returns (series_slug, chapter_slug_or_None) from self.url.
+        Returns (series_slug, chapter_slug_or_None) from target_url or self.url.
         Handles both:
           https://omegascans.org/series/{series_slug}
           https://omegascans.org/series/{series_slug}/{chapter_slug}
         """
-        parts = [p for p in self.url.split("/") if p]
+        u = target_url or self.url
+        parts = [p for p in u.split("/") if p]
         if "series" not in parts:
-            raise ValueError(f"Not an OmegaScans series URL: {self.url}")
+            raise ValueError(f"Not an OmegaScans series URL: {u}")
         idx = parts.index("series")
         if idx + 1 >= len(parts):
-            raise ValueError(f"Missing series slug in: {self.url}")
+            raise ValueError(f"Missing series slug in: {u}")
         series_slug  = parts[idx + 1]
         chapter_slug = parts[idx + 2] if idx + 2 < len(parts) else None
         return series_slug, chapter_slug
@@ -76,17 +78,33 @@ class OmegaScansScraper:
 
     # ── Metadata & chapter list ───────────────────────────────────────────────
 
+    def _request_get(self, url: str, **kwargs):
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = self.session.get(url, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     def get_title_and_chapters(self) -> Tuple[str, List[Tuple[str, str]]]:
         """
         Returns (title, [(ch_num_str, full_chapter_url), ...]) sorted oldest→newest.
         If the URL points directly at a chapter, returns only that chapter.
         """
         series_slug, chapter_slug = self._parse_url()
+        self.series_url = f"https://omegascans.org/series/{series_slug}"
 
         # If URL is already a specific chapter, skip the full chapter list
         if chapter_slug:
-            r = self.session.get(f"{OMEGA_API_BASE}/series/{series_slug}", timeout=15)
-            r.raise_for_status()
+            r = self._request_get(f"{OMEGA_API_BASE}/series/{series_slug}")
             meta = r.json()
             self._apply_meta(meta)
             m = re.search(r"(\d+(?:\.\d+)?)", chapter_slug)
@@ -94,8 +112,7 @@ class OmegaScansScraper:
             return self.title, [(num, self.url)]
 
         # Full series: fetch metadata + chapter list
-        r = self.session.get(f"{OMEGA_API_BASE}/series/{series_slug}", timeout=15)
-        r.raise_for_status()
+        r = self._request_get(f"{OMEGA_API_BASE}/series/{series_slug}")
         meta = r.json()
         self._apply_meta(meta)
         series_id = meta.get("id")
@@ -103,12 +120,10 @@ class OmegaScansScraper:
             raise RuntimeError(f"No series ID returned for '{series_slug}'")
 
         # OmegaScans returns chapters newest-first; we sort oldest-first
-        r2 = self.session.get(
+        r2 = self._request_get(
             f"{OMEGA_API_BASE}/chapter/query"
-            f"?page=1&perPage=10000&series_id={series_id}",
-            timeout=15,
+            f"?page=1&perPage=10000&series_id={series_id}"
         )
-        r2.raise_for_status()
         raw_chapters = r2.json().get("data", [])
 
         chapters = []
@@ -159,22 +174,34 @@ class OmegaScansScraper:
         if not chapter_slug:
             raise ValueError(f"No chapter slug in: {ch_url}")
 
-        r = self.session.get(
-            f"{OMEGA_API_BASE}/chapter/{series_slug}/{chapter_slug}",
-            timeout=15,
+        r = self._request_get(
+            f"{OMEGA_API_BASE}/chapter/{series_slug}/{chapter_slug}"
         )
-        r.raise_for_status()
         data = r.json()
 
         ch_info = data.get("chapter", {})
         ch_dat  = ch_info.get("chapter_data", {})
         imgs    = ch_dat.get("images", [])
 
-        # Deduplicate while preserving order
+        # Deduplicate while preserving order and filtering invalid/ad URLs
+        bad_keywords = (
+            "spinner", "loading", "placeholder", "pixel", "tracker", "adzerk",
+            "doubleclick", "adsterra", "exoclick", "juicyads", "trafficjunky",
+            "wp-content/plugins", "banner", "donate", "patreon", "discord_banner",
+            "avatar", "icon", "logo", "promo"
+        )
         seen = set()
         unique = []
         for url in imgs:
-            if url and url not in seen:
+            if not url or not isinstance(url, str):
+                continue
+            url = url.strip()
+            if not url.startswith("http"):
+                continue
+            u_low = url.lower()
+            if any(kw in u_low for kw in bad_keywords):
+                continue
+            if url not in seen:
                 seen.add(url)
                 unique.append(url)
 

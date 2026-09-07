@@ -11,6 +11,22 @@ class OppaiStreamScraper:
         self.url = url
         self.engine = OppaiStreamEngine()
         
+    def _get(self, url: str, **kwargs):
+        import time
+        kwargs.setdefault("timeout", (10, 30))
+        retries = 3
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                r = self.engine.session.get(url, **kwargs)
+                r.raise_for_status()
+                return r
+            except Exception as e:
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        raise last_exc
+
     def get_metadata_and_videos(self):
         # 1. Base URL / Slug logic
         import urllib.parse
@@ -25,8 +41,7 @@ class OppaiStreamScraper:
                 import re
                 base_slug = re.sub(r'-\d+$', '', slug)
         
-        r = self.engine.session.get(self.url, timeout=15)
-        r.raise_for_status()
+        r = self._get(self.url)
         soup = BeautifulSoup(r.text, 'lxml')
 
         # Find Title
@@ -112,8 +127,7 @@ class OppaiStreamScraper:
         if not tags_list and videos:
             try:
                 first_ep_url = videos[0]['url']
-                ep_r = self.engine.session.get(first_ep_url, timeout=15)
-                ep_r.raise_for_status()
+                ep_r = self._get(first_ep_url)
                 ep_soup = BeautifulSoup(ep_r.text, 'lxml')
                 for a in ep_soup.find_all('a', href=True):
                     if '/category/' in a['href'] or '/tag/' in a['href']:
@@ -148,4 +162,6 @@ class OppaiStreamScraper:
         }
         
         info = {"Total Videos": len(videos)}
+        self.title = title
+        self.metadata = meta
         return meta, videos, info
