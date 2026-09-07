@@ -28,6 +28,7 @@ SITE_MAP = {
     "weebcentral.com": "weebcentral",
     "mangadex.org": "mangadex",
     "mangak.io": "mangak",
+    "manga18fx.com": "manga18fx",
     "projectsuki.com": "projectsuki",
     "gutenberg.org": "gutenberg",
     "archive.org": "archive",

@@ -1,3 +1,24 @@
+# Progress Report - September 07, 2026 (Manga18fx Scraper Suite Addition & Isolation)
+
+- **Manga18fx Self-Contained Scraper Suite Addition (`scrapers/manga18fx/`):**
+  - **Overview**:
+    - Added dedicated scraper for `https://manga18fx.com/`, supporting mixed NSFW and SFW manga, manhwa, and webtoons.
+    - Implemented strictly across the 8 canonical, self-contained files specified in `AGENTS.md` with zero parasite files and zero cross-scraper dependencies:
+      - `__init__.py`: Package exports (`Manga18fxScraper`, `run_workflow`, `get_save_path`, `handle_tui`).
+      - `engine.py`: Network session with Chrome headers, thread pool concurrency, continuous vertical canvas stitching and 2000px chunk slicing inside centralized `💩/` buffer (`PathAuthority().get_temp_root()`).
+      - `scraper.py`: `Manga18fxScraper` class with self-contained cover extraction, metadata parsing (genres, authors, descriptions), ascending chronological chapter ordering, and support for both full series URLs and direct single-chapter URLs.
+      - `location.py`: Interactive directory routing supporting SFW vs NSFW selection, Ongoing vs Completed, Default vs Custom locations, and `=` toggle for Quick grab. Headless/batch mode auto-detects NSFW classification via genre tags.
+      - `verification.py`: Local disk image verification (`Chapter<n>`) and history tracker synchronization.
+      - `progress.py`: Tokyo Night Storm pre-flight completion tree (`render_completion_tree`).
+      - `workflow.py`: Multi-track Live progress tree, `MinimalPulseBar` for chunk downloading, braille spinner (`almost done with baking...`) for vertical slicing, Whistleblower recovery callback, and network loss resilience.
+      - `tui.py`: Site TUI entrypoint delegating to `run_workflow`.
+  - **Core Integration**:
+    - Registered `"manga18fx.com": "manga18fx"` in `core/site_map.py`.
+    - Added `"manga18fx"` to `_LEGACY_TOON_SITES` in `core/paths.py`.
+    - Added Manga18fx metadata entry to Category 8 (18+ Toon) in `core/site_tui.py`.
+
+---
+
 # Progress Report - September 06, 2026 (PornHub Duplicate Revolt Panels Elimination & Live Idempotency)
 
 - **PornHub Duplicate Revolt Panels Fix & Live Idempotency (`scrapers/pornhub/workflow.py`, `core/ui.py`):**

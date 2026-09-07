@@ -570,6 +570,17 @@ SITE_CATEGORIES = [
                 "tags": "NSFW · Manhwa · Webtoon · Romance · Drama",
                 "desc": "Fast-updating reader for localized adult Korean webtoons spanning romance, drama, and modern workplace themes."
             },
+            {
+                "name": "Manga18fx",
+                "primary": "manga18fx.com",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Adult & SFW manga / manhwa / webtoons",
+                "tags": "NSFW · SFW · Webtoon · Manhwa · Manga · Strips",
+                "desc": "Hybrid platform hosting both adult and all-ages webtoons, manhwa, and manga with continuous vertical strip slicing."
+            },
         ]
     },
 ]

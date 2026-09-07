@@ -218,7 +218,7 @@ def get_category_for_scraper(site_folder: str, is_music: bool = False, is_video:
     _LEGACY_TOON_SITES = {
         "manhuaplus", "manhwaus", "asurascans", "omegascans",
         "kunmanga", "fanfox", "nhentai", "weebcentral", "mangak",
-        "projectsuki", "hentai18", "hentai20"
+        "projectsuki", "hentai18", "hentai20", "manga18fx"
     }
     if site_folder in _LEGACY_TOON_SITES:
         return "toon"
