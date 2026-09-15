@@ -1,3 +1,20 @@
+# Progress Report - September 15, 2026 (Light Novel Scrapers Resilience & Metadata Hardening)
+
+- **NovelBuddy Metadata & NoneType Crash Fix (`scrapers/light_novel/novelbuddy/scraper.py`, `engine.py`):**
+  - **Identified Problem**: Encountered `TypeError: 'NoneType' object is not iterable` when scraping novels such as `https://novelbuddy.me/i-can-devour-monsters-sss-talents` because Next.js `initialManga` returned `altNames: null` or missing `genres`/`tags`.
+  - **Solution**: Added defensive fallback defaulting (`or []`) for `genres`, `tags`, and `altNames`.
+  - **Cover Signature Compatibility**: Updated `download_cover` in `engine.py` to support both `download_cover(folder)` and `download_cover(cover_url, folder)` across novel engines.
+
+- **NovelArchive Multi-Source & Illustration Chapter Fallback (`scrapers/light_novel/novelarchive/scraper.py`, `engine.py`):**
+  - **Identified Problem**: Many novels on `novelarchive.cc` (e.g. *Skeleton Knight in Another World*, *Strike the Blood*) failed on chapter fetching with 404s on the primary `/api/novels/{id}/chapters/{ch}` endpoint, because chapters were hosted on MinIO source mirrors (e.g. `fucknovelpia`), and prologue/cover chapters contained pure illustration HTML without textual `<p>` tags.
+  - **Solution**: Added automatic source resolution falling back to `/novels/{id}/sources/{source}/chapters/{ch}`. Added illustration image detection and downloading to save illustration plates (`chapter_0001_img_01.jpg`) into the chapter folder and tag them in `.txt`.
+
+- **NovelFire Interstitial Retries & 404 Fast-Fail (`scrapers/light_novel/novelfire/engine.py`):**
+  - **Identified Problem**: Encountered intermittent `Loading...` challenge pages when paginating chapters on `novelfire.net`, causing false-positive "No content found" errors.
+  - **Solution**: Added interstitial challenge detection (`<title>Loading...</title>`) in `get_soup` with backoff retry, and fast-failed 404 responses without wasting retry attempts.
+
+---
+
 # Progress Report - September 07, 2026 (Manga18fx Scraper Suite Addition & Isolation)
 
 - **Manga18fx Self-Contained Scraper Suite Addition (`scrapers/manga18fx/`):**

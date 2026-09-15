@@ -110,7 +110,7 @@ class NovelBuddyScraper(NBBaseEngine):
 
         # 6. Genres & Tags
         genres = []
-        for g in manga.get("genres", []):
+        for g in (manga.get("genres") or []):
             name = g.get("name") if isinstance(g, dict) else str(g)
             if name and name not in genres:
                 genres.append(name)
@@ -122,7 +122,7 @@ class NovelBuddyScraper(NBBaseEngine):
         self.genres = genres
 
         tags = []
-        for t in manga.get("tags", []):
+        for t in (manga.get("tags") or []):
             name = t.get("name") if isinstance(t, dict) else str(t)
             if name and name not in tags:
                 tags.append(name)
@@ -131,7 +131,7 @@ class NovelBuddyScraper(NBBaseEngine):
         # 7. Additional Metadata (Rating, Origin Type, Alt Titles)
         self.rating = manga.get("displayRating") or str(manga.get("rating", ""))
         self.type = manga.get("type", {}).get("name") if isinstance(manga.get("type"), dict) else str(manga.get("type", ""))
-        alt_names = manga.get("altNames", [])
+        alt_names = manga.get("altNames") or []
         self.alt_titles = [a.get("name") if isinstance(a, dict) else str(a) for a in alt_names if a]
 
         # Fetch chapters via api.novelbuddy.me

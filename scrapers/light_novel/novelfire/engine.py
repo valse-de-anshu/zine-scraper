@@ -44,18 +44,40 @@ class NFBaseEngine:
         self.session.headers["Referer"] = "https://novelfire.net/"
 
     def get_soup(self, url: str) -> BeautifulSoup:
+        last_err = None
         for attempt in range(5):
             try:
                 r = self.session.get(url, timeout=30)
+                if r.status_code == 404:
+                    raise RuntimeError(f"404 Not Found: {url}")
                 r.raise_for_status()
                 r.encoding = "utf-8"
-                return BeautifulSoup(r.text, "lxml")
-            except Exception:
+                soup = BeautifulSoup(r.text, "lxml")
+                # Detect interstitial/loading challenge pages
+                title_text = soup.title.string.strip().lower() if (soup.title and soup.title.string) else ""
+                if title_text == "loading..." or "just a moment" in title_text:
+                    time.sleep(1 + attempt)
+                    continue
+                return soup
+            except RuntimeError:
+                raise
+            except Exception as e:
+                last_err = e
                 time.sleep(2 ** attempt)
-        raise RuntimeError(f"Failed to fetch: {url}")
+        raise RuntimeError(f"Failed to fetch {url}: {last_err}")
 
-    def download_cover(self, cover_url: str, folder: Path) -> bool:
-        """Download cover image with magic-byte format detection."""
+    def download_cover(self, *args) -> bool:
+        """Download cover image with magic-byte format detection.
+        Supports both download_cover(folder) and download_cover(cover_url, folder)."""
+        if len(args) == 1 and isinstance(args[0], Path):
+            folder = args[0]
+            cover_url = getattr(self, "cover_url", "")
+        elif len(args) >= 2:
+            cover_url = args[0]
+            folder = args[1]
+        else:
+            return False
+
         if not cover_url:
             return False
         for ext in [".jpg", ".png", ".webp", ".jpeg", ".avif"]:

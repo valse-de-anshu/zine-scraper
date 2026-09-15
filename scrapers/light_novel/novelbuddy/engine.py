@@ -64,8 +64,18 @@ class NBBaseEngine:
                 time.sleep(2 ** attempt)
         raise RuntimeError(f"Failed to fetch: {url}")
 
-    def download_cover(self, cover_url: str, folder: Path) -> bool:
-        """Download cover image with magic-byte format detection."""
+    def download_cover(self, *args) -> bool:
+        """Download cover image with magic-byte format detection.
+        Supports both download_cover(folder) and download_cover(cover_url, folder)."""
+        if len(args) == 1 and isinstance(args[0], Path):
+            folder = args[0]
+            cover_url = getattr(self, "cover_url", "")
+        elif len(args) >= 2:
+            cover_url = args[0]
+            folder = args[1]
+        else:
+            return False
+
         if not cover_url:
             return False
         for ext in [".jpg", ".png", ".webp", ".jpeg", ".avif"]:
