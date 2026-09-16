@@ -353,19 +353,6 @@ zine-scraper/
 
 ---
 
-## ✉️ Creator Note & Contribution
-
-> [!NOTE]
-> ### 📌 A Message From The Creator (Anshu / Valse)
->
-> *"I am a 17-year-old developer, and I dedicated 3 full months of my life to building, refining, and perfecting Zine Scraper Suite. As I am currently preparing for my competitive exams, this project was my first and last passionate project for now. I will start releasing bangers again after I achieve my dream college! Till then enjoy, use Zine, and share your experience with everyone!"*
->
-> * **Join our Discord Community**: [https://discord.gg/suJD5xtFj](https://discord.gg/suJD5xtFj)
-> * **Email Me Directly**: [valsedeanshu@gmail.com](mailto:valsedeanshu@gmail.com)
-> * **Contribute**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) to add features or new scrapers!
-
----
-
 ## ❤️ Credits & Acknowledgments
 
 ```text
