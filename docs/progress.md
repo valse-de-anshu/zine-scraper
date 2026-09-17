@@ -1,3 +1,24 @@
+# Progress Report - September 18, 2026 (Topmanhua Scraper Suite Addition & Isolation)
+
+- **Topmanhua Self-Contained Scraper Suite Addition (`scrapers/topmanhua/`):**
+  - **Overview**:
+    - Added full support for `https://www.topmanhua.fan/` with deep metadata extraction and continuous vertical strip stitching/slicing.
+    - Implemented strictly across the 8 canonical, self-contained files specified in `AGENTS.md` with zero parasite files and zero cross-scraper dependencies:
+      - `__init__.py`: Package exports (`TopmanhuaScraper`, `run_workflow`, `get_save_path`, `handle_tui`).
+      - `engine.py`: HTTP session with anti-hotlink referer (`https://www.topmanhua.fan/`), concurrency thread pool, vertical strip stitching and 2000px chunk slicing inside centralized `💩/` buffer (`PathAuthority().get_temp_root()`).
+      - `scraper.py`: `TopmanhuaScraper` class with comprehensive metadata parsing (title, authors, artists, description, genres, status, rating, release year, cover URL) and ascending chapter discovery for series and direct chapter URLs.
+      - `location.py`: Interactive directory routing supporting SFW vs NSFW selection, Ongoing vs Completed, Default vs Custom locations, and `=` toggle for Quick grab. Headless/batch mode auto-detects NSFW classification via genre tags.
+      - `verification.py`: Local disk image verification (`Chapter<n>`) and history tracker synchronization.
+      - `progress.py`: Tokyo Night Storm pre-flight completion tree (`render_completion_tree`).
+      - `workflow.py`: Multi-track Live progress tree, `MinimalPulseBar` for chunk downloading, braille spinner (`almost done with baking...`) for vertical slicing, Whistleblower recovery callback, and network loss resilience.
+      - `tui.py`: Site TUI entrypoint delegating to `run_workflow`.
+  - **Core Integration**:
+    - Registered `"topmanhua.fan": "topmanhua"` in `core/site_map.py`.
+    - Added `"topmanhua"` to `_LEGACY_TOON_SITES` in `core/paths.py`.
+    - Added Topmanhua metadata entry to Category 2 (Manga & Manhwa) in `core/site_tui.py` and `README.md`.
+
+---
+
 # Progress Report - September 18, 2026 (Global Cross-Platform 'zine' CLI Command)
 
 - **Universal Terminal Command (`zine`) Integration across Linux, macOS, and Windows:**

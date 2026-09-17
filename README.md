@@ -180,7 +180,7 @@ You can append smart flags directly to URLs at the main prompt or inside `Batch 
 
 ## 🌐 Supported Platforms
 
-Zine natively supports 48+ platforms across 8 dedicated categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
+Zine natively supports 49+ platforms across 8 dedicated categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
 
 ### 📺 1. Anime (SFW)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
@@ -202,6 +202,7 @@ Zine natively supports 48+ platforms across 8 dedicated categories (80+ supporte
 | **MangaK** | `mangak.io` | — | Historic manga archive, high-res chapter reader |
 | **Kunmanga** | `kunmanga.com` | `kunmanga.co.uk` | Fast chapter image extraction & auto-retry |
 | **Fanfox** | `fanfox.net` | `m.fanfox.net` | Global manga directory and complete classic series |
+| **Topmanhua** | `topmanhua.fan` | `www.topmanhua.fan` | High-res manhua/webtoon strip reader, full metadata extraction |
 
 ### 📚 3. Light Novels & Web Serials (SFW)
 | Platform | Primary Domain | Alternate Domains | Capabilities |

@@ -29,6 +29,7 @@ SITE_MAP = {
     "mangadex.org": "mangadex",
     "mangak.io": "mangak",
     "manga18fx.com": "manga18fx",
+    "topmanhua.fan": "topmanhua",
     "projectsuki.com": "projectsuki",
     "gutenberg.org": "gutenberg",
     "archive.org": "archive",

@@ -160,6 +160,17 @@ SITE_CATEGORIES = [
                 "desc": "Dedicated platform for Chinese Manhua. Dominates the cultivation, xianxia, martial arts, and reincarnation comic niches with frequent daily updates."
             },
             {
+                "name": "Topmanhua",
+                "primary": "topmanhua.fan",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Manhua / Manhwa / Webtoons",
+                "tags": "SFW · Manhua · Manhwa · Shoujo · Romance · Webtoons",
+                "desc": "Extensive platform delivering fast translated releases of popular Asian manhua, manhwa, and webtoons with high-resolution vertical strips."
+            },
+            {
                 "name": "MangaK",
                 "primary": "mangak.io",
                 "alts": [],
