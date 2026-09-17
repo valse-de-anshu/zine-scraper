@@ -170,9 +170,6 @@ class TopmanhuaScraper(BaseScraper):
         folder: Path,
         ch_num: str,
         live=None,
-        overall_progress=None,
-        overall_task=None,
-        step_task=None,
         stats_callback=None
     ) -> dict:
         chapter_soup = self.get_soup(ch_url)
@@ -196,20 +193,11 @@ class TopmanhuaScraper(BaseScraper):
                 filtered_imgs.append(s)
 
         chapter_dir = folder / f"Chapter{ch_num}"
-        raw_count, chunk_count = self.process_chapter_multi(
+        return self.process_chapter_multi(
             filtered_imgs,
             chapter_dir,
             ch_num,
+            ch_url,
             live=live,
-            overall_progress=overall_progress,
-            overall_task=overall_task,
-            step_task=step_task,
             stats_callback=stats_callback
         )
-
-        return {
-            "success": chunk_count > 0,
-            "raw_images": raw_count,
-            "chunks": chunk_count,
-            "path": chapter_dir
-        }

@@ -1,25 +1,17 @@
-import json
 import time
 from pathlib import Path
-from typing import Optional, Any
-from rich.tree import Tree
-from rich.live import Live
-from rich.progress import Progress, TextColumn, TaskProgressColumn
-
-from core.ui import (
-    console, startup_clear, print_banner, active_status,
-    MinimalPulseBar, set_active_live, filter_subchapters, apply_chapter_limit
-)
+from typing import Optional, Tuple, List, Any
+from core.ui import console, startup_clear, print_banner, Selector, active_status
 from core.cache import save_url_to_file
-from core.paths import ZineFolder, get_container_root
-from butler.whistleblower import set_tui_callback
+from core.paths import ZineFolder
 
 from .location import get_save_path
 from .verification import verify_chapters
 from .progress import render_completion_tree
 
 _LIVE_INSTANCE = None
-CHAPTER_DELAY = 0.5
+CHAPTER_DELAY = 1.0
+
 
 def run_workflow(
     url: str,
@@ -41,22 +33,39 @@ def run_workflow(
             if hasattr(tracker, "set_title") and title:
                 tracker.set_title(scraper.url, title)
 
-            if not chapters and getattr(scraper, "is_chapter_link", lambda: False)():
+            _is_chapter = False
+            if not chapters:
+                if hasattr(scraper, "is_chapter_link"):
+                    _is_chapter = scraper.is_chapter_link()
+                else:
+                    _is_chapter = any(x in url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
+
+            if not chapters and _is_chapter:
                 import re
-                m_ch = re.search(r"chapter-([\d]+(?:[\.-][\d]+)?)", url.lower())
-                ch_num = m_ch.group(1).replace("-", ".") if m_ch else "1"
-                chapters = [(ch_num, url)]
+                m = re.search(r"(?:chapter-|/c/|/ch-|/ch/|/read/|/chapter/)([\d]+(?:[\.-][\d]+)?)", url.lower())
+                if m:
+                    num = m.group(1).replace("-", ".")
+                else:
+                    parts = [p for p in url.strip('/').split('/') if p]
+                    num = parts[-1] if parts else "1"
+                    num = re.sub(r"[^\d.]", "", num)
+                    if not num:
+                        num = "1"
+
+                chapters = [(num, url)]
+
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
-                if __import__("sys").stdin.isatty():
-                    console.input("\n[info]Press Enter to return...[/info]")
+                console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
             else:
                 time.sleep(1.5)
             return
 
+    from core.ui import filter_subchapters
     chapters = filter_subchapters(url, title, chapters, is_batch=is_batch)
 
+    from core.paths import get_container_root
     default_root = get_container_root(url, scraper, is_batch, batch_path)
     target_path = get_save_path(url, scraper, is_batch, batch_path, default_root, location_manager)
     if not target_path:
@@ -67,16 +76,16 @@ def run_workflow(
         folder = Path(*target_path.parts[:idx + 1])
     else:
         folder = ZineFolder(target_path) / title
-
     location_manager.create_directory(folder)
     save_url_to_file(url, title)
 
-    # Save .zine metadata if not in Quick grab mode
+    # Create .zine metadata folder if not in Quick grab mode
     is_quick_grab = "Quick grab" in folder.parts or "Quick grab" in str(folder)
     if not is_quick_grab:
         zine_folder = folder / ".zine"
         location_manager.create_directory(zine_folder)
         meta_path = zine_folder / "meta.json"
+        import json
         meta_data = {
             "title": title,
             "url": url,
@@ -92,6 +101,8 @@ def run_workflow(
             meta_data["artist"] = scraper.artist
         if getattr(scraper, "description", None):
             meta_data["description"] = scraper.description
+        if getattr(scraper, "tags", None):
+            meta_data["tags"] = scraper.tags
         if getattr(scraper, "genres", None):
             meta_data["genres"] = scraper.genres
         if getattr(scraper, "status", None):
@@ -123,7 +134,8 @@ def run_workflow(
                 pass
 
     cover_exists = any(folder.glob("cover.*"))
-    if is_quick_grab:
+
+    if "Quick grab" in target_path.parts:
         cover_status_ui = None
     else:
         if not cover_exists:
@@ -134,6 +146,7 @@ def run_workflow(
                 pass
         cover_status_ui = cover_exists
 
+    from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.url)
     to_process = apply_chapter_limit(to_process, scraper)
 
@@ -147,142 +160,186 @@ def run_workflow(
     console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
     console.print("")
 
-    render_completion_tree(
-        title=title,
-        folder=folder,
-        source="Topmanhua",
-        total_chapters=len(chapters),
-        verified_nums=verified_nums,
-        cover_exists=cover_status_ui
-    )
+    render_completion_tree(title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui)
+
+    completed_history = []
+
+    # Bulletproof TUI Reconstruction Callback
+    from butler.whistleblower import set_tui_callback
+    def tui_reconstruct():
+        from core.ui import startup_clear, print_banner
+        startup_clear()
+        print_banner()
+        if is_batch:
+            console.print("[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+        console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
+        cat_display_val = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
+        console.print(f"[menu]Category[/menu]     : [info]{cat_display_val}[/info]")
+        console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+        console.print("")
+        render_completion_tree(title, folder, default_root.name, len(chapters), verified_nums, cover_status_ui)
+        for hist in completed_history:
+            console.print(hist)
+
+        username = __import__('getpass').getuser()
+        console.print(f"  [error]✘ Connection lost! I've got your back, {username}...[/error]")
+        console.print(f"  [success]● Connection restored, starting the engine please wait...[/success]")
+
+        # Resume the Live renderable so the progress tree reappears perfectly
+        import core.ui as ui_module
+        if ui_module._LIVE_INSTANCE:
+            console.print(" ")
+            console.print(" ")
+            try:
+                if hasattr(ui_module._LIVE_INSTANCE, "_live_render"):
+                    ui_module._LIVE_INSTANCE._live_render._shape = None
+                ui_module._LIVE_INSTANCE.start()
+            except Exception:
+                pass
+
+    set_tui_callback(tui_reconstruct)
 
     if not to_process:
-        console.print("\n[success]All chapters are already downloaded and verified![/success]")
+        console.print("[success]All chapters are already downloaded.[/success]")
         if not is_batch:
-            if __import__("sys").stdin.isatty():
-                console.input("\n[info]Press Enter to return to main menu...[/info]")
-        else:
-            time.sleep(1.0)
+            console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
         return
 
-    # Whistleblower state
-    wb_tracker = {
-        "active_chapter": "",
-        "downloaded_files": 0,
-        "downloaded_bytes": 0,
-        "failed_files": 0,
-        "start_time": time.time(),
-        "total_chapters": len(to_process),
-        "completed_chapters": 0,
-        "last_network_loss_time": 0,
-        "network_loss_total_duration": 0
-    }
+    console.print(" ")
+    console.print(" ")
+    success_count = 0
 
-    def whistleblower_callback():
-        elapsed = time.time() - wb_tracker["start_time"]
-        return {
-            "site": "topmanhua",
-            "url": url,
-            "title": title,
-            "category": cat_display,
-            "folder": str(folder),
-            "total_items": wb_tracker["total_chapters"],
-            "downloaded_items": wb_tracker["completed_chapters"],
-            "current_item": wb_tracker["active_chapter"],
-            "item_unit": "chapters",
-            "downloaded_files": wb_tracker["downloaded_files"],
-            "downloaded_bytes": wb_tracker["downloaded_bytes"],
-            "failed_files": wb_tracker["failed_files"],
-            "elapsed_time": elapsed,
-            "network_loss_duration": wb_tracker["network_loss_total_duration"]
+    from rich.tree import Tree
+    from rich.live import Live
+    from rich.progress import Progress, TextColumn, TaskProgressColumn
+    from core.ui import MinimalPulseBar, set_active_live
+
+    console.show_cursor(False)
+    for ch_num, link in to_process:
+        try:
+            val = float(ch_num)
+            if val == int(val):
+                c_num = f"{int(val):03d}"
+            else:
+                c_num = f"{int(val):03d}" + str(val - int(val))[1:]
+        except Exception:
+            c_num = str(ch_num).zfill(3)
+
+        chapter_folder = folder / f"Chapter{ch_num}"
+        location_manager.create_directory(chapter_folder)
+
+        page_data = {
+            "total":      0,
+            "downloaded": 0,
+            "retry":      0,
+            "missing":    0,
+            "done":       False,
+            "success":    False,
+            "status":     "",
         }
 
-    set_tui_callback(whistleblower_callback)
+        progress_bar = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            MinimalPulseBar(bar_width=40),
+            TaskProgressColumn(),
+            TextColumn("{task.completed}/{task.total} pages"),
+            transient=False,
+        )
+        task_id = progress_bar.add_task("Downloading", total=None)
 
-    # Progress displays
-    overall_progress = Progress(
-        TextColumn("{task.description}"),
-        MinimalPulseBar(bar_width=30),
-        TaskProgressColumn(),
-        console=console
-    )
-
-    overall_task = overall_progress.add_task("[accent]Overall Progress[/accent]", total=len(to_process))
-    step_task = overall_progress.add_task("[progress]Downloading[/progress]", total=100, visible=False)
-
-    def stats_callback(data):
-        if data.get("type") == "file_done":
-            wb_tracker["downloaded_files"] += 1
-            wb_tracker["downloaded_bytes"] += data.get("size", 0)
-        elif data.get("type") == "file_error":
-            wb_tracker["failed_files"] += 1
-
-    braille_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-    def make_renderable(active_num, step_text):
-        tree = Tree(f"[title]◆ {title}[/title]")
-        for num, _ in to_process:
-            if num in verified_nums:
-                tree.add(f"[success]● Chapter {num}[/success]")
-            elif num == active_num:
-                sub = tree.add(f"[accent]● Chapter {num}[/accent]")
-                sub.add(f"[dim]{step_text}[/dim]")
+        def render_chapter_tree() -> Tree:
+            tree = Tree(f"[info]●[/info] [menu]Progress[/menu]", guide_style="unselected")
+            tree.add(f"{'Current':<14}: ch{ch_num}")
+            tree.add(f"{'Total Pages':<14}: [sexy_pink]{page_data['total'] or '?'}[/sexy_pink]")
+            tree.add(f"{'Downloaded':<14}: [success]{page_data['downloaded']}[/success]")
+            tree.add(f"{'Retry':<14}: [warning]{page_data['retry']}[/warning]")
+            tree.add(f"{'Missing':<14}: [error]{page_data['missing']}[/error]")
+            res_branch = tree.add("[success]○[/success] [menu]Result[/menu]", guide_style="unselected")
+            if not page_data["done"]:
+                if page_data.get("status") == "baking":
+                    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                    frame = frames[int(time.time() * 10) % len(frames)]
+                    res_branch.add(f"[success]{frame}[/success] [sexy_pink]almost done with baking...[/sexy_pink]")
+                elif page_data.get("status") == "loading" or page_data["total"] == 0:
+                    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                    frame = frames[int(time.time() * 10) % len(frames)]
+                    res_branch.add(f"[info]{frame}[/info] [info]Loading chapter stream...[/info]")
+                else:
+                    total = page_data["total"] if page_data["total"] > 0 else None
+                    progress_bar.update(task_id, total=total, completed=page_data["downloaded"])
+                    res_branch.add(progress_bar)
             else:
-                tree.add(f"[unselected]○ Chapter {num}[/unselected]")
-        return tree
+                success = page_data.get("success", False)
+                res_color = "success" if success else "error"
+                res_text = "Complete" if success else f"Failed ({page_data.get('status', 'Error')})"
+                res_branch.add(f"[{res_color}]● {res_text}[/{res_color}]")
+            return tree
 
-    global _LIVE_INSTANCE
-    with Live(overall_progress, console=console, refresh_per_second=10) as live:
-        _LIVE_INSTANCE = live
-        set_active_live(live)
+        for attempt in range(1, 4):
+            page_data["retry"] = attempt - 1
+            if attempt > 1:
+                time.sleep(2)
 
-        for chapter_num, ch_url in to_process:
-            wb_tracker["active_chapter"] = f"Chapter {chapter_num}"
-            live.update(make_renderable(chapter_num, "Downloading images..."))
+            _chapter_error = [None]
 
-            res = None
-            for retry_attempt in range(5):
+            global _LIVE_INSTANCE
+            with Live(get_renderable=render_chapter_tree, console=console, refresh_per_second=12, transient=True) as live:
+                _LIVE_INSTANCE = live
+                set_active_live(live)
+
+                def stats_callback(stats: dict):
+                    page_data.update(stats)
+
                 try:
-                    res = scraper.process_chapter(
-                        ch_url=ch_url,
-                        folder=folder,
-                        ch_num=chapter_num,
-                        live=live,
-                        overall_progress=overall_progress,
-                        overall_task=overall_task,
-                        step_task=step_task,
-                        stats_callback=stats_callback
+                    result = scraper.process_chapter(
+                        link, ZineFolder(chapter_folder), ch_num,
+                        live=live, stats_callback=stats_callback
                     )
-                    break
+                    if isinstance(result, dict):
+                        page_data.update(result)
+                        if result.get("success"):
+                            tracker.mark_downloaded(scraper.url, ch_num, title=title)
+                            page_data["done"] = True
+                            page_data["success"] = True
+                            success_count += 1
+                    elif result:
+                        tracker.mark_downloaded(scraper.url, ch_num, title=title)
+                        page_data["done"] = True
+                        page_data["success"] = True
+                        success_count += 1
                 except Exception as e:
-                    err_msg = str(e).lower()
-                    if any(w in err_msg for w in ["connection", "network", "timeout", "disconnected"]):
-                        loss_start = time.time()
-                        live.update(make_renderable(chapter_num, f"[warning]Network interrupted. Reconnecting (attempt {retry_attempt+1}/5)...[/warning]"))
-                        time.sleep(3.0 * (retry_attempt + 1))
-                        wb_tracker["network_loss_total_duration"] += (time.time() - loss_start)
-                    else:
-                        time.sleep(1.0)
+                    _chapter_error[0] = e
+                    page_data["status"] = str(e)
 
-            if res and res.get("success"):
-                verified_nums.append(chapter_num)
-                wb_tracker["completed_chapters"] += 1
-                if hasattr(tracker, "mark_downloaded"):
-                    tracker.mark_downloaded(scraper.url, chapter_num)
-                overall_progress.advance(overall_task, 1)
-                live.update(make_renderable(chapter_num, "Done"))
+            _LIVE_INSTANCE = None
+            set_active_live(None)
+
+            if page_data.get("success"):
+                break
+
+            if _chapter_error[0] is not None:
+                from core.video_engine import handle_internet_loss
+                if not handle_internet_loss():
+                    break
             else:
-                live.update(make_renderable(chapter_num, "[error]Failed[/error]"))
+                break
 
-            time.sleep(CHAPTER_DELAY)
+        res_color = "success" if page_data.get("success") else "error"
+        status_line = f"  [{res_color}]●[/{res_color}] [unselected]Chapter {ch_num}[/unselected]"
+        console.print(status_line)
+        completed_history.append(status_line)
 
-    _LIVE_INSTANCE = None
-    set_active_live(None)
-    set_tui_callback(None)
+        from core.ui import check_revolt
+        if check_revolt(title=title):
+            return
+        time.sleep(CHAPTER_DELAY)
 
-    console.print("\n[success]❖ Download & Slicing Process Complete ❖[/success]")
-    if not is_batch:
-        if __import__("sys").stdin.isatty():
-            console.input("\n[info]Press Enter to return to main menu...[/info]")
+    console.show_cursor(True)
+
+    if success_count > 0:
+        console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved\n")
     else:
-        time.sleep(1.0)
+        console.print(f"\n[error]✘[/error] Failed: No chapters saved\n")
+
+    if not is_batch:
+        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None

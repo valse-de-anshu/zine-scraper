@@ -73,29 +73,51 @@ class BaseScraper:
     def download_image(self, src: str, path: Path, referer: str = None) -> int:
         """Download a single image, preserving its original format.
         Returns 1 on success, -1 on failure."""
+        if not src or not isinstance(src, str) or not src.strip().startswith("http"):
+            return -1
+
+        src = src.strip()
         time.sleep(self.IMAGE_DELAY + random.uniform(0, 0.1))
         for attempt in range(3):
             try:
                 headers = HEADERS.copy()
-                headers["Referer"] = referer or f"https://{self.domain}/"
+                headers["Referer"] = f"https://{self.domain}/"
                 r = self.session.get(src, stream=True, timeout=(10, 20), headers=headers)
-                if r.status_code == 200:
-                    ct = r.headers.get("content-type", "").split(";")[0].strip().lower()
-                    if ct and ct not in self.VALID_IMAGE_MIMES and "octet-stream" not in ct:
-                        continue
-                    with open(path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=32768):
-                            if chunk:
-                                f.write(chunk)
-                    if path.stat().st_size > 1024:
-                        return 1
-                    path.unlink(missing_ok=True)
-                elif r.status_code == 429:
-                    time.sleep(2.0 + attempt * 2)
+
+                if r.status_code == 403 and referer:
+                    headers["Referer"] = referer
+                    r = self.session.get(src, stream=True, timeout=(10, 20), headers=headers)
+
+                if r.status_code == 403:
+                    headers.pop("Referer", None)
+                    r = self.session.get(src, stream=True, timeout=(10, 20), headers=headers)
+
+                if r.status_code in (400, 403, 404, 410, 422, 500, 502, 503, 504):
+                    return -1
+
+                r.raise_for_status()
+
+                ct = r.headers.get("Content-Type", "").lower().split(";")[0].strip()
+                if ct and ct not in self.VALID_IMAGE_MIMES and "octet-stream" not in ct:
+                    return -1
+
+                real_ext = self.MIME_TO_EXT.get(ct, path.suffix or ".jpg")
+                if path.suffix.lower() != real_ext:
+                    path = path.with_suffix(real_ext)
+
+                with open(path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=32768):
+                        if chunk:
+                            f.write(chunk)
+
+                if path.stat().st_size > 1024:
+                    self.consecutive_failures = 0
+                    return 1
+                path.unlink(missing_ok=True)
             except Exception:
                 if path.exists():
                     path.unlink(missing_ok=True)
-                time.sleep(1.0)
+                time.sleep(0.5)
         return -1
 
     def download_cover(self, *args) -> bool:
@@ -157,115 +179,151 @@ class BaseScraper:
                     raw_temp.unlink(missing_ok=True)
         return False
 
-    def slice_and_save(self, ordered_paths: List[Path], chapter_dir: Path) -> Tuple[int, int]:
-        """Stitches downloaded strip images vertically and slices them into 2000px height chunks."""
+    def slice_and_save(self, paths: List[Path], output_dir: Path) -> int:
+        """Combine images into a vertical canvas, slice into 2000px chunks.
+        Preserves original format — JPEG only when formats are mixed or unknown."""
         images = []
-        for p in ordered_paths:
+        source_formats = []
+
+        for p in sorted(paths):
             try:
-                im = Image.open(p)
-                im.load()
-                images.append(im)
+                img = Image.open(p)
+                img.verify()
+                img = Image.open(p)
+                if img.width > img.height * 3.0:
+                    continue
+                images.append(img)
+                source_formats.append(p.suffix.lower())
             except Exception:
-                continue
+                pass
 
         if not images:
-            return 0, 0
+            return 0
 
-        target_width = images[0].width
-        for idx, im in enumerate(images):
-            if im.width != target_width:
-                aspect = target_width / im.width
-                new_h = max(1, int(im.height * aspect))
-                images[idx] = im.resize((target_width, new_h), Image.Resampling.LANCZOS)
+        output_dir.mkdir(exist_ok=True, parents=True)
 
-        total_height = sum(im.height for im in images)
-        canvas = Image.new("RGB", (target_width, total_height))
+        unique_fmts = set(source_formats) - {".bin", ".tmp", ""}
+        if len(unique_fmts) == 1:
+            out_ext = unique_fmts.pop()
+            fmt_map = {
+                ".jpg": "JPEG", ".jpeg": "JPEG",
+                ".png": "PNG",
+                ".webp": "WEBP",
+                ".avif": "AVIF",
+                ".gif": "GIF",
+                ".bmp": "BMP",
+            }
+            pil_fmt = fmt_map.get(out_ext, "JPEG")
+        else:
+            out_ext = ".jpg"
+            pil_fmt = "JPEG"
 
+        if pil_fmt == "JPEG":
+            images = [img.convert("RGB") for img in images]
+        elif pil_fmt in ("PNG", "WEBP"):
+            images = [
+                img.convert("RGBA") if img.mode in ("P", "LA") else img
+                for img in images
+            ]
+
+        widths, heights = zip(*(im.size for im in images))
+        max_w = max(widths)
+        total_h = sum(heights)
+
+        bg_color = (255, 255, 255, 255) if pil_fmt in ("PNG", "WEBP") else (255, 255, 255)
+        canvas_mode = "RGBA" if pil_fmt in ("PNG", "WEBP") else "RGB"
+        canvas = Image.new(canvas_mode, (max_w, total_h), bg_color)
         y_offset = 0
         for im in images:
-            if im.mode != "RGB":
-                im = im.convert("RGB")
-            canvas.paste(im, (0, y_offset))
+            if im.mode != canvas_mode:
+                im = im.convert(canvas_mode)
+            canvas.paste(im, ((max_w - im.width) // 2, y_offset))
             y_offset += im.height
 
-        num_chunks = max(1, (total_height + CHUNK_HEIGHT - 1) // CHUNK_HEIGHT)
-        total_digits = len(str(num_chunks))
-        chunk_idx = 1
-        y = 0
+        save_kwargs = {}
+        if pil_fmt == "JPEG":
+            save_kwargs = {"quality": 95, "subsampling": 0}
+        elif pil_fmt == "WEBP":
+            save_kwargs = {"quality": 95, "method": 4}
+        elif pil_fmt == "PNG":
+            save_kwargs = {"optimize": True}
 
-        while y < total_height:
-            box_bottom = min(y + CHUNK_HEIGHT, total_height)
-            crop_box = (0, y, target_width, box_bottom)
-            chunk = canvas.crop(crop_box)
+        count = 1
+        for top in range(0, total_h, CHUNK_HEIGHT):
+            bottom = min(top + CHUNK_HEIGHT, total_h)
+            if bottom - top < 50 and count > 1:
+                break
+            crop = canvas.crop((0, top, max_w, bottom))
+            output_path = output_dir / f"{count:03d}{out_ext}"
+            crop.save(output_path, pil_fmt, **save_kwargs)
+            count += 1
 
-            fname = f"{str(chunk_idx).zfill(total_digits)}.jpg"
-            out_path = chapter_dir / fname
-            chunk.save(out_path, "JPEG", quality=95, subsampling=0)
-
-            chunk_idx += 1
-            y += CHUNK_HEIGHT
-
-        return len(images), chunk_idx - 1
+        return count - 1
 
     def process_chapter_multi(
         self,
         img_urls: List[str],
-        chapter_dir: Path,
-        chapter_num: str,
+        folder: Path,
+        ch_num: str,
+        ch_url: str,
         live=None,
-        overall_progress=None,
-        overall_task=None,
-        step_task=None,
         stats_callback=None
-    ) -> Tuple[int, int]:
-        if not img_urls:
-            return 0, 0
+    ) -> dict:
+        self.consecutive_failures = 0
+        temp_dir = folder / f"_temp_{ch_num}"
+        temp_dir.mkdir(exist_ok=True, parents=True)
+        paths = []
 
-        temp_root = PathAuthority().get_temp_root()
-        temp_root.mkdir(parents=True, exist_ok=True)
-        safe_num = re.sub(r"[^\w.-]", "_", str(chapter_num))
-        temp_dir = temp_root / f"topmanhua_ch_{safe_num}_{int(time.time()*1000)}"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        clean_urls = [u for u in img_urls if u and isinstance(u, str) and u.strip().startswith("http")]
+        total_pages = len(clean_urls)
 
-        try:
-            total_imgs = len(img_urls)
-            if step_task is not None and overall_progress is not None:
-                overall_progress.update(step_task, total=total_imgs, completed=0, visible=True)
-
-            ordered_temp_paths = [
-                temp_dir / f"img_{str(idx+1).zfill(4)}.tmp"
-                for idx in range(total_imgs)
-            ]
-
-            futures_map = {}
-            with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
-                for idx, src in enumerate(img_urls):
-                    tpath = ordered_temp_paths[idx]
-                    f = executor.submit(self.download_image, src, tpath, referer=f"https://{self.domain}/")
-                    futures_map[f] = idx
-
-                for future in as_completed(futures_map):
-                    idx = futures_map[future]
-                    res = future.result()
-                    if res == 1:
-                        self.consecutive_failures = 0
-                        if stats_callback:
-                            stats_callback({"type": "file_done", "size": ordered_temp_paths[idx].stat().st_size})
-                    else:
-                        self.consecutive_failures += 1
-                        if stats_callback:
-                            stats_callback({"type": "file_error"})
-
-                    if step_task is not None and overall_progress is not None:
-                        overall_progress.advance(step_task, 1)
-
-            downloaded_paths = [p for p in ordered_temp_paths if p.exists() and p.stat().st_size > 0]
-            if not downloaded_paths:
-                return 0, 0
-
-            chapter_dir.mkdir(parents=True, exist_ok=True)
-            raw_count, chunk_count = self.slice_and_save(downloaded_paths, chapter_dir)
-            return raw_count, chunk_count
-
-        finally:
+        if total_pages == 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
+            return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
+
+        if stats_callback:
+            stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
+
+        def dl_task(idx, src):
+            p = temp_dir / f"{idx+1:03d}.bin"
+            res = self.download_image(src, p, referer=ch_url)
+            if res == 1:
+                candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
+                actual_p = candidates[0] if candidates else p
+                return (1, actual_p)
+            return (-1, None)
+
+        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+            futures = [executor.submit(dl_task, i, src) for i, src in enumerate(clean_urls)]
+            valid_pages = total_pages
+            for future in as_completed(futures):
+                res_code, p = future.result()
+                if res_code == 1:
+                    paths.append(p)
+                else:
+                    valid_pages -= 1
+
+                if stats_callback:
+                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": max(0, valid_pages - len(paths))})
+
+        missing = max(0, valid_pages - len(paths))
+        final_chunks = 0
+        if paths:
+            if stats_callback:
+                stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
+            with ThreadPoolExecutor(max_workers=1) as slice_exec:
+                slice_future = slice_exec.submit(self.slice_and_save, paths, folder)
+                while not slice_future.done():
+                    if stats_callback:
+                        stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
+                    time.sleep(0.1)
+                final_chunks = slice_future.result()
+
+        min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else 1
+        success = (len(paths) >= valid_pages and len(paths) > 0) or (len(paths) >= min_ok and final_chunks > 0)
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        if success and final_chunks:
+            return {"total": final_chunks, "downloaded": final_chunks, "missing": missing, "success": success}
+        return {"total": valid_pages, "downloaded": len(paths), "missing": missing, "success": success}
