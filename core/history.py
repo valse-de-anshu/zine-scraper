@@ -470,8 +470,7 @@ class HistoryLayer:
         against files present on disk. Returns a list of verified item IDs.
         """
         site_url = self.normalize_url(site_url)
-        is_quick_grab = "Quick grab" in root_dir.parts or "Quick grab" in str(root_dir)
-        if is_quick_grab:
+        if _is_quick_grab_dir(root_dir):
             return []
             
         zine_dir = root_dir / ".zine"
