@@ -26,7 +26,7 @@ class TopmanhuaScraper(BaseScraper):
         }
 
     def is_chapter_link(self) -> bool:
-        return any(x in self.url.lower() for x in ["/chapter-", "/ch-", "/c/"])
+        return any(x in self.url.lower() for x in ["/chapter-", "/ch-", "/c/", "/chapter/", "-chapter-", "/ch/", "/read/"])
 
     def _extract_cover_url(self, soup) -> str:
         cover_img = soup.select_one(
@@ -125,6 +125,12 @@ class TopmanhuaScraper(BaseScraper):
         rel_elem = series_soup.select_one('.post-content_item:-soup-contains("Release") .summary-content')
         if rel_elem:
             self.release = rel_elem.get_text(strip=True)
+
+        # If original URL was a single chapter, return only that chapter
+        if is_ch:
+            m = re.search(r"(?:chapter-|/c/|/ch-|/ch/|/read/|/chapter/)([\d]+(?:[\.-][\d]+)?)", self.url.lower())
+            num = m.group(1).replace("-", ".") if m else "1"
+            return self.title, [(num, self.url)]
 
         # 9. Chapters
         chapters_raw = []
