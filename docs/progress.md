@@ -1,3 +1,13 @@
+# Progress Report - September 18, 2026 (Global Cross-Platform 'zine' CLI Command)
+
+- **Universal Terminal Command (`zine`) Integration across Linux, macOS, and Windows:**
+  - **Identified Problem**: Launching Zine previously required navigating to the installation directory (`cd ~/.config/zine\ scraper/`) and invoking `python3 orchestrator.py`.
+  - **Linux & macOS**: Linked `zine` executable launcher into `~/.local/bin/zine` (with automatic shell rc PATH persistence in `install.sh` and `wizard/setup.py`), delegating to isolated `run.sh`/`venv`.
+  - **Windows**: Added `zine.cmd` generation into `%USERPROFILE%\bin` in `install.bat` and `wizard/setup.py`, updating user PATH via `setx`.
+  - **Argument Forwarding & Venv Safety**: Upgraded `orchestrator.py` with cross-platform venv resolution (`venv/Scripts/python.exe` on Windows vs `venv/bin/python` on POSIX) and forwarded CLI flags/arguments (`$@` and `%*`) seamlessly through `run.sh`, `run.bat`, and `zine`.
+
+---
+
 # Progress Report - September 15, 2026 (Light Novel Scrapers Resilience & Metadata Hardening)
 
 - **NovelBuddy Metadata & NoneType Crash Fix (`scrapers/light_novel/novelbuddy/scraper.py`, `engine.py`):**

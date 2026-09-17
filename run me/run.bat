@@ -11,5 +11,5 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 echo [+] Booting Zine Scraper inside isolated VENV...
-"venv\Scripts\python.exe" orchestrator.py
+"venv\Scripts\python.exe" orchestrator.py %*
 pause

@@ -37,6 +37,26 @@ call venv\Scripts\pip.exe install -r requirements.txt
 echo [+] Installing Playwright browser binaries...
 call venv\Scripts\python.exe -m playwright install chromium
 
+echo [+] Linking 'zine' command to Windows PATH...
+if not exist "%USERPROFILE%\bin" mkdir "%USERPROFILE%\bin"
+(
+echo @echo off
+echo set "ZINE_ROOT=%%APPDATA%%\zine scraper"
+echo if not exist "%%ZINE_ROOT%%" set "ZINE_ROOT=%CD%"
+echo if exist "%%ZINE_ROOT%%\run me\run.bat" ^(
+echo     call "%%ZINE_ROOT%%\run me\run.bat" %%*
+echo ^) else if exist "%%ZINE_ROOT%%\orchestrator.py" ^(
+echo     "%%ZINE_ROOT%%\venv\Scripts\python.exe" "%%ZINE_ROOT%%\orchestrator.py" %%*
+echo ^) else ^(
+echo     echo [-] Error: Zine Scraper directory not found.
+echo ^)
+) > "%USERPROFILE%\bin\zine.cmd"
+
+echo %PATH% | find /I "%USERPROFILE%\bin" >nul
+if %errorlevel% neq 0 (
+    setx PATH "%USERPROFILE%\bin;%PATH%" >nul 2>nul
+)
+
 echo [+] Installation complete! Booting the Zine Scraper 1-Time Setup Wizard...
 call venv\Scripts\python.exe wizard\setup.py
 pause

@@ -22,10 +22,11 @@ Open your terminal, navigate to this `zine scraper/run me` folder, and run:
 6. Downloads Playwright browser binaries.
 
 ### Step 2: Run
-Whenever you want to start the scraper, simply execute:
+Whenever you want to start the scraper, simply run from **any** terminal directory:
 ```bash
-./run.sh
+zine
 ```
+*(Or execute `./run.sh` inside `run me/`)*
 *(This automatically boots the scraper using the isolated `venv` so it doesn't conflict with your global Python!)*
 
 ---
@@ -42,12 +43,14 @@ install.bat
 2. Creates an isolated Python virtual environment (`venv`) in the project root.
 3. Installs all Python dependencies from `requirements.txt`.
 4. Downloads Playwright browser binaries.
+5. Links `zine` to your command line PATH (`%USERPROFILE%\bin\zine.cmd`).
 
 ### Step 2: Run
-Whenever you want to start the scraper, simply double-click:
+Whenever you want to start the scraper, simply type in Command Prompt / PowerShell / Windows Terminal:
 ```text
-run.bat
+zine
 ```
+*(Or double-click `run.bat` inside `run me/`)*
 *(This automatically boots the scraper using the isolated `venv` so it doesn't conflict with your global Python!)*
 
 ---

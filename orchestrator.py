@@ -2,9 +2,14 @@ import sys
 import os
 
 # Auto-relaunch inside virtual environment if not already running in it
-venv_python = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv", "bin", "python")
-if os.path.exists(venv_python) and sys.executable != venv_python:
-    os.execl(venv_python, venv_python, *sys.argv)
+_repo_dir = os.path.dirname(os.path.abspath(__file__))
+_venv_python = (
+    os.path.join(_repo_dir, "venv", "Scripts", "python.exe")
+    if os.name == "nt"
+    else os.path.join(_repo_dir, "venv", "bin", "python")
+)
+if os.path.exists(_venv_python) and sys.executable != _venv_python:
+    os.execl(_venv_python, _venv_python, *sys.argv)
 import re
 import logging
 from pathlib import Path
