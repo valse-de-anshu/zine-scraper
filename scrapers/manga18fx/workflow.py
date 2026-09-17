@@ -94,7 +94,7 @@ def run_workflow(
     MetadataEngine.save_metadata(folder, payload)
 
     cover_exists = any(folder.glob("cover.*"))
-    if is_quick_grab:
+    if "Quick grab" in target_path.parts:
         cover_status_ui = None
     else:
         if not cover_exists:

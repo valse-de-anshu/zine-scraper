@@ -118,8 +118,8 @@ class Manga18fxScraper(BaseScraper):
             imgs = soup.find_all("img")
 
         bad_keywords = (
-            "logo", "banner", "avatar", "icon", "ads", "advert", "sponsor",
-            "spinner", "loading", "placeholder", "pixel", "tracker", "adzerk",
+            "logo", "banner", "avatar", "icon", "/ads/", "ads.", "_ads_", "advert", "sponsor",
+            "spinner", "placeholder", "pixel", "tracker", "adzerk",
             "doubleclick", "adsterra", "exoclick", "juicyads", "trafficjunky",
             "donate", "patreon", "discord_banner", "promo", "bookmark"
         )
