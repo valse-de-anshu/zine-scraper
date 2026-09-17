@@ -115,7 +115,7 @@ class BaseScraper:
         return -1
 
     def download_cover(self, folder: Path):
-        """Download cover image via centralized temp buffer in 💩/ and atomically commit."""
+        """Download cover image, ensuring binary magic-byte integrity and universal preview compatibility."""
         cover_url = getattr(self, "cover_url", None)
         if not cover_url:
             return
@@ -123,12 +123,16 @@ class BaseScraper:
         if folder.exists() and list(folder.glob("cover.*")):
             return
 
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+
         temp_root = PathAuthority().get_temp_root() / f"manga18fx_cover_{int(time.time() * 1000)}"
         temp_root.mkdir(parents=True, exist_ok=True)
 
         try:
+            from urllib.parse import urlparse
             ext = Path(urlparse(cover_url).path).suffix or ".jpg"
-            temp_path = temp_root / f"cover{ext}"
+            temp_path = temp_root / f"raw_cover{ext}"
 
             success = False
             for attempt in range(1, 4):
@@ -138,10 +142,44 @@ class BaseScraper:
                 if attempt < 3:
                     time.sleep(1)
 
-            if success and temp_path.exists():
-                folder.mkdir(parents=True, exist_ok=True)
-                final_cover = folder / temp_path.name
-                shutil.copy2(temp_path, final_cover)
+            if success and temp_path.exists() and temp_path.stat().st_size > 500:
+                header_bytes = temp_path.read_bytes()[:16]
+                real_format = None
+                if header_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                    real_format = "PNG"
+                elif header_bytes.startswith(b"\xff\xd8\xff"):
+                    real_format = "JPEG"
+                elif header_bytes.startswith(b"RIFF") and b"WEBP" in header_bytes:
+                    real_format = "WEBP"
+                elif header_bytes.startswith(b"GIF8"):
+                    real_format = "GIF"
+
+                try:
+                    with Image.open(temp_path) as im:
+                        # Convert heavy or mislabelled images (e.g. PNG/WebP disguised under .jpg URL) to clean JPEG
+                        # Ensures universal thumbnail rendering across desktop file managers (Dolphin, Nautilus, etc.)
+                        if real_format == "PNG" or temp_path.stat().st_size > 1_500_000 or real_format not in ("JPEG", "WEBP"):
+                            target_cover = folder / "cover.jpg"
+                            if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                                bg = Image.new("RGB", im.size, (255, 255, 255))
+                                bg.paste(im, mask=im.split()[-1] if im.mode == "RGBA" else None)
+                                bg.save(target_cover, "JPEG", quality=95, optimize=True)
+                            else:
+                                im.convert("RGB").save(target_cover, "JPEG", quality=95, optimize=True)
+                            logging.info("Cover: Saved as optimized JPEG")
+                        elif real_format == "WEBP":
+                            target_cover = folder / "cover.webp"
+                            shutil.copy2(temp_path, target_cover)
+                            logging.info("Cover: Saved as WebP")
+                        else:
+                            target_cover = folder / "cover.jpg"
+                            shutil.copy2(temp_path, target_cover)
+                            logging.info("Cover: Saved as JPEG")
+                except Exception as e:
+                    logging.debug(f"PIL cover processing failed: {e}, falling back to copy")
+                    ext_final = ".png" if real_format == "PNG" else (".webp" if real_format == "WEBP" else ".jpg")
+                    shutil.copy2(temp_path, folder / f"cover{ext_final}")
+                    logging.info("Cover: Saved")
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 
