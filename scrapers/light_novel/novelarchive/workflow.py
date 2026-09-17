@@ -117,48 +117,32 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         location_manager.create_directory(folder)
         save_url_to_file(url, title)
 
-    if not is_quick_grab:
-        zine_folder = folder / ".zine"
-        location_manager.create_directory(zine_folder)
-        meta_path = zine_folder / "meta.json"
+    from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+    tags_list = []
+    if getattr(scraper, "tags", None):
+        tags_list.extend(scraper.tags if isinstance(scraper.tags, list) else [scraper.tags])
+    if getattr(scraper, "genres", None):
+        tags_list.extend(scraper.genres if isinstance(scraper.genres, list) else [scraper.genres])
 
-        meta_data = {
-            "title":    title,
-            "url":      scraper.series_url,
-            "source":   scraper.domain,
-            "status":   getattr(scraper, "status", "Unknown"),
-        }
-        if getattr(scraper, "author", None):
-            meta_data["author"] = scraper.author
-        if getattr(scraper, "description", None):
-            meta_data["description"] = scraper.description
-        if getattr(scraper, "genres", None):
-            meta_data["genres"] = scraper.genres
-        if getattr(scraper, "novel_id", None):
-            meta_data["novel_id"] = scraper.novel_id
-        if chapters:
-            meta_data["total_chapters"] = len(chapters)
+    alt_title_val = ""
+    raw_alts = getattr(scraper, "alt_titles", None) or getattr(scraper, "alt_title", None)
+    if isinstance(raw_alts, list) and raw_alts:
+        alt_title_val = raw_alts[0]
+    elif isinstance(raw_alts, str):
+        alt_title_val = raw_alts
 
-        if meta_path.exists():
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-                updated = False
-                for k, v in meta_data.items():
-                    if k not in existing or existing[k] != v:
-                        existing[k] = v
-                        updated = True
-                if updated:
-                    with open(meta_path, "w", encoding="utf-8") as f:
-                        json.dump(existing, f, indent=4, ensure_ascii=False)
-            except Exception:
-                pass
-        else:
-            try:
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data, f, indent=4, ensure_ascii=False)
-            except Exception:
-                pass
+    payload = ZineMetadataPayload(
+        title=title,
+        type="Novel",
+        alt_title=alt_title_val,
+        author=getattr(scraper, "author", "") or "",
+        description=getattr(scraper, "description", "") or "",
+        status=getattr(scraper, "status", "") or "",
+        rating=str(getattr(scraper, "rating", "") or ""),
+        tags=tags_list,
+        url=scraper.series_url
+    )
+    MetadataEngine.save_metadata(folder, payload)
 
     cover_exists = (folder / "cover.jpg").exists()
     if not is_quick_grab and not cover_exists:

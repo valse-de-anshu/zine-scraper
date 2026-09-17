@@ -237,34 +237,32 @@ class HanimeEngine(VideoEngine):
         if not url:
             url = info.get("webpage_url") or info.get("original_url") or info.get("url") or ""
 
-        if custom_metadata:
-            metadata_content = {
-                "Series":       custom_metadata.get("Channel/Series", _decode(model_name)),
-                "Source":       source,
-                "URL":          url,
-                "Total Videos": len(video_list),
-                "Studio":       custom_metadata.get("Studio", ""),
-                "Tags":         custom_metadata.get("Tags", ""),
-                "Summary":      custom_metadata.get("Description", ""),
-                "videos":       all_entries
-            }
-        else:
-            metadata_content = {
-                "model_name":   _decode(model_name),
-                "source":       source,
-                "url":          url,
-                "total_videos": len(video_list),
-                "most_viewed":  most_viewed,
-                "top_rated":    top_rated,
-                "latest":       latest,
-                "longest":      longest,
-                "videos":       all_entries
-            }
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        series_name = custom_metadata.get("Channel/Series", _decode(model_name)) if custom_metadata else _decode(model_name)
+        tags_raw = custom_metadata.get("Tags", "") if custom_metadata else ""
+        tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()] if isinstance(tags_raw, str) else (tags_raw or [])
+        studio = custom_metadata.get("Studio", "") if custom_metadata else ""
+        desc = custom_metadata.get("Description", "") if custom_metadata else ""
+        m_type = "Series" if custom_metadata else "Channel"
 
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata_content, f, indent=2, ensure_ascii=False)
+        total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
+        total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
 
-        logger.info(f"Hanime metadata saved to {meta_path}")
+        payload = ZineMetadataPayload(
+            title=series_name,
+            type=m_type,
+            author=studio or series_name,
+            artist=studio,
+            description=desc,
+            tags=tags_list,
+            url=url,
+            views=f"{total_v:,}" if total_v > 0 else "",
+            likes=f"{total_l:,}" if total_l > 0 else "",
+            hottest=most_viewed,
+            most_rated=top_rated,
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
+        logger.info(f"Hanime metadata saved via MetadataEngine for {series_name}")
 
         # ── Download cover.png ────────────────────────────────────────
         if not skip_cover:

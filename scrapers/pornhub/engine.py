@@ -260,22 +260,27 @@ class PornHubEngine(VideoEngine):
             key=lambda e: e["duration"], reverse=True
         )[:10] or all_entries[:10]
 
-        # ── Build clean metadata dict ─────────────────────────────────
-        metadata_content = {
-            "model_name":   _decode(model_name),
-            "source":       source,
-            "url":          info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
-            "total_videos": len(video_list),
-            "most_viewed":  most_viewed,
-            "top_rated":    top_rated,
-            "latest":       latest,
-            "longest":      longest,
-        }
+        # ── Calculate views and likes ──────────────────────────────────
+        total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
+        total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
+        views_str = f"{total_v:,}" if total_v > 0 else ""
+        likes_str = f"{total_l:,}" if total_l > 0 else ""
 
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata_content, f, indent=2, ensure_ascii=False)
-
-        logger.info(f"PornHub metadata saved to {meta_path}")
+        # ── Save unified metadata via MetadataEngine ──────────────────
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        clean_model = _decode(model_name)
+        payload = ZineMetadataPayload(
+            title=clean_model,
+            type="Channel",
+            author=clean_model,
+            url=info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
+            views=views_str,
+            likes=likes_str,
+            hottest=most_viewed,
+            most_rated=top_rated,
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
+        logger.info(f"PornHub metadata saved via MetadataEngine for {clean_model}")
 
         # ── Download cover.png ────────────────────────────────────────
         if not skip_cover and avatar_url:

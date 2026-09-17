@@ -55,6 +55,22 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     else:
         folder = target_path
         location_manager.create_directory(folder)
+
+    from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+    subjects = pre_metadata.get("Subject") or pre_metadata.get("Subjects") or []
+    if isinstance(subjects, str):
+        subjects = [s.strip() for s in subjects.split(";") if s.strip()]
+
+    payload = ZineMetadataPayload(
+        title=title,
+        type="Book",
+        author=pre_metadata.get("Author", ""),
+        description=pre_metadata.get("Description", "") or pre_metadata.get("Summary", ""),
+        tags=subjects,
+        year=pre_metadata.get("Release Date", "") or pre_metadata.get("Year", ""),
+        url=url
+    )
+    MetadataEngine.save_metadata(folder, payload)
     
     verified_ids = verify_assets(folder, pre_assets, tracker, scraper.url)
     

@@ -514,31 +514,19 @@ class VideoEngine:
         if _is_quick_grab_dir(root_dir):
             return
             
-        if source.lower() not in ["idagio", "soundcloud", "music"]:
-            meta_dir = root_dir / ".zine"
-            meta_dir.mkdir(parents=True, exist_ok=True)
-            
-            meta_path = meta_dir / "metadata.json"
-            
-            # Migration: Move metadata.json from root or metadata/ if it exists
-            for old_loc in [root_dir / "metadata.json", root_dir / "metadata" / "metadata.json"]:
-                if old_loc.exists() and not meta_path.exists():
-                    try:
-                        old_loc.rename(meta_path)
-                    except Exception: pass
-            
-            # Only overwrite metadata if we are processing a playlist/channel, or if it doesn't exist.
-            if not meta_path.exists() or info.get('_type') == 'playlist':
-                metadata = {
-                    "channel_name": info.get('uploader') or info.get('channel') or info.get('title') or "Unknown",
-                    "channel_id": info.get('uploader_id') or info.get('channel_id') or info.get('id') or "Unknown",
-                    "source": source,
-                    "url": info.get('webpage_url') or info.get('original_url') or "",
-                    "total_videos": len(info.get('entries', [])) if info.get('_type') == 'playlist' else 1,
-                    "description": info.get('description', ''),
-                }
-                with open(meta_path, 'w', encoding='utf-8') as f:
-                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        is_music = source.lower() in ["idagio", "soundcloud", "music"]
+        media_type = "Song" if is_music else "Channel"
+        title = info.get('album') or info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
+        author = info.get('artist') or info.get('uploader') or info.get('channel') or ""
+        payload = ZineMetadataPayload(
+            title=title,
+            type=media_type,
+            author=author,
+            description=info.get('description', ''),
+            url=info.get('webpage_url') or info.get('original_url') or ""
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
 
         # Try to download cover/avatar
         thumb_url = cover_url

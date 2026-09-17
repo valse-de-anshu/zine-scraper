@@ -72,19 +72,19 @@ class HentaiHavenCoEngine(VideoEngine):
         tags = custom_metadata.get("Tags", "") if custom_metadata else ""
         summary = custom_metadata.get("Description", "") if custom_metadata else ""
         
-        metadata_content = {
-            "Series": _decode(model_name),
-            "Source": source,
-            "URL": url,
-            "Total Videos": len(video_list),
-            "Studio": studio,
-            "Tags": tags,
-            "Summary": summary,
-            "videos": video_list
-        }
-
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata_content, f, indent=2, ensure_ascii=False)
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()] if isinstance(tags, str) else (tags or [])
+        clean_name = _decode(model_name)
+        payload = ZineMetadataPayload(
+            title=clean_name,
+            type="Series",
+            author=studio or clean_name,
+            artist=studio,
+            description=summary,
+            tags=tags_list,
+            url=url
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
 
         if not skip_cover and avatar_url:
             cover_path = root_dir / "cover.jpg"

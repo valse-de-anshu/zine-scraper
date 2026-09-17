@@ -308,24 +308,16 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         cover_exists = cover_path.exists()
 
         # Metadata in series root .zine/
-        try:
-            zine_dir = series_root / ".zine"
-            zine_dir.mkdir(parents=True, exist_ok=True)
-            custom_metadata = {
-                "title": title,
-                "tags": [t.strip() for t in metadata.get("Genres", "").split(",")
-                         if t.strip()] if metadata.get("Genres") else [],
-                "description": metadata.get("Description", ""),
-                "source": metadata.get("Source", "Anikoto"),
-                "anime_id": metadata.get("ID", "Unknown"),
-                "thumbnail": metadata.get("Thumbnail"),
-                "total_episodes": metadata.get("Total Videos", 0),
-                "url": url,
-            }
-            with open(zine_dir / "metadata.json", "w", encoding="utf-8") as f:
-                json.dump(custom_metadata, f, indent=4)
-        except Exception as e:
-            console.print(f"[warning]Failed to save .zine/metadata.json: {e}[/warning]")
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        genres = [t.strip() for t in metadata.get("Genres", "").split(",") if t.strip()] if metadata.get("Genres") else []
+        payload = ZineMetadataPayload(
+            title=title,
+            type="Series",
+            description=metadata.get("Description", ""),
+            tags=genres,
+            url=url
+        )
+        MetadataEngine.save_metadata(series_root, payload)
 
         ext_str = "flac" if is_music else "mp4"
         verified_ids = verify_videos(folder, videos, ext_str, tracker, scraper.url)

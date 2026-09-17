@@ -514,18 +514,52 @@ class YoutubeEngine(VideoEngine):
                     old_loc.rename(meta_path)
                 except Exception: pass
         
-        if not meta_path.exists() or info.get('_type') == 'playlist':
-            metadata = {
-                "channel_name": info.get('uploader') or info.get('channel') or info.get('title') or "Unknown",
-                "channel_id": info.get('uploader_id') or info.get('channel_id') or info.get('id') or "Unknown",
-                "album": info.get('album') or info.get('title') or "Single",
-                "source": source,
-                "url": info.get('webpage_url') or info.get('original_url') or "",
-                "total_videos": len(info.get('entries', [])) if info.get('_type') == 'playlist' else 1,
-                "description": info.get('description', ''),
-            }
-            with open(meta_path, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
+        entries = info.get('entries') or []
+        formatted_entries = []
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            formatted_entries.append({
+                "id": str(e.get("id") or ""),
+                "title": str(e.get("title") or ""),
+                "views": int(e.get("view_count") or 0),
+                "likes": int(e.get("like_count") or 0),
+                "duration": int(e.get("duration") or 0),
+                "url": str(e.get("webpage_url") or e.get("url") or "")
+            })
+
+        hottest = sorted(
+            [e for e in formatted_entries if e["views"] > 0],
+            key=lambda x: x["views"], reverse=True
+        )[:10] or formatted_entries[:10]
+
+        most_rated = sorted(
+            [e for e in formatted_entries if e["likes"] > 0],
+            key=lambda x: x["likes"], reverse=True
+        )[:10] or formatted_entries[:10]
+
+        total_v = info.get('view_count') or sum(e["views"] for e in formatted_entries)
+        total_l = info.get('channel_follower_count') or info.get('like_count') or sum(e["likes"] for e in formatted_entries)
+        views_str = f"{int(total_v):,}" if total_v else ""
+        likes_str = f"{int(total_l):,}" if total_l else ""
+
+        channel_title = info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
+        channel_id = info.get('uploader_id') or info.get('channel_id') or ""
+
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        payload = ZineMetadataPayload(
+            title=channel_title,
+            type="Channel",
+            alt_title=channel_id,
+            author=channel_title,
+            description=info.get('description', ''),
+            url=info.get('webpage_url') or info.get('original_url') or "",
+            views=views_str,
+            likes=likes_str,
+            hottest=hottest,
+            most_rated=most_rated,
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
 
         if skip_cover:
             return

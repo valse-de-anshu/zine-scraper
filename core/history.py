@@ -32,7 +32,8 @@ def _parse_local_history_entry(entry: Any) -> Tuple[str, Optional[str]]:
     return str(entry), None
 
 def _is_quick_grab_dir(root_dir: Path) -> bool:
-    if "Quick grab" in root_dir.parts or "Quick grab" in str(root_dir):
+    r_str = str(root_dir).lower()
+    if "quick grab" in r_str or "quick_grab" in r_str:
         return True
     try:
         from core.paths import PathAuthority

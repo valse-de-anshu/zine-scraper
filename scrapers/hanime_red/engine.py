@@ -88,18 +88,18 @@ class HanimeRedEngine(VideoEngine):
         tags = custom_metadata.get("Tags", "") if custom_metadata else ""
         summary = custom_metadata.get("Description", "") if custom_metadata else ""
 
-        meta = {
-            "Series": model_name,
-            "Source": source,
-            "URL": url,
-            "Total Videos": len(videos) if videos else 0,
-            "Studio": studio,
-            "Tags": tags,
-            "Summary": summary,
-            "videos": videos or []
-        }
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2, ensure_ascii=False)
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()] if isinstance(tags, str) else (tags or [])
+        payload = ZineMetadataPayload(
+            title=model_name,
+            type="Series",
+            author=studio or model_name,
+            artist=studio,
+            description=summary,
+            tags=tags_list,
+            url=url
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
 
         if not skip_cover and avatar_url:
             cover_path = root_dir / "cover.jpg"

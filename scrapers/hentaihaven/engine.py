@@ -259,21 +259,23 @@ class HentaiHavenEngine(VideoEngine):
         )[:10] or all_entries[:10]
 
         # ── Build clean metadata dict ─────────────────────────────────
-        metadata_content = {
-            "model_name":   _decode(model_name),
-            "source":       source,
-            "url":          info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
-            "total_videos": len(video_list),
-            "most_viewed":  most_viewed,
-            "top_rated":    top_rated,
-            "latest":       latest,
-            "longest":      longest,
-        }
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        clean_model = _decode(model_name)
+        total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
+        total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
 
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata_content, f, indent=2, ensure_ascii=False)
-
-        logger.info(f"HentaiHaven metadata saved to {meta_path}")
+        payload = ZineMetadataPayload(
+            title=clean_model,
+            type="Series",
+            author=clean_model,
+            url=info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
+            views=f"{total_v:,}" if total_v > 0 else "",
+            likes=f"{total_l:,}" if total_l > 0 else "",
+            hottest=most_viewed,
+            most_rated=top_rated,
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
+        logger.info(f"HentaiHaven metadata saved via MetadataEngine for {clean_model}")
 
         # ── Download cover.jpg ────────────────────────────────────────
         if not skip_cover:

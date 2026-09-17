@@ -1,3 +1,27 @@
+# Progress Report - September 18, 2026 (Unified Metadata Engine & Hwaran Symbiosis Architecture)
+
+- **Unified Metadata Engine Integration (`core/metadata_engine.py` & Scraper Suite):**
+  - **Overview & Symbiosis Alignment**:
+    - Architected and integrated a centralized, lightweight `MetadataEngine` across all scrapers in Zine to establish seamless 100% atomic compatibility with Hwaran Android's `ZineMetadataExtractor.kt` and `DescriptionScreen.kt`.
+    - Guarantees standard `.zine/metadata.json` (Hwaran preferred) and `.zine/meta.json` (legacy backwards compatibility) emission across all supported media categories: Manga, Manhwa, Manhua, Anime Series, Novels, Books, Songs, and Channels/Creators.
+    - Strictly implements both `type` and lowercase `box_purpose` to ensure flawless native routing in Hwaran (`channel` -> `ChannelDescriptionView`, `series` -> `SeriesDescriptionView`, `novel` -> `NovelReader`, `book` -> `BookDescriptionView`, `manga`/`manhwa`/`manhua` -> `ToonDescriptionView`).
+  - **Payload Constraints & User Directives**:
+    - Stripped all redundant bloat fields: removed raw video lists (`videos: List[Dict]`), comments, cover art URLs, hardcoded language defaults, total_chapters, page counts, and serialization metadata.
+    - For video channels and adult creators (YouTube, Pornhub, Hanime, HentaiHaven), prioritized and preserved strictly: `views`, `likes`, `hottest` (`most_viewed`), and `most_rated` (`top_rated`).
+  - **Quick Grab Total Immunity**:
+    - Built strict path-based immunity (`is_quick_grab`) in `core/metadata_engine.py` and `core/history.py: _is_quick_grab_dir` ensuring downloads routed to any variation of Quick Grab (`Quick grab`, `quick_grab`, `quick grab`, etc.) never generate `.zine` folders or metadata files, preserving zero-overhead grab-and-go speed.
+  - **Suite-Wide Migration (45 Scrapers & Engines)**:
+    - Migrated all manga/manhwa/manhua scrapers (`asurascans`, `topmanhua`, `manhuaplus`, `manhwaus`, `weebcentral`, `mangadex`, `projectsuki`, `mangak`, `kunmanga`, `fanfox`, `omegascans`, `nhentai`, `asmhentai`, `hentai20`, `manga18fx`, `oppai_stream_toon`).
+    - Migrated all anime series scrapers (`hianime`, `anitaku`, `miruro`, `anikoto`, `anineko`, `anikai`).
+    - Migrated all adult video series/channel scrapers (`hanime`, `hanime_red`, `hstream`, `hentaihaven_co`, `ohentai`, `oppai_stream`, `hentaicity`, `hentaihaven`, `hentaimama`, `hentai18`).
+    - Migrated all light novel scrapers (`chikari`, `novelbuddy`, `novelfire`, `novelphoenix`, `novelarchive`).
+    - Migrated books & archives (`gutenberg`, `archive`).
+    - Migrated video platforms and channels (`youtube`, `pornhub`, `pinterest`, `facebook`, `instagram`, `ytdlp`, `youtube/yt_music`, `core/video_engine.py`).
+  - **Verification**:
+    - Validated all 45 scraper modules via automated import and serialization test suite against Hwaran metadata parsing rules.
+
+---
+
 # Progress Report - September 18, 2026 (Topmanhua Scraper Suite Addition & Isolation)
 
 - **Topmanhua Self-Contained Scraper Suite Addition (`scrapers/topmanhua/`):**

@@ -79,59 +79,28 @@ def run_workflow(
     location_manager.create_directory(folder)
     save_url_to_file(url, title)
 
-    # Create .zine metadata folder if not in Quick grab mode
-    is_quick_grab = "Quick grab" in folder.parts or "Quick grab" in str(folder)
-    if not is_quick_grab:
-        zine_folder = folder / ".zine"
-        location_manager.create_directory(zine_folder)
-        meta_path = zine_folder / "meta.json"
-        import json
-        meta_data = {
-            "title": title,
-            "url": url,
-            "category": next(
-                (part for part in target_path.parts if part.lower() in ["ongoing", "completed", "complete"]),
-                target_path.parts[-2] if len(target_path.parts) > 1 else target_path.name
-            ),
-            "source": getattr(scraper, "domain", "topmanhua.fan")
-        }
-        if getattr(scraper, "author", None):
-            meta_data["author"] = scraper.author
-        if getattr(scraper, "artist", None):
-            meta_data["artist"] = scraper.artist
-        if getattr(scraper, "description", None):
-            meta_data["description"] = scraper.description
-        if getattr(scraper, "tags", None):
-            meta_data["tags"] = scraper.tags
-        if getattr(scraper, "genres", None):
-            meta_data["genres"] = scraper.genres
-        if getattr(scraper, "status", None):
-            meta_data["status"] = scraper.status
-        if getattr(scraper, "rating", None):
-            meta_data["rating"] = scraper.rating
-        if getattr(scraper, "release", None):
-            meta_data["release"] = scraper.release
+    from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+    tags_list = []
+    if getattr(scraper, "tags", None):
+        tags_list.extend(scraper.tags if isinstance(scraper.tags, list) else [scraper.tags])
+    if getattr(scraper, "genres", None):
+        tags_list.extend(scraper.genres if isinstance(scraper.genres, list) else [scraper.genres])
 
-        if meta_path.exists():
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    existing_data = json.load(f)
-                updated = False
-                for k, v in meta_data.items():
-                    if k not in existing_data or existing_data[k] != v:
-                        existing_data[k] = v
-                        updated = True
-                if updated:
-                    with open(meta_path, "w", encoding="utf-8") as f:
-                        json.dump(existing_data, f, indent=4, ensure_ascii=False)
-            except Exception:
-                pass
-        else:
-            try:
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta_data, f, indent=4, ensure_ascii=False)
-            except Exception:
-                pass
+    status_str = next((part for part in target_path.parts if part.lower() in ["ongoing", "completed", "complete"]), "")
+    payload = ZineMetadataPayload(
+        title=title,
+        type="Manhua",
+        alt_title=getattr(scraper, "alt_title", "") or "",
+        author=getattr(scraper, "author", "") or "",
+        artist=getattr(scraper, "artist", "") or "",
+        description=getattr(scraper, "description", "") or "",
+        status=getattr(scraper, "status", "") or status_str,
+        rating=str(getattr(scraper, "rating", "") or ""),
+        tags=tags_list,
+        year=str(getattr(scraper, "release", "") or ""),
+        url=url
+    )
+    MetadataEngine.save_metadata(folder, payload)
 
     cover_exists = any(folder.glob("cover.*"))
 

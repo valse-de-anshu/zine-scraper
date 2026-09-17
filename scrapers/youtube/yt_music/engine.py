@@ -423,16 +423,19 @@ class YoutubeMusicEngine:
         thumbnails: Optional[List[Any]] = None,
         track_id: Optional[str] = None
     ):
-        """Saves metadata JSON and downloads album cover art (for Vacuum mode only)."""
-        folder = Path(folder)
-        folder.mkdir(parents=True, exist_ok=True)
-
-        meta_file = folder / "metadata.json"
-        try:
-            with open(meta_file, "w", encoding="utf-8") as f:
-                json.dump(info, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        album_title = info.get("album") or info.get("title") or "Unknown Album"
+        artist_name = info.get("artist") or info.get("uploader") or info.get("channel") or ""
+        payload = ZineMetadataPayload(
+            title=album_title,
+            type="Song",
+            author=artist_name,
+            artist=artist_name,
+            description=info.get("description", ""),
+            year=str(info.get("release_year") or info.get("year") or ""),
+            url=info.get("webpage_url") or info.get("original_url") or ""
+        )
+        MetadataEngine.save_metadata(folder, payload)
 
         self.download_cover_art(
             folder,

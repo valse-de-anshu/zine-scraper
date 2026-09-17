@@ -51,23 +51,15 @@ def run_workflow(
                 board_folder = target_root / profile_name / board_title
                 storage_layer.create_directory(board_folder)
 
-                zine_dir = board_folder / ".zine"
-                storage_layer.create_directory(zine_dir)
-                meta_path = zine_dir / "metadata.json"
-                if not meta_path.exists():
-                    metadata = {
-                        "board_name": board_title,
-                        "board_id": board.get("id") or "Unknown",
-                        "profile_name": profile_name,
-                        "source": "Pinterest",
-                        "url": board_url,
-                        "total_pins": board.get("pin_count") or "Unknown",
-                        "description": board.get("description") or "",
-                    }
-                    try:
-                        storage_layer.write_file(meta_path, json.dumps(metadata, indent=2, ensure_ascii=False))
-                    except Exception as e:
-                        logger.error(f"Failed to write metadata for board {board_title}: {e}")
+                from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+                payload = ZineMetadataPayload(
+                    title=f"{profile_name} - {board_title}",
+                    type="Channel",
+                    author=profile_name,
+                    description=board.get("description") or "",
+                    url=board_url
+                )
+                MetadataEngine.save_metadata(board_folder, payload)
 
         # Initial state setup
         state: Dict[str, Any] = {

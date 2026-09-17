@@ -135,6 +135,15 @@ def run_workflow(
         board_folder = target_root / profile_name / clean_title
         board_folder.mkdir(parents=True, exist_ok=True)
 
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        payload = ZineMetadataPayload(
+            title=f"{profile_name} - {raw_board_title}" if profile_name else raw_board_title,
+            type="Channel",
+            author=profile_name,
+            url=board_url
+        )
+        MetadataEngine.save_metadata(board_folder, payload)
+
         state = {
             "board_title": raw_board_title,
             "board_idx": idx,

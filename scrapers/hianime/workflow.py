@@ -303,30 +303,24 @@ def run_workflow(
         cover_exists = cover_path.exists()
 
         # ── .zine/metadata.json ──────────────────────────────────────────────
-        try:
-            zine_dir = series_root / ".zine"
-            zine_dir.mkdir(parents=True, exist_ok=True)
-            meta_payload = {
-                "title":          title,
-                "description":    metadata.get("Description", ""),
-                "genres":         [g.strip() for g in metadata.get("Genres", "").split(",") if g.strip()],
-                "aired":          metadata.get("Aired", ""),
-                "premiered":      metadata.get("Premiered", ""),
-                "duration":       metadata.get("Duration", ""),
-                "status":         metadata.get("Status", ""),
-                "mal_score":      metadata.get("MAL Score", ""),
-                "studios":        [s.strip() for s in metadata.get("Studios", "").split(",") if s.strip()],
-                "producers":      [p.strip() for p in metadata.get("Producers", "").split(",") if p.strip()],
-                "japanese":       metadata.get("Japanese", ""),
-                "source":         "HiAnime",
-                "url":            url,
-                "thumbnail":      metadata.get("Thumbnail", ""),
-                "total_episodes": metadata.get("Total Videos", 0),
-            }
-            with open(zine_dir / "metadata.json", "w", encoding="utf-8") as f:
-                json.dump(meta_payload, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            console.print(f"[warning]Failed to save .zine/metadata.json: {e}[/warning]")
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        genres = [g.strip() for g in metadata.get("Genres", "").split(",") if g.strip()]
+        studios = metadata.get("Studios", "")
+        producers = metadata.get("Producers", "")
+        payload = ZineMetadataPayload(
+            title=title,
+            type="Series",
+            alt_title=metadata.get("Japanese", ""),
+            author=producers or studios,
+            artist=studios or producers,
+            description=metadata.get("Description", ""),
+            status=metadata.get("Status", ""),
+            rating=str(metadata.get("MAL Score", "")),
+            tags=genres,
+            year=metadata.get("Premiered", "") or metadata.get("Aired", ""),
+            url=url
+        )
+        MetadataEngine.save_metadata(series_root, payload)
 
         verified_ids = verify_videos(folder, videos, "mp4", tracker, scraper.url)
 
