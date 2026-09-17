@@ -20,22 +20,41 @@ import re
 logger = logging.getLogger(__name__)
 
 
-def _clean_str(text: Optional[str]) -> str:
-    """Unescapes HTML entities and strips HTML tags from single-line text fields."""
+def _smart_quotes(text: str) -> str:
+    """
+    Normalizes straight double quotes to typographical curly quotes (“ and ”)
+    and removes backslash-escaped quote artifacts (\").
+    This ensures JSON serialization emits clean text without backslash artifacts.
+    """
     if not text:
         return ""
+    text = text.replace(r'\"', '"')
+    # Opening quote: at start of string or following whitespace, dash, or opening bracket
+    text = re.sub(r'(^|[\s(\[{<—–-])"', r'\1“', text)
+    # Closing quote: any remaining straight double quotes
+    text = re.sub(r'"', '”', text)
+    return text
+
+
+def _clean_str(text: Optional[str]) -> str:
+    """Unescapes HTML entities, strips HTML tags, and cleans quote artifacts from single-line text fields."""
+    if not text:
+        return ""
+    text = text.replace(r'\"', '"')
     cleaned = html.unescape(str(text))
     cleaned = re.sub(r'<[^>]+>', '', cleaned)
-    return cleaned.strip()
+    return _smart_quotes(cleaned.strip())
 
 
 def _clean_html_text(text: Optional[str]) -> str:
     """
     Cleans raw HTML descriptions by unescaping HTML entities (&rsquo;, &hellip;, etc.),
-    converting <br> and <p> to natural newlines, and stripping all other tags.
+    converting <br> and <p> to natural newlines, stripping all other tags, and converting
+    straight/escaped double quotes to typographical curly quotes to prevent JSON backslash artifacts.
     """
     if not text:
         return ""
+    text = text.replace(r'\"', '"')
     text = html.unescape(str(text))
     text = re.sub(r'<\s*br\s*/?>', '\n', text, flags=re.IGNORECASE)
     text = re.sub(r'</?\s*p\s*>', '\n', text, flags=re.IGNORECASE)
@@ -51,7 +70,8 @@ def _clean_html_text(text: Optional[str]) -> str:
         else:
             cleaned.append(l)
             prev_empty = False
-    return "\n".join(cleaned).strip()
+    full_text = "\n".join(cleaned).strip()
+    return _smart_quotes(full_text)
 
 
 @dataclass

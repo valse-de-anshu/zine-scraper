@@ -65,6 +65,13 @@ class ManhwaUSScraper(BaseScraper):
         final_chapters.sort(key=lambda x: x[0])
         self.title = title
         
+        # Cover extraction
+        self.cover_url = ""
+        cover_tag = soup.select_one("div.manga-info-top div.manga-info-pic img, div.story-info-left img, div.summary_image img, meta[property='og:image']")
+        if cover_tag:
+            self.cover_url = cover_tag.get("content") or cover_tag.get("data-src") or cover_tag.get("src") or ""
+            if self.cover_url:
+                self.cover_url = urljoin(self.url, self.cover_url)
 
         self.genres = []
         for div in soup.find_all("div", class_="post-content_item"):
