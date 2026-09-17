@@ -141,8 +141,8 @@ class ManhuaPlusScraper(BaseScraper):
                 logging.warning(f"AJAX image fetch failed for {ch_url}: {e}")
 
         bad_keywords = [
-            "logo", "banner", "avatar", "icon", "ads", "button", "loader",
-            "loading", "spinner", "placeholder", "spacer", "pixel.wp.com",
+            "logo", "banner", "avatar", "icon", "/ads/", "ads.", "_ads_", "button", "loader",
+            "spinner", "placeholder", "spacer", "pixel.wp.com",
             "broken_image", "1x1", "transparent.png", "blank.gif", "statcounter",
             "histats", "analytics", "exoclick", "adsterra", "trafficjunky",
             "syndication", "mgid", "doubleclick", "next-chapter", "prev-chapter",
