@@ -35,8 +35,13 @@ class OmegaScansScraper:
 
         # Populated by get_title_and_chapters()
         self.title       = ""
+        self.alt_title   = ""
         self.description = ""
         self.author      = ""
+        self.artist      = ""
+        self.status      = ""
+        self.rating      = ""
+        self.year        = ""
         self.tags: List[str] = []
         self.genres: List[str] = []
         self.cover_url: Optional[str] = None
@@ -153,8 +158,14 @@ class OmegaScansScraper:
 
     def _apply_meta(self, meta: dict):
         self.title       = meta.get("title", "")
+        self.alt_title   = meta.get("alternative_names", "") or ""
         self.description = meta.get("description", "") or ""
-        self.author      = meta.get("author", "") or meta.get("studio", "") or ""
+        self.author      = meta.get("author", "") or ""
+        self.artist      = meta.get("studio", "") or ""
+        self.status      = meta.get("status", "") or ""
+        raw_rating       = meta.get("rating")
+        self.rating      = f"{round(float(raw_rating), 2):g}" if raw_rating is not None else ""
+        self.year        = str(meta.get("release_year") or "")
         self.tags        = [t.get("name") for t in meta.get("tags", []) if t.get("name")]
         self.cover_url   = meta.get("thumbnail")
 

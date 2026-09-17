@@ -14,7 +14,44 @@ from typing import Optional, List, Dict, Any, Union
 
 from core.history import _is_quick_grab_dir
 
+import html
+import re
+
 logger = logging.getLogger(__name__)
+
+
+def _clean_str(text: Optional[str]) -> str:
+    """Unescapes HTML entities and strips HTML tags from single-line text fields."""
+    if not text:
+        return ""
+    cleaned = html.unescape(str(text))
+    cleaned = re.sub(r'<[^>]+>', '', cleaned)
+    return cleaned.strip()
+
+
+def _clean_html_text(text: Optional[str]) -> str:
+    """
+    Cleans raw HTML descriptions by unescaping HTML entities (&rsquo;, &hellip;, etc.),
+    converting <br> and <p> to natural newlines, and stripping all other tags.
+    """
+    if not text:
+        return ""
+    text = html.unescape(str(text))
+    text = re.sub(r'<\s*br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</?\s*p\s*>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    lines = [line.strip() for line in text.splitlines()]
+    cleaned = []
+    prev_empty = False
+    for l in lines:
+        if not l:
+            if not prev_empty:
+                cleaned.append("")
+                prev_empty = True
+        else:
+            cleaned.append(l)
+            prev_empty = False
+    return "\n".join(cleaned).strip()
 
 
 @dataclass
@@ -58,10 +95,11 @@ class MetadataEngine:
     @classmethod
     def save_metadata(cls, folder: Union[str, Path], payload: ZineMetadataPayload) -> bool:
         """
-        Saves metadata payload into .zine/metadata.json and .zine/meta.json.
+        Saves metadata payload into .zine/metadata.json.
         Guarantees:
           - Early exit if folder is Quick Grab (no metadata pollution).
           - Sets both 'type' and 'box_purpose' for flawless Hwaran UI routing.
+          - Sanitizes descriptions (stripping HTML tags, unescaping &rsquo;, &hellip;, etc.).
           - Sanitizes tag arrays.
           - Preserves existing keys during updates.
         """
@@ -74,52 +112,75 @@ class MetadataEngine:
             zine_dir = dest_folder / ".zine"
             zine_dir.mkdir(parents=True, exist_ok=True)
 
+            # Clean and unescape title
+            clean_title = _clean_str(payload.title)
+
             # Build clean dictionary from payload
             data: Dict[str, Any] = {
-                "title": payload.title,
+                "title": clean_title,
                 "type": payload.type,
                 "box_purpose": payload.type.lower(),
             }
 
             if payload.alt_title:
-                data["alt_title"] = payload.alt_title
-                data["altTitle"] = payload.alt_title
+                clean_alt = _clean_str(payload.alt_title)
+                if clean_alt:
+                    data["alt_title"] = clean_alt
+                    data["altTitle"] = clean_alt
 
             if payload.author:
-                data["author"] = payload.author
+                clean_author = _clean_str(payload.author)
+                if clean_author:
+                    data["author"] = clean_author
 
             if payload.artist:
-                data["artist"] = payload.artist
+                clean_artist = _clean_str(payload.artist)
+                if clean_artist:
+                    data["artist"] = clean_artist
 
             if payload.description:
-                data["description"] = payload.description
+                clean_desc = _clean_html_text(payload.description)
+                if clean_desc:
+                    data["description"] = clean_desc
 
             if payload.status:
-                data["status"] = payload.status
+                clean_status = _clean_str(payload.status)
+                if clean_status:
+                    data["status"] = clean_status
 
             if payload.rating:
-                data["rating"] = payload.rating
+                r_str = _clean_str(str(payload.rating))
+                try:
+                    r_val = float(r_str)
+                    r_str = f"{round(r_val, 2):g}"
+                except Exception:
+                    pass
+                if r_str:
+                    data["rating"] = r_str
 
             if payload.tags:
                 clean_tags = []
                 for t in payload.tags:
                     if isinstance(t, str):
                         for sub in t.split(","):
-                            cleaned = sub.strip()
+                            cleaned = _clean_str(sub)
                             if cleaned and cleaned not in clean_tags:
                                 clean_tags.append(cleaned)
                     elif t:
-                        str_t = str(t).strip()
+                        str_t = _clean_str(str(t))
                         if str_t and str_t not in clean_tags:
                             clean_tags.append(str_t)
-                data["tags"] = clean_tags
-                data["genres"] = clean_tags
+                if clean_tags:
+                    data["tags"] = clean_tags
+                    data["genres"] = clean_tags
 
             if payload.year:
-                data["year"] = payload.year
+                clean_year = _clean_str(str(payload.year))
+                if clean_year:
+                    data["year"] = clean_year
 
             if payload.url:
-                data["url"] = payload.url
+                data["url"] = payload.url.strip()
 
             # YouTube / Pornhub channel specific metrics
             if payload.views:
