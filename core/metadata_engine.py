@@ -136,12 +136,18 @@ class MetadataEngine:
                 data["top_rated"] = payload.most_rated
                 data["most_rated"] = payload.most_rated
 
-            # Write primary target: .zine/metadata.json (Hwaran preferred)
             primary_path = zine_dir / "metadata.json"
+            legacy_path = zine_dir / "meta.json"
             existing_data: Dict[str, Any] = {}
             if primary_path.exists():
                 try:
                     with open(primary_path, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                except Exception:
+                    existing_data = {}
+            elif legacy_path.exists():
+                try:
+                    with open(legacy_path, "r", encoding="utf-8") as f:
                         existing_data = json.load(f)
                 except Exception:
                     existing_data = {}
@@ -152,13 +158,12 @@ class MetadataEngine:
             with open(primary_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=2, ensure_ascii=False)
 
-            # Maintain secondary target: .zine/meta.json (Legacy Zine compatibility)
-            legacy_path = zine_dir / "meta.json"
-            try:
-                with open(legacy_path, "w", encoding="utf-8") as f:
-                    json.dump(existing_data, f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass
+            # Eliminate redundant legacy meta.json file
+            if legacy_path.exists():
+                try:
+                    legacy_path.unlink()
+                except Exception:
+                    pass
 
             logger.info(f"Unified metadata saved successfully to {primary_path}")
             return True
