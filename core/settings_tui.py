@@ -17,7 +17,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
 
-from core.ui import console, startup_clear, print_banner, Selector, set_active_live
+from core.ui import console, startup_clear, print_banner, Selector, BoxSelector, set_active_live
 from core.paths import PathAuthority
 from core.storage import StorageLayer
 from core.config import ConfigLayer
@@ -413,25 +413,17 @@ def whisper_settings_tui():
             table.add_row(Text("Choose which subtitles to generate when using the manual AI subtitle tool.", style="unselected"))
             panel = Panel(table, title="[bold white]◆ AI SUBTITLES CONFIGURATION ◆[/bold white]", border_style="sexy_pink", padding=(1, 2), width=80)
             console.print()
-            console.print(panel)
             mode_opts = [
                 ("Only give me translated subtitles (e.g. English)      ", "Target"), 
                 ("Only give me the original spoken language subtitles   ", "Original"), 
                 ("Give me both (Original language + Translated language)", "Both"), 
                 ("Turn off AI Subtitles entirely                        ", "None")
             ]
-            new_mode = Selector(mode_opts, "Select Generation Mode", vertical=True).select()
+            new_mode = BoxSelector(mode_opts, "Select Generation Mode").select()
             if new_mode and new_mode != "ESC":
                 config.set("ai_subtitles_mode", new_mode)
                 
         elif choice == "ai_target_lang":
-            table = Table(box=None, show_header=False, padding=(0, 1))
-            table.add_column("info", width=70)
-            table.add_row(Text("AI Translation Language", style="bold sexy_pink"))
-            table.add_row(Text("If you chose to generate translated subtitles, pick the language here.", style="unselected"))
-            panel = Panel(table, title="[bold white]◆ TRANSLATION LANGUAGE ◆[/bold white]", border_style="sexy_pink", padding=(1, 2), width=80)
-            console.print()
-            console.print(panel)
             langs = [
                 ("Translate to English   ", "English"),
                 ("Translate to Spanish   ", "Spanish"),
@@ -444,7 +436,7 @@ def whisper_settings_tui():
                 ("Translate to Chinese   ", "Chinese"),
                 ("Translate to Japanese  ", "Japanese")
             ]
-            new_lang = Selector(langs, "Select Language", vertical=True).select()
+            new_lang = BoxSelector(langs, "Select Language").select()
             if new_lang and new_lang != "ESC":
                 config.set("ai_target_lang", new_lang)
                 
@@ -456,7 +448,7 @@ def whisper_settings_tui():
 
         elif choice == "ai_subtitles_vram":
             vram_opts = [("6GB (INT8 - Fastest/Safest)", "6GB (INT8)"), ("8GB+ (FP16 - High Quality)", "FP16"), ("CPU-Only (Very Slow)", "CPU-Only")]
-            new_vram = Selector(vram_opts, "Select Hardware Target").select()
+            new_vram = BoxSelector(vram_opts, "Select Hardware Target").select()
             if new_vram and new_vram != "ESC":
                 config.set("ai_subtitles_vram", new_vram)
 
@@ -538,7 +530,7 @@ def qwen_tts_settings_tui():
                 ("Voice Cloning (Requires Ref Audio)",      "Voice Cloning"),
                 ("Voice Design (Text-to-Voice Generation)", "Voice Design")
             ]
-            new_mode = Selector(mode_opts, "Select Qwen TTS Generation Mode").select()
+            new_mode = BoxSelector(mode_opts, "Select Qwen TTS Generation Mode").select()
             if new_mode and new_mode != "ESC":
                 config.set("tts_mode", new_mode)
                 # Flush previous model weights from GPU VRAM on mode switch
@@ -558,7 +550,7 @@ def qwen_tts_settings_tui():
                 ("Sohee (Female)",  "Sohee"),   ("Uncle_fu (Male)",  "Uncle_fu"),
                 ("Vivian (Female)", "Vivian")
             ]
-            new_speaker = Selector(speaker_opts, "Select TTS Preset Speaker", vertical=True).select()
+            new_speaker = BoxSelector(speaker_opts, "Select TTS Preset Speaker").select()
             if new_speaker and new_speaker != "ESC":
                 config.set("tts_custom_speaker", new_speaker)
 
@@ -587,7 +579,7 @@ def qwen_tts_settings_tui():
                 ("x-vector (Timbre Only - Clean, Smooth & Fast - Recommended)", True),
                 ("ICL (Full Transcript Alignment - Needs 100% Exact Transcript)", False)
             ]
-            new_val = Selector(opts, "Select Voice Clone Feature Extraction Method").select()
+            new_val = BoxSelector(opts, "Select Voice Clone Feature Extraction Method").select()
             if new_val is not None and new_val != "ESC":
                 config.set("tts_x_vector_only", bool(new_val))
 
@@ -603,28 +595,14 @@ def qwen_tts_settings_tui():
                 config.set("tts_clone_ref_transcript", val)
                 
         elif choice == "tts_model_choice":
-            table = Table(box=None, show_header=False, padding=(0, 1))
-            table.add_column("info", width=70)
-            table.add_row(Text("Qwen Model Size", style="bold sexy_pink"))
-            table.add_row(Text("1.7B is much smarter and sounds more human, but uses more GPU VRAM.\n0.6B is lightweight, fast, but slightly more robotic.", style="unselected"))
-            console.print()
-            console.print(Panel(table, title="[bold white]◆ MODEL CHOICE ◆[/bold white]", border_style="sexy_pink", padding=(1, 2), width=80))
-            
             opts = [("1.7B (High Quality, More VRAM)", "1.7B"), ("0.6B (Fast, Low VRAM)", "0.6B")]
-            new_val = Selector(opts, "Select Qwen TTS Model").select()
+            new_val = BoxSelector(opts, "Select Qwen TTS Model").select()
             if new_val and new_val != "ESC":
                 config.set("tts_model_choice", new_val)
                 
         elif choice == "tts_precision":
-            table = Table(box=None, show_header=False, padding=(0, 1))
-            table.add_column("info", width=70)
-            table.add_row(Text("Math Precision", style="bold sexy_pink"))
-            table.add_row(Text("bf16 is the golden standard (fast & safe).\nUse fp32 ONLY if you have an older GPU or experience weird static noises.", style="unselected"))
-            console.print()
-            console.print(Panel(table, title="[bold white]◆ PRECISION ◆[/bold white]", border_style="sexy_pink", padding=(1, 2), width=80))
-            
             opts = [("bf16 (Recommended for RTX 3000/4000)", "bf16"), ("fp16 (Good fallback)", "fp16"), ("fp32 (High Memory / Old GPUs)", "fp32")]
-            new_val = Selector(opts, "Select Precision").select()
+            new_val = BoxSelector(opts, "Select Math Precision").select()
             if new_val and new_val != "ESC":
                 config.set("tts_precision", new_val)
 
@@ -778,7 +756,7 @@ def breeze_tts_settings_tui():
                 ("Direct CLI (breeze-cli — Vulkan GPU / No Server Required)", "Direct CLI (breeze-cli)"),
                 ("HTTP Server (breeze-server — Streaming API on port 8080)", "HTTP Server (breeze-server)")
             ]
-            new_val = Selector(opts, "Select Breeze TTS Execution Backend").select()
+            new_val = BoxSelector(opts, "Select Breeze TTS Execution Backend").select()
             if new_val and new_val != "ESC":
                 config.set("breeze_backend", new_val)
 
@@ -789,7 +767,7 @@ def breeze_tts_settings_tui():
                 ("Voice Cloning (Reference .wav + transcript)", "Voice Cloning"),
                 ("Voice Direction (Reference audio + emotional direction)", "Voice Direction")
             ]
-            new_mode = Selector(mode_opts, "Select Breeze Generation Mode").select()
+            new_mode = BoxSelector(mode_opts, "Select Breeze Generation Mode").select()
             if new_mode and new_mode != "ESC":
                 config.set("breeze_mode", new_mode)
 
@@ -829,7 +807,7 @@ def breeze_tts_settings_tui():
                 time.sleep(2)
             else:
                 opts = [(vf.stem, vf.stem) for vf in v_files]
-                new_v = Selector(opts, "Select Saved .breeze Voice Profile").select()
+                new_v = BoxSelector(opts, "Select Saved .breeze Voice Profile").select()
                 if new_v and new_v != "ESC":
                     config.set("breeze_saved_voice", new_v)
 
@@ -863,7 +841,7 @@ def breeze_tts_settings_tui():
                 ("Enabled (Boosts to 2.5 when (sigh), (laugh), etc. detected - Recommended)", True),
                 ("Disabled (Keeps base CFG Scale constant)", False)
             ]
-            new_val = Selector(opts, "Auto-Boost CFG on Vocal Event Tags").select()
+            new_val = BoxSelector(opts, "Auto-Boost CFG on Vocal Event Tags").select()
             if new_val is not None and new_val != "ESC":
                 config.set("breeze_auto_vocal_cfg", bool(new_val))
 
@@ -872,7 +850,7 @@ def breeze_tts_settings_tui():
                 ("Vulkan (GPU Acceleration — Blazing Fast)", "Vulkan (GPU)"),
                 ("CPU (Force CPU Backend)", "CPU")
             ]
-            new_val = Selector(opts, "Select Hardware Acceleration Backend").select()
+            new_val = BoxSelector(opts, "Select Hardware Acceleration Backend").select()
             if new_val and new_val != "ESC":
                 config.set("breeze_hardware", new_val)
 

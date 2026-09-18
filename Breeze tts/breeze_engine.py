@@ -984,7 +984,8 @@ def run_voice_conversion_flow():
     """Interactive flow to respeak an existing recording in a target voice."""
     from rich.console import Console
     from core.ui import custom_theme
-    from core.settings_tui import prompt_field_value, Selector
+    from core.settings_tui import prompt_field_value
+    from core.ui import BoxSelector
     from core.paths import sanitize_user_path
 
     console = Console(theme=custom_theme)
@@ -1011,7 +1012,7 @@ def run_voice_conversion_flow():
         ("1 - Subtle Melody (Singing / Moderate Pitch Retention)", "1"),
         ("2 - Strong Melody (Pop Vocals / Full Song Retention)", "2")
     ]
-    keep_acoustic = Selector(melody_opts, "Select Melody Retention (keep-acoustic)").select()
+    keep_acoustic = BoxSelector(melody_opts, "Select Melody Retention (keep-acoustic)").select()
     if not keep_acoustic or keep_acoustic == "ESC":
         keep_acoustic = "0"
 
