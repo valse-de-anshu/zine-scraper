@@ -57,6 +57,8 @@ cache/
 *.ytdl
 *.crdownload
 *.aria2
+test the scrapper/
+test*/
 
 # Audio / TTS Output Directories & Temp Buffers
 _temp_/
