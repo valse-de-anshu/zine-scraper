@@ -171,20 +171,26 @@ class PornHubEngine(VideoEngine):
     # ─── Avatar download ─────────────────────────────────────────────────
 
     def download_avatar(self, avatar_url: str, dest: Path) -> bool:
-        """Downloads the model profile picture and saves as cover.png."""
+        """Downloads avatar/cover using 2-step magic-byte verification."""
         if not avatar_url:
             return False
         try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
+            from core.cover_utils import save_verified_cover
             import subprocess
-            cmd = ["curl", "-sSL", "--connect-timeout", "20", "--retry", "3", "-o", str(dest), avatar_url]
+            from core.paths import PathAuthority
+            temp_root = PathAuthority().get_temp_root()
+            raw_temp = temp_root / f"pornhub_avatar_{int(time.time() * 1000)}.tmp"
+            cmd = ["curl", "-sSL", "--connect-timeout", "20", "--retry", "3", "-o", str(raw_temp), avatar_url]
             res = subprocess.run(cmd, capture_output=True)
-            if res.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
-                logger.info(f"PornHub cover saved to {dest}")
-                return True
-            else:
-                logger.error(f"Failed to download PornHub avatar via curl. Return code: {res.returncode}")
-                return False
+            if res.returncode == 0 and raw_temp.exists() and raw_temp.stat().st_size > 500:
+                saved = save_verified_cover(raw_temp, dest.parent, filename=dest.stem)
+                raw_temp.unlink(missing_ok=True)
+                if saved:
+                    logger.info(f"PornHub cover saved to {saved}")
+                    return True
+            if raw_temp.exists():
+                raw_temp.unlink(missing_ok=True)
+            return False
         except Exception as e:
             logger.error(f"Failed to download PornHub avatar from {avatar_url}: {e}")
             return False

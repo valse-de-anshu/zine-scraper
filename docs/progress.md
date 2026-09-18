@@ -1,3 +1,28 @@
+# Progress Report - September 18, 2026 (2-Step Magic-Byte Cover Verification & Universal Image Sniffing)
+
+- **2-Step Magic-Byte Cover Verification & Universal Preview Compatibility (`core/cover_utils.py` & Scraper Suite):**
+  - **Overview & Dual-Layer Verification**:
+    - Architected and integrated robust 2-step image verification across all scrapers to solve corrupted, un-previewable, and misidentified cover images across desktop file managers (Thunar, Dolphin, Nautilus) and Android galleries (Hwaran).
+    - **Step 1: Network & Format Extraction**: Fetches image payloads with anti-hotlink referers, browser headers, and retry backoff.
+    - **Step 2: Binary Magic-Byte Inspection & Normalization**: Sniffs the actual raw file header bytes (`\xff\xd8\xff` for JPEG, `\x89PNG\r\n\x1a\n` for PNG, `RIFF...WEBP` for WebP, `GIF8` for GIF, `ftyp` for AVIF).
+    - Rejects HTML/XML/Cloudflare challenge error responses masquerading with image status/names.
+    - Normalizes non-standard, large (>1.5MB), or PNG formats to clean RGB JPEG (with alpha matte compositing) to guarantee flawless thumbnail rendering.
+    - Preserves native WebP and JPEG extensions (`cover.webp`, `cover.jpg`) dynamically matching binary reality.
+  - **Suite-Wide Integration**:
+    - Unified utility functions in `core/cover_utils.py`: `detect_image_format_from_bytes`, `save_verified_cover`, and `download_verified_cover`.
+    - Applied across all manga/manhwa/manhua scrapers (`projectsuki`, `omegascans`, `kunmanga`, `mangak`, `fanfox`, `weebcentral`, `mangadex`, `asmhentai`, `nhentai`, `oppai_stream_toon`, `manga18fx`, `asurascans`, `manhwaus`, `manhuaplus`, `topmanhua`).
+    - Applied across anime scrapers (`anikai`, `anikoto`, `anineko`, `anitaku`, `hianime`, `miruro`).
+    - Applied across adult video series/channel scrapers (`hanime`, `hanime_red`, `hentai18`, `hentai20`, `hentaicity`, `hentaihaven`, `hentaihaven_co`, `hentaimama`, `hstream`, `oppai_stream`, `pornhub`, `ohentai`).
+    - Applied across light novels, books & archives (`novelarchive`, `gutenberg`, `archive`).
+    - Applied across social, video, and audio engines (`instagram`, `pinterest`, `youtube`, `youtube/yt_music`, `core/video_engine.py` covering `soundcloud`, `idagio`, `ytdlp`).
+- **Projectsuki Scraper Upgrades (`scrapers/projectsuki/`):**
+  - Upgraded metadata extraction to fully capture missing author, artist, type/format, score/rating, release year, origin, and extended synopsis/genres.
+  - Fixed cover and page stream downloading to handle binary headers and custom image endpoints.
+- **Terminal ESC Key Handling (`core/prompt.py` / `core/history_links.py`):**
+  - Enhanced URL prompt input buffer to cleanly consume and clear escape sequences when ESC is pressed rather than printing `ESCESCESC` into the prompt buffer.
+
+---
+
 # Progress Report - September 18, 2026 (Unified Metadata Engine & Hwaran Symbiosis Architecture)
 
 - **Unified Metadata Engine Integration (`core/metadata_engine.py` & Scraper Suite):**

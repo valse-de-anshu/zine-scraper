@@ -143,10 +143,10 @@ class YoutubeMusicEngine:
             try:
                 r = requests.get(url_cand, headers=self.headers, timeout=8)
                 if r.status_code == 200 and len(r.content) > 2048:
-                    ext = ".png" if r.content.startswith(b"\x89PNG") else ".jpg"
-                    cover_file = folder / f"{prefix}{ext}"
-                    cover_file.write_bytes(r.content)
-                    return cover_file
+                    from core.cover_utils import save_verified_cover
+                    saved = save_verified_cover(r.content, folder, filename=prefix)
+                    if saved:
+                        return saved
             except Exception:
                 continue
 

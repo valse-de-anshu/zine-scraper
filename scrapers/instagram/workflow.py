@@ -111,6 +111,19 @@ def _download_pin(pin, board_folder, board_url, scraper, tracker, state, storage
         try:
             success = scraper.download_asset(pin_url, str(pin_path), stats_callback=stats_hook, is_video=is_video)
             if success:
+                if not is_video and pin_path.exists() and pin_path.stat().st_size > 500:
+                    from core.cover_utils import detect_image_format_from_bytes
+                    header = pin_path.read_bytes()[:32]
+                    real_fmt = detect_image_format_from_bytes(header)
+                    if real_fmt:
+                        ext_map = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp", "GIF": ".gif", "AVIF": ".avif"}
+                        expected_ext = ext_map.get(real_fmt)
+                        if expected_ext and pin_path.suffix.lower() != expected_ext:
+                            correct_path = pin_path.with_suffix(expected_ext)
+                            pin_path.rename(correct_path)
+                            pin_path = correct_path
+                            filename = pin_path.name
+
                 tracker.mark_downloaded(board_url, str(pin_id), title=state.get("board_title", clean_title))
                 state["progress"]["success"] = True
                 state["pins_downloaded"] += 1

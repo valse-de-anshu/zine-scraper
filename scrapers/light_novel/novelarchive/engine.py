@@ -56,25 +56,7 @@ class NABaseEngine:
             return False
         if cover_url.startswith("/"):
             cover_url = f"https://novelarchive.cc{cover_url}"
-            
-        from urllib.parse import urlparse
-        ext = Path(urlparse(cover_url).path).suffix or ".jpg"
-        path = folder / f"cover{ext}"
-        if path.exists():
-            return True
-        for attempt in range(3):
-            try:
-                r = self.session.get(cover_url, stream=True, timeout=30)
-                r.raise_for_status()
-                with open(path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=16384):
-                        f.write(chunk)
-                if path.stat().st_size > 2000:
-                    # Convert to proper JPEG
-                    return True
-                path.unlink()
-            except Exception:
-                if path.exists():
-                    path.unlink()
-                time.sleep(2)
-        return False
+
+        from core.cover_utils import download_verified_cover
+        res = download_verified_cover(cover_url, folder, session=self.session)
+        return res is not None

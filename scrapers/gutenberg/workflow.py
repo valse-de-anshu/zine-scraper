@@ -43,15 +43,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         location_manager.create_directory(folder)
         cover_url = pre_metadata.pop("Cover URL", None)
         if cover_url:
-            import requests
-            try:
-                r = requests.get(cover_url, stream=True, timeout=10)
-                if r.status_code == 200:
-                    with open(folder / "cover.jpg", "wb") as f:
-                        for chunk in r.iter_content(8192):
-                            f.write(chunk)
-            except Exception:
-                pass
+            from core.cover_utils import download_verified_cover
+            download_verified_cover(cover_url, folder)
     else:
         folder = target_path
         location_manager.create_directory(folder)

@@ -169,7 +169,7 @@ class BaseScraper:
         return -1
 
     def download_cover(self, folder: Path):
-        """Downloads cover art into target folder using centralized temp directory buffer."""
+        """Downloads cover art into target folder with binary magic-byte inspection and format verification."""
         cover_url = getattr(self, "cover_url", None)
         if not cover_url:
             return
@@ -177,26 +177,79 @@ class BaseScraper:
         if folder.exists() and list(folder.glob("cover.*")):
             return
 
-        temp_root = PathAuthority().get_temp_root() / f"md_cover_{int(time.time()*1000)}"
-        temp_root.mkdir(parents=True, exist_ok=True)
-        try:
-            parsed = urlparse(cover_url)
-            ext = Path(parsed.path).suffix or ".jpg"
-            temp_path = temp_root / f"cover{ext}"
-            
-            success = False
-            for attempt in range(3):
-                if self.download_image(cover_url, temp_path) == 1:
-                    success = True
-                    break
-                time.sleep(1.0)
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
 
-            if success and temp_path.exists():
-                final_cover = folder / temp_path.name
-                shutil.copy2(temp_path, final_cover)
-                logger.info(f"Cover saved: {final_cover.name}")
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
+        from core.paths import PathAuthority
+        temp_root = PathAuthority().get_temp_root()
+        temp_root.mkdir(parents=True, exist_ok=True)
+        raw_temp = temp_root / f"mangadex_cover_{int(time.time() * 1000)}.tmp"
+
+        for attempt in range(1, 4):
+            try:
+                headers = HEADERS.copy()
+                headers["Referer"] = f"https://{self.domain}/"
+                r = self.session.get(cover_url, stream=True, timeout=(10, 25), headers=headers)
+                if r.status_code == 403:
+                    headers.pop("Referer", None)
+                    r = self.session.get(cover_url, stream=True, timeout=(10, 25), headers=headers)
+
+                if r.status_code == 200:
+                    with open(raw_temp, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=16384):
+                            if chunk:
+                                f.write(chunk)
+
+                    if raw_temp.exists() and raw_temp.stat().st_size > 500:
+                        header_bytes = raw_temp.read_bytes()[:16]
+                        real_format = None
+                        if header_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                            real_format = "PNG"
+                        elif header_bytes.startswith(b"\xff\xd8\xff"):
+                            real_format = "JPEG"
+                        elif header_bytes.startswith(b"RIFF") and b"WEBP" in header_bytes:
+                            real_format = "WEBP"
+                        elif header_bytes.startswith(b"GIF8"):
+                            real_format = "GIF"
+
+                        try:
+                            with Image.open(raw_temp) as im:
+                                if real_format == "PNG" or raw_temp.stat().st_size > 1_500_000 or real_format not in ("JPEG", "WEBP"):
+                                    target_cover = folder / "cover.jpg"
+                                    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                                        bg = Image.new("RGB", im.size, (255, 255, 255))
+                                        bg.paste(im, mask=im.split()[-1] if im.mode == "RGBA" else None)
+                                        bg.save(target_cover, "JPEG", quality=95, optimize=True)
+                                    else:
+                                        im.convert("RGB").save(target_cover, "JPEG", quality=95, optimize=True)
+                                    logger.info("Cover: Saved as optimized JPEG")
+                                    return
+                                elif real_format == "WEBP":
+                                    target_cover = folder / "cover.webp"
+                                    shutil.copy2(raw_temp, target_cover)
+                                    logger.info("Cover: Saved as WebP")
+                                    return
+                                else:
+                                    target_cover = folder / "cover.jpg"
+                                    shutil.copy2(raw_temp, target_cover)
+                                    logger.info("Cover: Saved as JPEG")
+                                    return
+                        except Exception as e:
+                            logger.debug(f"PIL cover processing failed: {e}, falling back to copy")
+                            ext_final = ".png" if real_format == "PNG" else (".webp" if real_format == "WEBP" else ".jpg")
+                            shutil.copy2(raw_temp, folder / f"cover{ext_final}")
+                            logger.info("Cover: Saved")
+                            return
+            except Exception as e:
+                logger.debug(f"Cover attempt {attempt} failed: {e}")
+            finally:
+                if raw_temp.exists():
+                    raw_temp.unlink(missing_ok=True)
+
+            if attempt < 3:
+                time.sleep(2)
+
+        logger.error("Cover: Failed after 3 tries")
 
     def process_chapter_multi(self, img_urls: List[str], folder: Path, ch_num: str, ch_url: str, live=None, stats_callback=None) -> dict:
         """Download all chapter pages into centralized temp buffer, process/slice strips, and atomically commit."""

@@ -147,7 +147,7 @@ class BaseScraper:
         return -1
 
     def download_cover(self, folder: Path):
-        """Download cover image, preserving original format. Skips if any cover.* already exists."""
+        """Download cover image, ensuring binary magic-byte integrity and universal preview compatibility."""
         cover_url = getattr(self, "cover_url", None)
         if not cover_url:
             try:
@@ -160,22 +160,8 @@ class BaseScraper:
         if not cover_url:
             return
 
-        # Recognise any existing cover regardless of extension
-        if folder.exists() and list(folder.glob("cover.*")):
-            return
-
-        from urllib.parse import urlparse
-        ext = Path(urlparse(cover_url).path).suffix or ".jpg"
-        path = folder / f"cover{ext}"
-
-        for attempt in range(1, 4):
-            if self.download_image(cover_url, path) == 1:
-                logging.info("Cover: Saved")
-                return
-            if attempt < 3:
-                time.sleep(2)
-
-        logging.error("Cover: Failed after 3 tries")
+        from core.cover_utils import download_verified_cover
+        download_verified_cover(cover_url, folder, session=self.session)
 
     def process_chapter_multi(self, img_urls: List[str], folder: Path, ch_num: str, ch_url: str, live=None, stats_callback=None) -> dict:
         self.consecutive_failures = 0

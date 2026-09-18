@@ -110,22 +110,14 @@ def run_workflow(
             pfp_url = meta["profile_picture"]
             creator_root = target_root / profile_name
             storage_layer.create_directory(creator_root)
-            pfp_path = creator_root / "profile_picture.jpg"
-            if not pfp_path.exists():
+            existing_pfp = any(creator_root.glob("profile_picture.*"))
+            if not existing_pfp:
                 try:
-                    import requests
+                    from core.cover_utils import download_verified_cover
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                    for attempt in range(3):
-                        try:
-                            r = requests.get(pfp_url, headers=headers, timeout=(10, 30))
-                            if r.status_code == 200:
-                                with open(pfp_path, "wb") as f:
-                                    f.write(r.content)
-                                global_logs.append(f"  [success]✔ Downloaded Profile Picture for {profile_name}[/success]")
-                                break
-                        except Exception:
-                            if attempt < 2:
-                                time.sleep(1)
+                    pfp_res = download_verified_cover(pfp_url, creator_root, headers=headers, filename="profile_picture")
+                    if pfp_res:
+                        global_logs.append(f"  [success]✔ Downloaded Profile Picture for {profile_name}[/success]")
                 except Exception as e:
                     logger.debug(f"Failed to download profile picture: {e}")
             else:

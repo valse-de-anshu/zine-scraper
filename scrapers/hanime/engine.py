@@ -140,28 +140,18 @@ class HanimeEngine(VideoEngine):
     # ─── Avatar download ─────────────────────────────────────────────────
 
     def download_avatar(self, avatar_url: str, dest: Path) -> bool:
-        """Downloads the model profile picture and saves as cover.png."""
+        """Downloads avatar/cover using 2-step magic-byte verification."""
         if not avatar_url:
             return False
         try:
+            from core.cover_utils import save_verified_cover
             r = requests.get(avatar_url, headers=self.headers, timeout=20)
-            r.raise_for_status()
-            
-            ct = r.headers.get("Content-Type", "").lower().split(";")[0].strip()
-            mime_map = {
-                "image/jpeg": ".jpg", "image/jpg": ".jpg",
-                "image/png": ".png", "image/webp": ".webp",
-                "image/avif": ".avif", "image/gif": ".gif"
-            }
-            real_ext = mime_map.get(ct, dest.suffix or ".png")
-            if dest.suffix.lower() != real_ext:
-                dest = dest.with_suffix(real_ext)
-                
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(dest, "wb") as f:
-                f.write(r.content)
-            logger.info(f"Hanime cover saved to {dest}")
-            return True
+            if r.status_code == 200 and len(r.content) > 500:
+                saved = save_verified_cover(r.content, dest.parent, filename=dest.stem)
+                if saved:
+                    logger.info(f"Hanime cover saved to {saved}")
+                    return True
+            return False
         except Exception as e:
             logger.error(f"Failed to download Hanime avatar from {avatar_url}: {e}")
             return False

@@ -554,17 +554,8 @@ class VideoEngine:
                 base_url = info.get('webpage_url') or info.get('original_url')
                 thumb_url = urljoin(base_url, thumb_url)
 
-            from urllib.parse import urlparse
-            ext = Path(urlparse(thumb_url).path).suffix or ".jpg"
-            cover_path = root_dir / f"cover{ext}"
-            if not cover_path.exists():
-                try:
-                    resp = requests.get(thumb_url, headers=self.headers, timeout=15)
-                    resp.raise_for_status()
-                    with open(cover_path, 'wb') as f:
-                        f.write(resp.content)
-                except Exception as e:
-                    logger.error(f"Failed to download cover from {thumb_url}: {e}")
+            from core.cover_utils import download_verified_cover
+            download_verified_cover(thumb_url, root_dir, headers=self.headers)
 
     def _download_custom_hls(self, playlist_url: str, tmp_path: Path, progress_hook: Callable, fixed_title: str, custom_thumbnail: Path, baking_callback: Callable = None) -> bool:
         """

@@ -301,25 +301,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
         save_url_to_file(url, title, silent=False)
 
-        # Cover in series root (not season subfolder)
+        # Cover in series root (2-step verification)
+        from core.cover_utils import download_verified_cover
         cover_url = metadata.get("Thumbnail")
-
-        ext = ".jpg"
-
-        if cover_url:
-            ext = Path(urlparse(cover_url).path).suffix or ".jpg"
-
-        cover_path = series_root / f"cover{ext}"
-
-        if not cover_path.exists():
-            if cover_url:
-                try:
-                    resp = requests.get(cover_url, timeout=15)
-                    resp.raise_for_status()
-                    cover_path.write_bytes(resp.content)
-                except Exception:
-                    pass
-        cover_exists = cover_path.exists()
+        if cover_url and not any(series_root.glob("cover.*")):
+            download_verified_cover(cover_url, series_root)
+        cover_exists = any(series_root.glob("cover.*"))
 
         # Metadata in series root .zine/
         from core.metadata_engine import MetadataEngine, ZineMetadataPayload

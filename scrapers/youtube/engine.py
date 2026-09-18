@@ -595,21 +595,10 @@ class YoutubeEngine(VideoEngine):
  
             if thumb_url:
                 try:
+                    from core.cover_utils import save_verified_cover
                     r = requests.get(thumb_url, timeout=20)
-                    r.raise_for_status()
-                    
-                    ct = r.headers.get("Content-Type", "").lower().split(";")[0].strip()
-                    mime_map = {
-                        "image/jpeg": ".jpg", "image/jpg": ".jpg",
-                        "image/png": ".png", "image/webp": ".webp",
-                        "image/avif": ".avif", "image/gif": ".gif"
-                    }
-                    real_ext = mime_map.get(ct, cover_path.suffix or ".jpg")
-                    if cover_path.suffix.lower() != real_ext:
-                        cover_path = cover_path.with_suffix(real_ext)
-                        
-                    with open(cover_path, "wb") as f:
-                        f.write(r.content)
+                    if r.status_code == 200 and len(r.content) > 500:
+                        save_verified_cover(r.content, cover_path.parent, filename=cover_path.stem)
                 except Exception as e:
                     logger.error(f"Failed to download cover from {thumb_url}: {e}")
 

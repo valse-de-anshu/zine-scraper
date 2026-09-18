@@ -47,15 +47,74 @@ class OmegaScansScraper:
         self.cover_url: Optional[str] = None
 
     def download_cover(self, folder: Path):
-        """Downloads the cover image to folder if cover_url is set."""
+        """Downloads the cover image to folder with 2-step magic-byte and format verification."""
         if not self.cover_url:
             return
-        from .engine import download_image
         folder = Path(folder)
+        if folder.exists() and list(folder.glob("cover.*")):
+            return
         folder.mkdir(parents=True, exist_ok=True)
-        ext = Path(self.cover_url.split("?")[0]).suffix or ".jpg"
-        dest = folder / f"cover{ext}"
-        download_image(self.cover_url, dest)
+
+        import shutil
+        import time
+        from PIL import Image
+        from core.paths import PathAuthority
+
+        temp_root = PathAuthority().get_temp_root()
+        temp_root.mkdir(parents=True, exist_ok=True)
+        raw_temp = temp_root / f"omega_cover_{int(time.time() * 1000)}.tmp"
+
+        for attempt in range(1, 4):
+            try:
+                r = self.session.get(self.cover_url, timeout=(10, 25), stream=True)
+                if r.status_code == 200:
+                    with open(raw_temp, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=16384):
+                            if chunk:
+                                f.write(chunk)
+
+                    if raw_temp.exists() and raw_temp.stat().st_size > 500:
+                        header_bytes = raw_temp.read_bytes()[:16]
+                        real_format = None
+                        if header_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                            real_format = "PNG"
+                        elif header_bytes.startswith(b"\xff\xd8\xff"):
+                            real_format = "JPEG"
+                        elif header_bytes.startswith(b"RIFF") and b"WEBP" in header_bytes:
+                            real_format = "WEBP"
+                        elif header_bytes.startswith(b"GIF8"):
+                            real_format = "GIF"
+
+                        try:
+                            with Image.open(raw_temp) as im:
+                                if real_format == "PNG" or raw_temp.stat().st_size > 1_500_000 or real_format not in ("JPEG", "WEBP"):
+                                    target_cover = folder / "cover.jpg"
+                                    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                                        bg = Image.new("RGB", im.size, (255, 255, 255))
+                                        bg.paste(im, mask=im.split()[-1] if im.mode == "RGBA" else None)
+                                        bg.save(target_cover, "JPEG", quality=95, optimize=True)
+                                    else:
+                                        im.convert("RGB").save(target_cover, "JPEG", quality=95, optimize=True)
+                                    return
+                                elif real_format == "WEBP":
+                                    target_cover = folder / "cover.webp"
+                                    shutil.copy2(raw_temp, target_cover)
+                                    return
+                                else:
+                                    target_cover = folder / "cover.jpg"
+                                    shutil.copy2(raw_temp, target_cover)
+                                    return
+                        except Exception:
+                            ext_final = ".png" if real_format == "PNG" else (".webp" if real_format == "WEBP" else ".jpg")
+                            shutil.copy2(raw_temp, folder / f"cover{ext_final}")
+                            return
+            except Exception:
+                pass
+            finally:
+                if raw_temp.exists():
+                    raw_temp.unlink(missing_ok=True)
+            if attempt < 3:
+                time.sleep(1.5)
 
     # ── URL inspection ────────────────────────────────────────────────────────
 
