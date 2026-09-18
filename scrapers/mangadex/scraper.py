@@ -96,6 +96,42 @@ class MangaDexScraper(BaseScraper):
     def is_chapter_link(self) -> bool:
         return self.is_chapter
 
+    def _discover_real_languages(self, candidate_langs: List[str]) -> List[str]:
+        """Discovers which candidate languages actually contain downloadable chapters with pages > 0."""
+        if not self.manga_id:
+            return candidate_langs or ["en"]
+
+        if len(candidate_langs) <= 1:
+            return candidate_langs or ["en"]
+
+        real_langs = []
+        offset = 0
+        limit = 500
+        total = 500
+
+        while offset < total and offset < 1000:
+            feed_resp = self.api.get_feed(self.manga_id, lang="", limit=limit, offset=offset)
+            if not feed_resp or "data" not in feed_resp or not feed_resp["data"]:
+                break
+            total = feed_resp.get("total", 0)
+            for item in feed_resp["data"]:
+                ch_attr = item.get("attributes", {})
+                pages = ch_attr.get("pages", 0)
+                ext = ch_attr.get("externalUrl")
+                lang = ch_attr.get("translatedLanguage")
+                if pages > 0 and not ext and lang and lang not in real_langs:
+                    real_langs.append(lang)
+            offset += limit
+
+        if real_langs:
+            ordered = [l for l in candidate_langs if l in real_langs]
+            for l in real_langs:
+                if l not in ordered:
+                    ordered.append(l)
+            return ordered
+
+        return candidate_langs or ["en"]
+
     def get_title_and_chapters(self, fetch_chapters: bool = False, lang: Optional[str] = None) -> Tuple[str, List[Tuple[str, str]]]:
         """Fetches full series metadata and available languages from MangaDex API."""
         # 1. If starting from a chapter URL, resolve parent manga first
@@ -119,8 +155,9 @@ class MangaDexScraper(BaseScraper):
 
         attr = manga_data.get("attributes", {})
         
-        # Available translated languages
-        self.available_languages = attr.get("availableTranslatedLanguages", []) or []
+        # Available translated languages — verify against actual chapters in feed to avoid phantom/deleted languages
+        raw_langs = attr.get("availableTranslatedLanguages", []) or []
+        self.available_languages = self._discover_real_languages(raw_langs)
 
         # Resolve Title - strictly prioritize English, then fall back to primary original language
         title_dict = attr.get("title", {}) or {}
