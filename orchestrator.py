@@ -90,7 +90,7 @@ from core.funnel import main
 
 if __name__ == "__main__":
     try:
-        qwen_prompt_path = script_dir / "Qween tts" / "TTS prompt.txt"
+        qwen_prompt_path = script_dir / "Models" / "TTS" / "Qween tts" / "TTS prompt.txt"
         if not qwen_prompt_path.exists():
             qwen_prompt_path.parent.mkdir(parents=True, exist_ok=True)
             qwen_prompt_path.write_text("")

@@ -23,12 +23,15 @@ Models/
 └── TTS/                                    # [Text-to-Speech / Voice Synthesizer Hub]
     ├── breeze-tts-2-q8_0.gguf              # Breeze-TTS-2 8-bit Quantized GGUF (~3.2 GB)
     ├── breeze-tts-2-fp16.gguf              # Breeze-TTS-2 Full Precision (Optional, ~6.5 GB)
-    │
-    └── Breeze-TTS-2.cpp/                  # Compiled C++ Vulkan Binaries
-        └── build/
-            └── bin/
-                ├── breeze-cli              # High-speed Vulkan CLI generator
-                └── breeze-server           # Streaming API server
+    ├── Breeze-TTS-2.cpp/                  # Compiled C++ Vulkan Binaries (build/bin/breeze-cli)
+    ├── Breeze tts/                         # Breeze-TTS-2 Engine package & TUI
+    │   ├── breeze_engine.py
+    │   ├── TTS prompt.txt
+    │   └── zine tts/                       # Generated audio, srt, logs & .breeze voice profiles
+    └── Qween tts/                          # Qwen-TTS Audiobook Synthesizer package
+        ├── book_tts.py
+        ├── TTS prompt.txt
+        └── word.txt
 ```
 
 ---

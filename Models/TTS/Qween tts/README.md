@@ -56,10 +56,11 @@ By default, the Zine Scraper expects your ComfyUI server to be running on the sa
 
 ### 🌳 Directory Tree Structure
 ```text
-Qween tts/
+Models/TTS/Qween tts/
 ├── README.md         # This documentation file
 ├── TTS prompt.txt    # Empty text file for custom voice instruct prompts
 ├── book_tts.py       # Core audiobook generation script
+├── word.txt          # Sample reference text
 └── __pycache__/      # Python bytecode cache
 ```
 

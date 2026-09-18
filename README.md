@@ -352,11 +352,11 @@ zine-scraper/
 │       ├── scraper.py       ← Scraper interface definition
 │       ├── tui.py           ← Site TUI interactive entrypoint
 │       └── workflow.py      ← Multi-threaded download orchestrator
-├── Models/                  ← Local storage hub for offline AI models
+├── Models/                  ← Unified storage hub for offline AI models & engines
 │   ├── STT/                 ← Speech-to-Text models (faster-whisper)
-│   └── TTS/                 ← Text-to-Speech models & binaries (Breeze-TTS-2 / Qwen)
-├── Breeze tts/              ← Breeze-TTS-2 C++/GGUF Neural Speech Synthesizer
-├── Qween tts/               ← Qwen-TTS Audiobook Synthesizer Engine
+│   └── TTS/                 ← Text-to-Speech models & engines (Breeze-TTS-2 / Qwen)
+│       ├── Breeze tts/      ← Breeze-TTS-2 C++/GGUF Neural Speech Synthesizer
+│       └── Qween tts/       ← Qwen-TTS Audiobook Synthesizer Engine
 ├── preview/                 ← TUI screenshots & showcase gallery
 ├── theme/                   ← 80+ custom Tokyo Night & Dark color palettes
 └── run me/                  ← Cross-platform automated installers & launchers

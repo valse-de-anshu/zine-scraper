@@ -63,7 +63,11 @@ def scaffold_library(root: Path, storage) -> None:
     # Models directory & download guide
     project_root = Path(__file__).resolve().parent.parent
     models_dir = project_root / "Models"
+    stt_dir = models_dir / "STT"
+    tts_dir = models_dir / "TTS"
     storage.create_directory(models_dir)
+    storage.create_directory(stt_dir)
+    storage.create_directory(tts_dir)
 
     models_guide = models_dir / "README to downlode ai model.md"
     models_main = models_dir / "README.md"
@@ -73,9 +77,13 @@ def scaffold_library(root: Path, storage) -> None:
         except Exception:
             pass
 
-    # Qwen TTS directory & default templates
-    qwen_dir = project_root / "Qween tts"
+    # Qwen TTS directory & default templates (inside Models/TTS/Qween tts)
+    qwen_dir = tts_dir / "Qween tts"
     storage.create_directory(qwen_dir)
+
+    # Breeze TTS directory (inside Models/TTS/Breeze tts)
+    breeze_dir = tts_dir / "Breeze tts"
+    storage.create_directory(breeze_dir)
 
     word_file = qwen_dir / "word.txt"
     if not word_file.exists():

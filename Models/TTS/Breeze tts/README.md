@@ -86,7 +86,7 @@ Weights are located by default at `/mnt/maiden/tts/breeze-tts-2-q8_0.gguf` or cu
 ## 📁 Directory Structure
 
 ```text
-Breeze tts/
+Models/TTS/Breeze tts/
 ├── __init__.py           # Package exports
 ├── breeze_engine.py      # Core audiobook engine, TUI, chunker & vocal dispatcher
 ├── README.md             # This comprehensive guide

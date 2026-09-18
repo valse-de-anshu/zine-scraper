@@ -89,6 +89,16 @@ class PathAuthority:
         """The Text-to-Speech models directory (suite_root / Models / TTS)."""
         return self._tts_models_root
 
+    def get_breeze_tts_dir(self) -> Path:
+        """The Breeze TTS engine package directory (Models/TTS/Breeze tts)."""
+        p = self._tts_models_root / "Breeze tts"
+        return p if p.exists() else (self._suite_root / "Breeze tts")
+
+    def get_qwen_tts_dir(self) -> Path:
+        """The Qwen TTS engine package directory (Models/TTS/Qween tts)."""
+        p = self._tts_models_root / "Qween tts"
+        return p if p.exists() else (self._suite_root / "Qween tts")
+
     def get_downloads_root(self) -> Path:
         """The user-chosen library root (e.g. ~/Downloads/Zine)."""
         return self._downloads_root

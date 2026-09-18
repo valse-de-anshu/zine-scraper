@@ -929,13 +929,13 @@ def main():
                 from core.subtitle_engine import run_subtitle_tui
                 run_subtitle_tui()
             elif url_lower in ["breeze", "/breeze", "breeze-tts", "breeze_tts", "breezetts"]:
-                breeze_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Breeze tts")
+                breeze_path = str(paths.get_breeze_tts_dir())
                 if breeze_path not in sys.path:
                     sys.path.insert(0, breeze_path)
                 import breeze_engine
                 breeze_engine.run_breeze_tui()
             elif url_lower in ["qwen", "/qwen", "qwen-tts", "qwen_tts", "qwents"]:
-                qwen_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Qween tts")
+                qwen_path = str(paths.get_qwen_tts_dir())
                 if qwen_path not in sys.path:
                     sys.path.insert(0, qwen_path)
                 import book_tts
@@ -950,13 +950,13 @@ def main():
                 from core.ui import BoxSelector
                 selected_engine = BoxSelector(tts_opts, title="Audiobook TTS Engine", width=84).select()
                 if selected_engine == "breeze":
-                    breeze_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Breeze tts")
+                    breeze_path = str(paths.get_breeze_tts_dir())
                     if breeze_path not in sys.path:
                         sys.path.insert(0, breeze_path)
                     import breeze_engine
                     breeze_engine.run_breeze_tui()
                 elif selected_engine == "qwen":
-                    qwen_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Qween tts")
+                    qwen_path = str(paths.get_qwen_tts_dir())
                     if qwen_path not in sys.path:
                         sys.path.insert(0, qwen_path)
                     import book_tts

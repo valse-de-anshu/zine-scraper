@@ -799,11 +799,16 @@ def breeze_tts_settings_tui():
                 config.set("breeze_voice_instruct", sanitize_user_path(new_val) if ('/' in new_val or '\\' in new_val) else new_val.strip())
 
         elif choice == "breeze_saved_voice":
-            tts_dir = Path(__file__).parent.parent / "Breeze tts" / "zine tts"
+            from core.paths import PathAuthority
+            pa = PathAuthority()
+            tts_dir = pa.get_breeze_tts_dir() / "zine tts"
             v_files = sorted(tts_dir.glob("*.breeze")) if tts_dir.exists() else []
             if not v_files:
-                alt_dir = Path(__file__).parent.parent / "zine tts"
+                alt_dir = Path(__file__).parent.parent / "Models" / "TTS" / "Breeze tts" / "zine tts"
                 v_files = sorted(alt_dir.glob("*.breeze")) if alt_dir.exists() else []
+            if not v_files:
+                alt_dir2 = Path(__file__).parent.parent / "zine tts"
+                v_files = sorted(alt_dir2.glob("*.breeze")) if alt_dir2.exists() else []
             if not v_files:
                 console.print("\n[warning]● No .breeze voice profiles found in zine tts.[/warning]")
                 console.print("[unselected]Bake a reference audio into a voice profile first via 'breeze' menu.[/unselected]")

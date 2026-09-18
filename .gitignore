@@ -69,8 +69,11 @@ zine breeze/
 *.breeze
 
 # AI Models & Multi-Gigabyte Binary Weights (Strictly Ignored)
-Models/*
-!Models/README to downlode ai model.md
+Models/STT/*
+!Models/STT/.gitkeep
+Models/TTS/*.gguf
+Models/TTS/*.bin
+Models/TTS/Breeze-TTS-2.cpp/
 *.bin
 *.safetensors
 *.pt
