@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 import subprocess
 import re
+from typing import Callable, Optional
 
 # ---------------------------------------------------------------------------
 # Dev Logger — writes structured entries to zine tts/logs/<stem>_<ts>.log
@@ -67,8 +68,8 @@ DEFAULT_BIN_CANDIDATES = [
 
 
 def get_voices_dir() -> Path:
-    """Returns the dedicated directory where .breeze saved voices live."""
-    voices_dir = Path(__file__).parent / "voices"
+    """Returns the dedicated directory where .breeze saved voices live in zine tts."""
+    voices_dir = Path(__file__).parent / "zine tts" / "voices"
     voices_dir.mkdir(parents=True, exist_ok=True)
     return voices_dir
 
@@ -475,6 +476,7 @@ class BreezeTTS:
         rep_penalty: float = 1.1,
         split_chars: int = 600,
         use_cpu: bool = False,
+        progress_callback: Optional[Callable[[], None]] = None,
     ) -> bool:
         """Generates audio for one text chunk via direct breeze-cli subprocess."""
         cli_bin = resolve_binary("breeze-cli")
@@ -515,11 +517,24 @@ class BreezeTTS:
         _log_event("BREEZE_CLI_EXEC", {"cmd": cmd})
 
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            _log_event("BREEZE_CLI_OK", {"output": res.stdout})
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            while proc.poll() is None:
+                if progress_callback:
+                    try:
+                        progress_callback()
+                    except Exception:
+                        pass
+                time.sleep(0.08)
+
+            stdout, stderr = proc.communicate()
+            if proc.returncode != 0:
+                _log_event("BREEZE_CLI_ERROR", {"stderr": stderr, "stdout": stdout})
+                return False
+
+            _log_event("BREEZE_CLI_OK", {"output": stdout})
             return os.path.exists(output_wav) and os.path.getsize(output_wav) > 100
-        except subprocess.CalledProcessError as e:
-            _log_event("BREEZE_CLI_ERROR", {"stderr": e.stderr, "stdout": e.stdout})
+        except Exception as e:
+            _log_event("BREEZE_CLI_ERROR", {"error": str(e)})
             return False
 
     @staticmethod
@@ -539,6 +554,7 @@ class BreezeTTS:
         top_p: float = 1.0,
         rep_penalty: float = 1.1,
         split_chars: int = 600,
+        progress_callback: Optional[Callable[[], None]] = None,
     ) -> bool:
         """Generates audio for one text chunk via breeze-server HTTP API stream."""
         import struct
@@ -601,7 +617,12 @@ class BreezeTTS:
                 sample_rate = int(resp.headers.get("X-Sample-Rate", 24000))
                 with open(pcm_temp, "wb") as pf:
                     while True:
-                        chunk = resp.read(8192)
+                        if progress_callback:
+                            try:
+                                progress_callback()
+                            except Exception:
+                                pass
+                        chunk = resp.read(4096)
                         if not chunk:
                             break
                         pf.write(chunk)
@@ -733,14 +754,13 @@ def process_book_breeze(txt_path_str: str):
 
     _last_chunk_text = ""
     _last_progress_str = ""
-    _spinner_idx = 0
     _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     _SPINNER_COLORS = ["#bb9af7", "#7dcfff", "#7aa2f7", "#b4f9f8", "#f7768e", "#e0af68"]
     _active_chunk_num = None
     _active_vocal_tag = False
 
     def update_tui(current_chunk_text=None, progress_str=None):
-        nonlocal _last_chunk_text, _last_progress_str, _spinner_idx, _active_chunk_num, _active_vocal_tag
+        nonlocal _last_chunk_text, _last_progress_str, _active_chunk_num, _active_vocal_tag
         if current_chunk_text is not None:
             if isinstance(current_chunk_text, dict):
                 _last_chunk_text = current_chunk_text.get("text", "")
@@ -762,9 +782,11 @@ def process_book_breeze(txt_path_str: str):
 
         display_lines = list(status_log)
         if _active_chunk_num is not None:
-            frame = _SPINNER_FRAMES[_spinner_idx % len(_SPINNER_FRAMES)]
-            color = _SPINNER_COLORS[_spinner_idx % len(_SPINNER_COLORS)]
-            _spinner_idx += 1
+            now = time.time()
+            frame_idx = int(now * 10) % len(_SPINNER_FRAMES)
+            color_idx = int(now * 4) % len(_SPINNER_COLORS)
+            frame = _SPINNER_FRAMES[frame_idx]
+            color = _SPINNER_COLORS[color_idx]
             tag_info = " [bold sexy_pink](⚡ Vocal Tag Boost 2.5)[/bold sexy_pink]" if _active_vocal_tag else ""
             display_lines.append(f"[{color}]{frame}[/{color}] [bold #7dcfff]Synthesizing Chunk {_active_chunk_num}...[/bold #7dcfff]{tag_info}")
 
@@ -780,6 +802,11 @@ def process_book_breeze(txt_path_str: str):
     abort_requested = False
     stop_thread = False
     _active_live = None
+
+    def tick_tui():
+        if _active_live:
+            _active_live.update(update_tui())
+            _active_live.refresh()
 
     def monitor_keyboard():
         nonlocal abort_requested, stop_thread
@@ -882,6 +909,7 @@ def process_book_breeze(txt_path_str: str):
                     top_p=top_p,
                     rep_penalty=rep_pen,
                     split_chars=split_chars,
+                    progress_callback=tick_tui,
                 )
             else:
                 success = BreezeTTS.generate_chunk_cli(
@@ -900,6 +928,7 @@ def process_book_breeze(txt_path_str: str):
                     rep_penalty=rep_pen,
                     split_chars=split_chars,
                     use_cpu=use_cpu,
+                    progress_callback=tick_tui,
                 )
 
             _active_chunk_num = None

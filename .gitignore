@@ -62,12 +62,11 @@ cache/
 _temp_/
 */_temp_/*
 zine tts/
+*/zine tts/*
 zine breeze/
 *.raw_pcm
 *.pcm
 *.breeze
-Breeze tts/voices/*.breeze
-!Breeze tts/voices/.gitkeep
 
 # AI Models & Multi-Gigabyte Binary Weights (Strictly Ignored)
 Models/*
