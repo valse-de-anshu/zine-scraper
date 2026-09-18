@@ -241,12 +241,46 @@ class HentaiHavenEngine(VideoEngine):
             key=lambda e: e["like_count"], reverse=True
         )[:10] or all_entries[:10]
 
-        raw_views = str((custom_metadata.get("Views") if custom_metadata else "") or info.get("views") or "")
-        raw_likes = str((custom_metadata.get("Likes") if custom_metadata else "") or info.get("likes") or "")
+        raw_views = str((custom_metadata.get("Views") if custom_metadata else "") or info.get("views") or "").strip()
+        raw_likes = str((custom_metadata.get("Likes") if custom_metadata else "") or info.get("likes") or "").strip()
         total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
         total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
-        views_val = raw_views or (f"{total_v:,}" if total_v > 0 else "0")
-        likes_val = raw_likes or (f"{total_l:,}" if total_l > 0 else "0")
+        views_val = raw_views or (f"{total_v:,}" if total_v > 0 else "")
+        likes_val = raw_likes or (f"{total_l:,}" if total_l > 0 else "")
+
+        has_real_views = any(e.get("view_count", 0) > 0 for e in all_entries)
+        has_real_likes = any(e.get("like_count", 0) > 0 for e in all_entries)
+        hottest_list = [e for e in all_entries if e.get("view_count", 0) > 0][:10] if has_real_views else []
+        most_rated_list = [e for e in all_entries if e.get("like_count", 0) > 0][:10] if has_real_likes else []
+
+        # Remove stale/dummy 0 metric keys from existing metadata.json
+        primary_meta = root_dir / ".zine" / "metadata.json"
+        if primary_meta.exists():
+            try:
+                with open(primary_meta, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                dirty = False
+                if not views_val and "views" in d:
+                    d.pop("views", None)
+                    dirty = True
+                if not likes_val and "likes" in d:
+                    d.pop("likes", None)
+                    dirty = True
+                if not hottest_list:
+                    for k in ["most_viewed", "hottest"]:
+                        if k in d:
+                            d.pop(k, None)
+                            dirty = True
+                if not most_rated_list:
+                    for k in ["top_rated", "most_rated"]:
+                        if k in d:
+                            d.pop(k, None)
+                            dirty = True
+                if dirty:
+                    with open(primary_meta, "w", encoding="utf-8") as f:
+                        json.dump(d, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
 
         from core.metadata_engine import MetadataEngine, ZineMetadataPayload
         if isinstance(tags, list):
@@ -267,8 +301,8 @@ class HentaiHavenEngine(VideoEngine):
             year=year,
             views=views_val,
             likes=likes_val,
-            hottest=most_viewed,
-            most_rated=top_rated,
+            hottest=hottest_list,
+            most_rated=most_rated_list,
             url=url,
         )
         MetadataEngine.save_metadata(root_dir, payload)
