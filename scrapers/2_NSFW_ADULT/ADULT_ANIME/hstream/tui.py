@@ -81,13 +81,27 @@ def handle_hstream_tui(
     scraper.franchise_structure = "flat"
 
     if is_batch_mode:
-        scraper.is_playlist = True
-        is_vacuum = True
-    elif len(videos) == 1:
-        scraper.is_playlist = False
-        is_vacuum = False
-    else:
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            scraper.is_playlist = True
+            is_vacuum = True
+        elif getattr(scraper, "_quick_grab", False) or getattr(scraper, "_batch_quick_grab", False):
+            scraper.is_playlist = False
+            is_vacuum = False
+            norm_url = url.rstrip("/")
+            filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
+            videos[:] = filtered if filtered else videos[:1]
+            metadata["Total Videos"] = len(videos)
+        else:
+            scraper.is_playlist = True
+            is_vacuum = True
 
+        if not getattr(scraper, "_force_vacuum", False) and not getattr(scraper, "_batch_all", False):
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos[:] = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
+    else:
         if __import__("sys").stdin.isatty():
             choice = Selector([
                 ("Single Episode", "single"),

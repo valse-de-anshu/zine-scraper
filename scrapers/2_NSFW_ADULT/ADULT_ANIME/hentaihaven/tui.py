@@ -113,10 +113,6 @@ def handle_hentaihaven_tui(
                     videos[:] = videos[:chapter_limit]
                     metadata["Total Videos"] = len(videos)
 
-    elif len(videos) == 1:
-        # Only one episode exists — skip the prompt, just download it
-        scraper.is_playlist = False
-        is_vacuum = False
     else:
 
         if __import__("sys").stdin.isatty():

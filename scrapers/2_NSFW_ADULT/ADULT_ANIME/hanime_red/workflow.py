@@ -96,8 +96,16 @@ def run_workflow(
                 old_dir = creator_root / old_name
                 if old_dir.exists() and old_dir != subtitle_folder:
                     for sub in list(old_dir.glob("*.srt")) + list(old_dir.glob("*.vtt")):
-                        dest_sub = subtitle_folder / sub.name
-                        if not dest_sub.exists():
+                        dest_sub = subtitle_folder / f"{sub.stem}.srt"
+                        if sub.suffix.lower() == ".vtt":
+                            try:
+                                from core.video_engine import vtt_to_srt
+                                text = sub.read_text(encoding="utf-8-sig", errors="replace")
+                                dest_sub.write_text(vtt_to_srt(text) or text, encoding="utf-8")
+                                sub.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                        elif not dest_sub.exists():
                             shutil.move(str(sub), str(dest_sub))
                         else:
                             sub.unlink(missing_ok=True)
@@ -105,20 +113,9 @@ def run_workflow(
                         old_dir.rmdir()
                     except Exception:
                         pass
-            # Migrate any subtitles directly in sub_folder (video/) into video/subtitle/
-            for sub in list(sub_folder.glob("*.srt")) + list(sub_folder.glob("*.vtt")):
-                dest_sub = subtitle_folder / sub.name
-                if not dest_sub.exists():
-                    shutil.move(str(sub), str(dest_sub))
-                else:
-                    sub.unlink(missing_ok=True)
-            # Migrate any subtitles sitting directly in creator_root into video/subtitle/
-            for sub in list(creator_root.glob("*.srt")) + list(creator_root.glob("*.vtt")):
-                dest_sub = subtitle_folder / sub.name
-                if not dest_sub.exists():
-                    shutil.move(str(sub), str(dest_sub))
-                else:
-                    sub.unlink(missing_ok=True)
+            from core.video_engine import migrate_and_clean_subtitles
+            migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+            migrate_and_clean_subtitles(creator_root, subtitle_folder)
         except Exception:
             pass
     else:
@@ -393,12 +390,17 @@ def run_workflow(
                 set_active_live(None)
 
                 if success:
-                    has_sub = any(subtitle_folder.glob(f"{resolved_file_path.stem}*.srt")) or any(subtitle_folder.glob(f"{resolved_file_path.stem}*.vtt"))
+                    has_sub = any(subtitle_folder.glob(f"{resolved_file_path.stem}*.srt"))
                     if not has_sub:
                         try:
                             engine.download_subtitles(vid_url, subtitle_folder, resolved_file_path.stem)
                         except Exception:
                             pass
+                    try:
+                        from core.video_engine import migrate_and_clean_subtitles
+                        migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+                    except Exception:
+                        pass
                     tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
                     break

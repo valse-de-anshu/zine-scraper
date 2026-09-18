@@ -96,9 +96,6 @@ def handle_hentaicity_tui(
     elif content_type == "gallery":
         # Gallery is always downloaded as a whole (it's a single album)
         is_vacuum = True
-    elif total_items == 1:
-        scraper.is_playlist = False
-        is_vacuum = False
     else:
         if not sys.stdin.isatty():
             scraper.is_playlist = True

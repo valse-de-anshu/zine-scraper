@@ -197,16 +197,12 @@ class HentaimamaEngine(VideoEngine):
         if not sub_url:
             return False
         try:
-            ext = ".vtt" if ".vtt" in sub_url.lower() else ".srt"
-            dest_lang = output_dir / f"{clean_title}.{lang}{ext}"
-            dest_plain = output_dir / f"{clean_title}{ext}"
-
             r = self.session.get(sub_url, headers=self.headers, impersonate="chrome124", timeout=15)
             if r.status_code == 200 and len(r.content) > 50:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                dest_lang.write_bytes(r.content)
-                dest_plain.write_bytes(r.content)
-                logger.info(f"[Hentaimama] Downloaded subtitle: {dest_lang.name}")
+                from core.video_engine import save_subtitle_as_srt
+                dest_lang = save_subtitle_as_srt(r.content, output_dir, clean_title, lang=lang)
+                dest_plain = save_subtitle_as_srt(r.content, output_dir, clean_title, lang=None)
+                logger.info(f"[Hentaimama] Downloaded subtitle (.srt): {dest_lang.name}")
                 return True
         except Exception as e:
             logger.warning(f"[Hentaimama] Failed to download subtitle {sub_url}: {e}")

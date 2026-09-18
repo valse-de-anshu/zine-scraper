@@ -83,6 +83,8 @@ def run_workflow(
         creator_root.mkdir(parents=True, exist_ok=True)
         sub_folder = creator_root / "video"
         sub_folder.mkdir(parents=True, exist_ok=True)
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
         # Migrate any legacy files sitting directly in creator_root to video/
         try:
@@ -93,11 +95,20 @@ def run_workflow(
                     shutil.move(str(legacy_file), str(dest_file))
         except Exception:
             pass
+
+        try:
+            from core.video_engine import migrate_and_clean_subtitles
+            migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+            migrate_and_clean_subtitles(creator_root, subtitle_folder)
+        except Exception:
+            pass
     else:
         # Quick grab: dump directly into target_root, no creator subfolder
         creator_root = target_root
         sub_folder = target_root
         sub_folder.mkdir(parents=True, exist_ok=True)
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
     is_quick_grab = not is_vacuum
 
@@ -360,6 +371,7 @@ def run_workflow(
                             active_hook,
                             quality=quality,
                             fixed_title=resolved_file_path.stem,
+                            subtitle_dir=subtitle_folder,
                         )
                     finally:
                         live_active[0] = False
@@ -369,6 +381,11 @@ def run_workflow(
                 if success:
                     tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
+                    try:
+                        from core.video_engine import migrate_and_clean_subtitles
+                        migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+                    except Exception:
+                        pass
                     break
                 else:
                     from core.video_engine import handle_internet_loss

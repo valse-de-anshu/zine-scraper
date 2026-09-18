@@ -175,7 +175,7 @@ Creator visual assets, multi-image posts, profiles, and video reels.
 ---
 
 ### 🔞 2_NSFW_ADULT / ADULT_ANIME
-Adult anime (Hentai) streaming portals with Playwright headless bypass and custom HLS segment decryption.
+Adult anime (Hentai) streaming portals with Playwright headless bypass and custom HLS segment decryption. Subtitles are automatically standardized and stored as `.srt` files inside `<media_root>/video/subtitle/` (never stored loose alongside video files). Titles with 1 episode always prompt the user to choose between **Whole Franchise** (vacuum) and **Single Episode** (quick grab).
 
 | Scraper | Primary & Alternate Domains | What It Provides | What It Is Most Famous For |
 |---|---|---|---|

@@ -95,6 +95,13 @@ def run_workflow(
                     shutil.move(str(legacy_file), str(dest_file))
         except Exception:
             pass
+
+        try:
+            from core.video_engine import migrate_and_clean_subtitles
+            migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+            migrate_and_clean_subtitles(creator_root, subtitle_folder)
+        except Exception:
+            pass
     else:
         # Quick grab: dump directly into target_root, no creator subfolder
         creator_root = target_root
@@ -384,6 +391,8 @@ def run_workflow(
                                 clean_title=resolved_file_path.stem,
                                 lang=sub_info.get("lang", "en")
                             )
+                        from core.video_engine import migrate_and_clean_subtitles
+                        migrate_and_clean_subtitles(sub_folder, subtitle_folder)
                     except Exception as e:
                         logger.debug(f"[Hentaimama] Subtitle fetch error: {e}")
                     break

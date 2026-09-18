@@ -1,3 +1,19 @@
+# Progress Report - September 19, 2026 (Fix: Hentai 1-Episode Franchise Prompt & Standardized Subtitle /video/subtitle/.srt Storage)
+
+- **Hentai 1-Episode Interactive Prompt Fix (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*/tui.py`):**
+  - **Identified Problem**: When a hentai title had only 1 episode (e.g. standalone OVA, movie, or single-episode release), `tui.py` across adult anime portals had an `elif len(videos) == 1:` condition that immediately bypassed the user prompt and forced Quick Grab (`is_vacuum = False`). This prevented users from archiving the title with its proper creator/series folder, cover image, and metadata into Vacuum/Batch.
+  - **Resolution**: Removed the hardcoded 1-episode Quick Grab bypass across all hentai portals (`hanime`, `hanime_red`, `hentaicity`, `hentaihaven`, `hentaihaven_co`, `hentaimama`, `hstream`, `ohentai`, `oppai_stream`). Interactive runs now consistently prompt the user to choose between **Whole Franchise** (Vacuum) and **Single Episode** (Quick Grab). If Single Episode is selected with 1 episode, it downloads that episode without redundant episode-list prompts; if Whole Franchise is selected, it archives cleanly with complete metadata and proper folder hierarchy. In headless Batch mode, `--0`, `--A`/`--a`, and series vs episode URLs continue to automatically decide without interactive prompts.
+
+- **Standardized Subtitle Storage & WebVTT to SRT Conversion (`core/video_engine.py`, `scrapers/2_NSFW_ADULT/ADULT_ANIME/*/`):**
+  - **Identified Problem**: Subtitles on several hentai platforms were being dumped loose directly in the `video/` directory alongside video files (e.g. `hentaihaven_co` writing `.vtt` into `output_dir`), or retaining `.vtt` extension instead of clean SubRip `.srt` format.
+  - **Resolution**:
+    - Implemented `vtt_to_srt()`, `save_subtitle_as_srt()`, and `migrate_and_clean_subtitles()` in `core/video_engine.py`.
+    - Automatically normalizes WebVTT timestamps (period to comma), strips WebVTT headers/styling cues, and emits standard 1-based `.srt` cues.
+    - Standardized subtitle directory across all hentai platforms to `<media_root>/video/subtitle/<clean_title>.srt`.
+    - Added pre-run and post-download automated migration ensuring that any legacy loose subtitles in `video/` or creator root are moved to `video/subtitle/`, converted to `.srt`, and temporary/loose `.vtt` files removed.
+
+---
+
 # Progress Report - September 19, 2026 (Refactor: Scraper Categorization, Taxonomy Reorganization & Architecture Guides)
 
 - **Categorized Scraper Taxonomy Reorganization (`scrapers/1_SFW/`, `scrapers/2_NSFW_ADULT/`, `scrapers/3_SYSTEM/`):**

@@ -113,9 +113,6 @@ def handle_hanime_red_tui(
                     videos[:] = videos[:chapter_limit]
                     metadata["Total Videos"] = len(videos)
 
-    elif len(videos) == 1:
-        scraper.is_playlist = False
-        is_vacuum = False
     else:
         # Interactive mode
         if sys.stdin.isatty():

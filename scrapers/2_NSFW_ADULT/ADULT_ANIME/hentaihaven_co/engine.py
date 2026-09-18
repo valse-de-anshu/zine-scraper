@@ -117,6 +117,7 @@ class HentaiHavenCoEngine(VideoEngine):
         progress_hook: Callable,
         quality: str = "1080p",
         fixed_title: Optional[str] = None,
+        subtitle_dir: Optional[Path] = None,
     ) -> bool:
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -129,6 +130,16 @@ class HentaiHavenCoEngine(VideoEngine):
 
         result_path = output_dir / f"{clean_title}.mp4"
 
+        # Resolve subtitle directory
+        if subtitle_dir is None:
+            if output_dir.name == "video":
+                sub_dir = output_dir / "subtitle"
+            else:
+                sub_dir = output_dir / "video" / "subtitle"
+        else:
+            sub_dir = subtitle_dir
+        sub_dir.mkdir(parents=True, exist_ok=True)
+
         try:
             m3u8_url = self._extract_nhplayer_m3u8(url)
             if not m3u8_url:
@@ -140,13 +151,12 @@ class HentaiHavenCoEngine(VideoEngine):
                 for i, sub in enumerate(self._last_subtitles):
                     sub_url = sub.get("url") if isinstance(sub, dict) else sub
                     if not sub_url: continue
-                    ext = ".vtt" if ".vtt" in sub_url.lower() else ".srt"
                     lang = sub.get("label", "en") if isinstance(sub, dict) else "en"
-                    sub_dest = output_dir / f"{clean_title}.{lang}{ext}"
                     try:
                         r = requests.get(sub_url, headers=self.headers, timeout=10)
                         if r.status_code == 200:
-                            sub_dest.write_bytes(r.content)
+                            from core.video_engine import save_subtitle_as_srt
+                            save_subtitle_as_srt(r.content, sub_dir, clean_title, lang=lang)
                     except Exception as e:
                         logger.error(f"Failed to fetch subtitle {sub_url}: {e}")
 
@@ -162,8 +172,12 @@ class HentaiHavenCoEngine(VideoEngine):
                 custom_thumbnail=None
             )
             
-            if success and result_path.exists():
-                pass
+            if success:
+                try:
+                    from core.video_engine import migrate_and_clean_subtitles
+                    migrate_and_clean_subtitles(output_dir, sub_dir)
+                except Exception:
+                    pass
                 
             return success
 

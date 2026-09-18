@@ -210,19 +210,17 @@ class HanimeRedEngine(VideoEngine):
                 try:
                     r = self.session.get(sub_url, timeout=(10, 25))
                     if r.status_code == 200 and len(r.content) > 50:
-                        dest_lang = output_dir / f"{clean_title}.{lang}{ext}"
-                        dest_default = output_dir / f"{clean_title}{ext}"
-
-                        dest_lang.write_bytes(r.content)
-                        dest_default.write_bytes(r.content)
+                        from core.video_engine import save_subtitle_as_srt
+                        dest_lang = save_subtitle_as_srt(r.content, output_dir, clean_title, lang=lang)
+                        dest_default = save_subtitle_as_srt(r.content, output_dir, clean_title, lang=None)
 
                         if lang == "en":
-                            logger.info(f"Downloaded English subtitle: {dest_lang.name}")
+                            logger.info(f"Downloaded English subtitle (.srt): {dest_lang.name}")
                         else:
                             if not has_english:
-                                logger.info(f"English subtitle not found; falling back to {name} ({lang}) subtitle: {dest_lang.name}")
+                                logger.info(f"English subtitle not found; falling back to {name} ({lang}) subtitle (.srt): {dest_lang.name}")
                             else:
-                                logger.info(f"English subtitle unavailable; fell back to {name} ({lang}) subtitle: {dest_lang.name}")
+                                logger.info(f"English subtitle unavailable; fell back to {name} ({lang}) subtitle (.srt): {dest_lang.name}")
                         return True
                 except Exception as e:
                     if attempt == 2:
@@ -252,7 +250,10 @@ class HanimeRedEngine(VideoEngine):
 
         # Resolve subtitle folder inside video: output_dir / "subtitle"
         if subtitle_dir is None:
-            subtitle_dir = output_dir / "subtitle"
+            if output_dir.name == "video":
+                subtitle_dir = output_dir / "subtitle"
+            else:
+                subtitle_dir = output_dir / "video" / "subtitle"
         subtitle_dir.mkdir(parents=True, exist_ok=True)
 
         # 1. Spawn concurrent subtitle download in parallel alongside video stream download (into video/subtitle/)
@@ -279,12 +280,17 @@ class HanimeRedEngine(VideoEngine):
 
         # 4. Post-download verification: if video succeeded and subtitles were not saved, retry once
         if success:
-            has_sub = any(subtitle_dir.glob(f"{clean_title}*.srt")) or any(subtitle_dir.glob(f"{clean_title}*.vtt"))
+            has_sub = any(subtitle_dir.glob(f"{clean_title}*.srt"))
             if not has_sub:
                 try:
                     self.download_subtitles(url, subtitle_dir, clean_title)
                 except Exception as e:
                     logger.debug(f"Subtitle recovery notice: {e}")
+            try:
+                from core.video_engine import migrate_and_clean_subtitles
+                migrate_and_clean_subtitles(output_dir, subtitle_dir)
+            except Exception:
+                pass
 
         return success
 

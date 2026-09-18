@@ -68,6 +68,8 @@ def run_workflow(
         if content_type == "video":
             sub_folder = creator_root / "video"
             sub_folder.mkdir(parents=True, exist_ok=True)
+            subtitle_folder = sub_folder / "subtitle"
+            subtitle_folder.mkdir(parents=True, exist_ok=True)
             # Migrate any legacy files sitting directly in creator_root to video/
             try:
                 import shutil
@@ -75,6 +77,9 @@ def run_workflow(
                     dest_file = sub_folder / legacy_file.name
                     if not dest_file.exists():
                         shutil.move(str(legacy_file), str(dest_file))
+                from core.video_engine import migrate_and_clean_subtitles
+                migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+                migrate_and_clean_subtitles(creator_root, subtitle_folder)
             except Exception:
                 pass
         else:
@@ -82,6 +87,8 @@ def run_workflow(
     else:
         target_root.mkdir(parents=True, exist_ok=True)
         sub_folder = target_root
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
     # ── Metadata tree ─────────────────────────────────────────────────────
     root_tree = Tree(f"[site]◆[/site] [title]{series_title}[/title]", guide_style="unselected")
@@ -303,6 +310,11 @@ def run_workflow(
         _LIVE_INSTANCE = None
 
         if success:
+            try:
+                from core.video_engine import migrate_and_clean_subtitles
+                migrate_and_clean_subtitles(vid_sub_folder, subtitle_folder)
+            except Exception:
+                pass
             tracker.mark_downloaded(url, vid_id, title=series_title)
             hist = f"  [success]●[/success] {display_name}"
         else:

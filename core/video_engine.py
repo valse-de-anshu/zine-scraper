@@ -1,8 +1,10 @@
 import yt_dlp
 import json
 import logging
+import re
+import shutil
 from pathlib import Path
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, Union
 import requests
 import time
 from bs4 import BeautifulSoup
@@ -814,3 +816,151 @@ def handle_internet_loss() -> bool:
                 active_live.start()
             except Exception:
                 pass
+
+
+def vtt_to_srt(vtt_text: str) -> str:
+    """
+    Converts WebVTT format text to standard SubRip (.srt) format text.
+    Handles timestamp formatting (period -> comma), strips WEBVTT headers,
+    cue styling/positioning tags, and ensures valid sequential 1-based cue numbers.
+    """
+    if not vtt_text or not isinstance(vtt_text, str):
+        return ""
+
+    # If it's already an SRT format (starts with a digit cue number and has --> with commas), return as is
+    if re.match(r'^\s*\d+\s*\n\s*\d{2}:\d{2}:\d{2},\d{3}\s*-->', vtt_text):
+        return vtt_text.strip() + "\n"
+
+    lines = vtt_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ts_pattern = re.compile(
+        r'(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})'
+    )
+
+    def normalize_timestamp(m):
+        h1 = m.group(1) or "00"
+        if len(h1) == 1: h1 = "0" + h1
+        m1, s1, ms1 = m.group(2), m.group(3), m.group(4)
+
+        h2 = m.group(5) or "00"
+        if len(h2) == 1: h2 = "0" + h2
+        m2, s2, ms2 = m.group(6), m.group(7), m.group(8)
+
+        return f"{h1}:{m1}:{s1},{ms1} --> {h2}:{m2}:{s2},{ms2}"
+
+    cues = []
+    current_cue = {"time": "", "lines": []}
+    in_header = True
+    in_style = False
+
+    for line in lines:
+        stripped = line.strip()
+        if in_header:
+            if stripped.startswith("WEBVTT") or stripped.startswith("NOTE") or stripped.startswith("REGION"):
+                continue
+            if stripped.startswith("STYLE"):
+                in_style = True
+                continue
+            if in_style:
+                if stripped == "":
+                    in_style = False
+                continue
+            if stripped == "":
+                in_header = False
+                continue
+
+        match = ts_pattern.search(line)
+        if match:
+            in_header = False
+            if current_cue["time"] and current_cue["lines"]:
+                cues.append(current_cue)
+            current_cue = {"time": normalize_timestamp(match), "lines": []}
+        elif current_cue["time"]:
+            if stripped == "":
+                if current_cue["lines"]:
+                    cues.append(current_cue)
+                    current_cue = {"time": "", "lines": []}
+            else:
+                # Strip cue settings or inline styling tags like <c.color>, <00:01.000>
+                clean_line = re.sub(r'<\/?c[^>]*>', '', line)
+                clean_line = re.sub(r'<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}>', '', clean_line)
+                clean_line = clean_line.strip()
+                if clean_line:
+                    current_cue["lines"].append(clean_line)
+
+    if current_cue["time"] and current_cue["lines"]:
+        cues.append(current_cue)
+
+    srt_blocks = []
+    for idx, cue in enumerate(cues, 1):
+        srt_blocks.append(f"{idx}\n{cue['time']}\n" + "\n".join(cue["lines"]))
+
+    return "\n\n".join(srt_blocks).strip() + "\n" if srt_blocks else ""
+
+
+def save_subtitle_as_srt(content: Union[str, bytes], dest_dir: Path, base_name: str, lang: Optional[str] = None) -> Path:
+    """
+    Saves subtitle content as .srt in dest_dir.
+    Converts VTT to SRT if content is WebVTT.
+    Returns the path to the saved .srt file.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, bytes):
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1", errors="replace")
+    else:
+        text = str(content)
+
+    srt_text = vtt_to_srt(text) or text
+
+    stem = f"{base_name}.{lang}" if lang else base_name
+    dest_file = dest_dir / f"{stem}.srt"
+    dest_file.write_text(srt_text, encoding="utf-8")
+    return dest_file
+
+
+def migrate_and_clean_subtitles(video_dir: Path, subtitle_dir: Path):
+    """
+    Ensures no subtitle files (.srt, .vtt, .ass) sit directly in video_dir.
+    Migrates any loose subtitles into subtitle_dir, converting .vtt to .srt and unlinking .vtt.
+    """
+    if not video_dir.exists():
+        return
+    subtitle_dir.mkdir(parents=True, exist_ok=True)
+
+    # Migrate loose subtitles from video_dir to subtitle_dir
+    for sub in list(video_dir.glob("*.vtt")) + list(video_dir.glob("*.srt")) + list(video_dir.glob("*.ass")):
+        if sub.is_file() and sub.parent == video_dir:
+            dest_srt = subtitle_dir / f"{sub.stem}.srt"
+            if sub.suffix.lower() == ".vtt":
+                try:
+                    text = sub.read_text(encoding="utf-8-sig", errors="replace")
+                    srt_text = vtt_to_srt(text) or text
+                    dest_srt.write_text(srt_text, encoding="utf-8")
+                    sub.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            elif sub.suffix.lower() == ".srt":
+                if not dest_srt.exists():
+                    shutil.move(str(sub), str(dest_srt))
+                else:
+                    sub.unlink(missing_ok=True)
+            elif sub.suffix.lower() == ".ass":
+                if not dest_srt.exists():
+                    shutil.move(str(sub), str(subtitle_dir / sub.name))
+                else:
+                    sub.unlink(missing_ok=True)
+
+    # Also clean any legacy .vtt in subtitle_dir itself by converting to .srt
+    for vtt in list(subtitle_dir.glob("*.vtt")):
+        if vtt.is_file():
+            try:
+                dest_srt = subtitle_dir / f"{vtt.stem}.srt"
+                text = vtt.read_text(encoding="utf-8-sig", errors="replace")
+                srt_text = vtt_to_srt(text) or text
+                dest_srt.write_text(srt_text, encoding="utf-8")
+                vtt.unlink(missing_ok=True)
+            except Exception:
+                pass
+
