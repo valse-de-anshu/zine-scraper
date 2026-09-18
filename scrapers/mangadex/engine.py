@@ -134,6 +134,7 @@ class BaseScraper:
             "User-Agent": "ZineScraper/1.0 (https://github.com/valse-de-anshu/zine-scraper)",
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
         })
+        self.session = self.dl_session
 
     def download_image(self, src: str, path: Path) -> int:
         """Download image into given path, preserving authentic format and avoiding zero-byte writes."""
@@ -187,12 +188,10 @@ class BaseScraper:
 
         for attempt in range(1, 4):
             try:
-                headers = HEADERS.copy()
-                headers["Referer"] = f"https://{self.domain}/"
-                r = self.session.get(cover_url, stream=True, timeout=(10, 25), headers=headers)
+                r = self.dl_session.get(cover_url, stream=True, timeout=(10, 25))
                 if r.status_code == 403:
-                    headers.pop("Referer", None)
-                    r = self.session.get(cover_url, stream=True, timeout=(10, 25), headers=headers)
+                    time.sleep(1)
+                    r = requests.get(cover_url, stream=True, timeout=(10, 25))
 
                 if r.status_code == 200:
                     with open(raw_temp, "wb") as f:
