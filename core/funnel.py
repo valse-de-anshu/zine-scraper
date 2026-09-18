@@ -614,6 +614,11 @@ class MainPrompt:
                             self.cursor_pos -= 1
                         self._update_suggestion()
                         self.history_manager.index = len(self.history_manager.history)
+                    elif key in ('ESC', '\x1b'):
+                        self.input_text = ""
+                        self.cursor_pos = 0
+                        self.suggestion = ""
+                        self.history_manager.index = len(self.history_manager.history)
                     elif key == '\x03': # Ctrl+C
                         clean_exit(forceful=True)
                     elif len(key) >= 1:
