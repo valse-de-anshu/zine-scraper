@@ -1,9 +1,14 @@
 # Progress Report - September 18, 2026 (HanimeRed Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Progress Bar)
 
 - **HanimeRed Scraper & Engine Upgrades (`scrapers/hanime_red/`):**
-  - **High-Speed Direct Video Downloading (`engine.py`)**:
+  - **High-Speed Direct Video Downloading & Pure-Python Subtitle Extraction (`engine.py`, `plugins/yt_dlp_plugins/`):**
     - Eliminated slow Playwright/Chromium headless extraction subprocess that previously caused 30-90s timeouts and freezes before every download.
     - Video extraction is handled directly by yt-dlp's native `HanimeRedIE` plugin in seconds with aria2c multi-connection acceleration.
+    - Added fast pure-Python English-first subtitle extraction and download from `nhplayer` iframes and streaming CDNs (`cdn.htstreaming.com`). Prioritizes English (`.en.srt`), and if English is not found or fails, automatically falls back to any available subtitle language (e.g. Spanish, French, Japanese, etc.), saving both `<Title>.<lang>.srt` and `<Title>.srt` directly into the `video/subtitle/` folder.
+    - **Concurrent Parallel Downloading**: Subtitle extraction and download runs asynchronously in parallel *alongside* the video download, ensuring subtitles are retrieved immediately without waiting for the multi-minute video stream to finish.
+    - Built network resilience with HTTPAdapter retry backoff and extended read timeouts `(10, 25)` to prevent read timeouts on slow origin servers.
+    - Implemented dual-phase subtitle verification (concurrent pre-download fetch + post-video completion retry) and automated self-healing for existing videos without subtitles.
+    - Upgraded `core/video_engine.py` to automatically preserve and migrate all companion subtitle files (`.srt`, `.vtt`, `.ass`) from `💩/` directly into the `video/subtitle/` folder.
   - **Rich Metadata & Full JSON-LD Extraction (`scraper.py`)**:
     - Implemented deep JSON-LD parsing (`CollectionPage` and `VideoObject` schemas) on series and episode pages.
     - Extracts complete metadata: Series Title, Alternative Title (`alternateName`), Studio (`productionCompany`), Release Date (`uploadDate`), Views (`WatchAction`), Likes (`LikeAction`), Tags/Genres (merged from schema and HTML links), and detailed episode synopsis/description.

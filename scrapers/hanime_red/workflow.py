@@ -81,14 +81,44 @@ def run_workflow(
         creator_root.mkdir(parents=True, exist_ok=True)
         sub_folder = creator_root / "video"
         sub_folder.mkdir(parents=True, exist_ok=True)
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
-        # Migrate any legacy files sitting directly in creator_root to video/
+        # Migrate any legacy files or subtitles to proper destinations
         try:
             import shutil
             for legacy_file in creator_root.glob(f"*.{ext}"):
                 dest_file = sub_folder / legacy_file.name
                 if not dest_file.exists():
                     shutil.move(str(legacy_file), str(dest_file))
+            # Clean up and migrate legacy peer subtitles folder if it exists
+            for old_name in ["subtitles", "subtitle"]:
+                old_dir = creator_root / old_name
+                if old_dir.exists() and old_dir != subtitle_folder:
+                    for sub in list(old_dir.glob("*.srt")) + list(old_dir.glob("*.vtt")):
+                        dest_sub = subtitle_folder / sub.name
+                        if not dest_sub.exists():
+                            shutil.move(str(sub), str(dest_sub))
+                        else:
+                            sub.unlink(missing_ok=True)
+                    try:
+                        old_dir.rmdir()
+                    except Exception:
+                        pass
+            # Migrate any subtitles directly in sub_folder (video/) into video/subtitle/
+            for sub in list(sub_folder.glob("*.srt")) + list(sub_folder.glob("*.vtt")):
+                dest_sub = subtitle_folder / sub.name
+                if not dest_sub.exists():
+                    shutil.move(str(sub), str(dest_sub))
+                else:
+                    sub.unlink(missing_ok=True)
+            # Migrate any subtitles sitting directly in creator_root into video/subtitle/
+            for sub in list(creator_root.glob("*.srt")) + list(creator_root.glob("*.vtt")):
+                dest_sub = subtitle_folder / sub.name
+                if not dest_sub.exists():
+                    shutil.move(str(sub), str(dest_sub))
+                else:
+                    sub.unlink(missing_ok=True)
         except Exception:
             pass
     else:
@@ -96,6 +126,8 @@ def run_workflow(
         creator_root = target_root
         sub_folder = target_root
         sub_folder.mkdir(parents=True, exist_ok=True)
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
     is_quick_grab = not is_vacuum
 
@@ -209,6 +241,14 @@ def run_workflow(
 
         # ── Step 1 + 2 check: already done? ─────────────────────────────
         if is_downloaded:
+            # Self-healing: ensure subtitle files (.srt/.vtt) are present in video/subtitle/
+            has_sub = any(subtitle_folder.glob(f"{resolved_file_path.stem}*.srt")) or any(subtitle_folder.glob(f"{resolved_file_path.stem}*.vtt"))
+            if not has_sub:
+                try:
+                    scraper.engine.download_subtitles(vid_url, subtitle_folder, resolved_file_path.stem)
+                except Exception as e:
+                    logger.debug(f"Subtitle healing error for {resolved_file_path.name}: {e}")
+
             tracker.mark_downloaded(scraper.url, vid_id, title=title)
             hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
             console.print(hist_log)
@@ -344,7 +384,8 @@ def run_workflow(
                             output_dir=sub_folder,
                             progress_hook=active_hook,
                             quality=quality,
-                            fixed_title=resolved_file_path.stem
+                            fixed_title=resolved_file_path.stem,
+                            subtitle_dir=subtitle_folder
                         )
                     finally:
                         live_active[0] = False
@@ -352,6 +393,12 @@ def run_workflow(
                 set_active_live(None)
 
                 if success:
+                    has_sub = any(subtitle_folder.glob(f"{resolved_file_path.stem}*.srt")) or any(subtitle_folder.glob(f"{resolved_file_path.stem}*.vtt"))
+                    if not has_sub:
+                        try:
+                            engine.download_subtitles(vid_url, subtitle_folder, resolved_file_path.stem)
+                        except Exception:
+                            pass
                     tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
                     break

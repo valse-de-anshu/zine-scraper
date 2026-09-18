@@ -218,6 +218,23 @@ class VideoEngine:
                     real_filename = generated.name
                     real_final_dest = videos_dir / real_filename
                     shutil.move(str(generated), str(real_final_dest))
+
+                    # Move companion subtitle / lyrics files matching clean_title
+                    sub_dest_dir = (videos_dir / "subtitle") if not is_audio else ((videos_dir.parent / "lyrics") if videos_dir.name == "audio" else videos_dir)
+                    sub_dest_dir.mkdir(parents=True, exist_ok=True)
+
+                    for sub_file in poop_dir.iterdir():
+                        if sub_file.is_file() and sub_file.name.startswith(clean_title):
+                            if sub_file.suffix.lower() in ['.srt', '.vtt', '.ass'] and not is_audio:
+                                try:
+                                    shutil.move(str(sub_file), str(sub_dest_dir / sub_file.name))
+                                except Exception:
+                                    pass
+                            elif sub_file.suffix.lower() in ['.lrc'] and is_audio:
+                                try:
+                                    shutil.move(str(sub_file), str(sub_dest_dir / sub_file.name))
+                                except Exception:
+                                    pass
                     
                     if custom_thumbnail and custom_thumbnail.exists():
                         self._apply_custom_metadata(real_final_dest, custom_thumbnail, is_audio, fixed_title, fixed_artist, fixed_album)

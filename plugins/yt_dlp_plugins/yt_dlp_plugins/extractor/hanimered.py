@@ -7,6 +7,30 @@ import hashlib
 from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.utils import js_to_json
 
+LANG_PATTERNS = [
+    ('en', 'English', [r'english', r'\beng\b', r'\ben\b', r'_eng?\.', r'\.eng?\.', r'\[eng?\]']),
+    ('es', 'Spanish', [r'spanish', r'espanol', r'español', r'\bspa\b', r'\bes\b', r'_spa?\.', r'\.spa?\.', r'\[spa?\]']),
+    ('fr', 'French', [r'french', r'francais', r'français', r'\bfre\b', r'\bfr\b', r'\bfra\b']),
+    ('de', 'German', [r'german', r'deutsch', r'\bger\b', r'\bdeu\b', r'\bde\b']),
+    ('pt', 'Portuguese', [r'portuguese', r'portugues', r'português', r'\bpor\b', r'\bpt\b']),
+    ('it', 'Italian', [r'italian', r'italiano', r'\bita\b', r'\bit\b']),
+    ('ja', 'Japanese', [r'japanese', r'nihongo', r'\bjpn\b', r'\bja\b', r'\bjp\b']),
+    ('zh', 'Chinese', [r'chinese', r'mandarin', r'\bchi\b', r'\bzho\b', r'\bzh\b']),
+    ('ru', 'Russian', [r'russian', r'\brus\b', r'\bru\b']),
+    ('ko', 'Korean', [r'korean', r'\bkor\b', r'\bko\b']),
+    ('ar', 'Arabic', [r'arabic', r'\bara\b', r'\bar\b']),
+    ('id', 'Indonesian', [r'indonesian', r'bahasa', r'\bind\b', r'\bid\b']),
+]
+
+def detect_subtitle_lang(text):
+    t = text.lower()
+    for code, name, patterns in LANG_PATTERNS:
+        for p in patterns:
+            if re.search(p, t):
+                return code, name
+    return 'und', 'Available'
+
+
 class HanimeRedIE(InfoExtractor):
     _VALID_URL = r'https?://(?:www\.)?hanime\.red/(?!serie(?:s)?/|tags-page/|hentai/|login-page/|register-page/)(?P<id>[0-9a-z\-]+)/?$'
 
@@ -84,11 +108,46 @@ class HanimeRedIE(InfoExtractor):
             },
             headers={'X-Requested-With': 'XMLHttpRequest'})
 
+        # Extract all available subtitles, prioritizing English with fallback to any available language
+        subtitles = {}
+        seen_sub_urls = set()
+
+        def add_sub_entry(candidate_url, label_hint=''):
+            if not candidate_url or candidate_url in seen_sub_urls:
+                return
+            if not ('.srt' in candidate_url.lower() or '.vtt' in candidate_url.lower()):
+                return
+            seen_sub_urls.add(candidate_url)
+            lang_code, lang_name = detect_subtitle_lang(f'{label_hint} {candidate_url}')
+            ext = 'vtt' if '.vtt' in candidate_url.lower() else 'srt'
+            subtitles.setdefault(lang_code, []).append({
+                'url': candidate_url,
+                'ext': ext,
+                'name': lang_name,
+            })
+
+        s_match = re.search(r'[?&]s=([a-zA-Z0-9+/=]+)', real_player_url)
+        if s_match:
+            try:
+                decoded = base64.b64decode(s_match.group(1)).decode('utf-8', errors='ignore')
+                if decoded.startswith('http'):
+                    add_sub_entry(decoded, 'Main Player')
+            except Exception:
+                pass
+
+        for tm in re.finditer(r'\{[^{}]*file\s*:\s*"([^"]+\.(?:srt|vtt)[^"]*)"[^{}]*\}', real_player_page):
+            block = tm.group(0)
+            sub_f = tm.group(1).replace(r'\/', '/')
+            lbl_m = re.search(r'label\s*:\s*"([^"]+)"', block)
+            lbl = lbl_m.group(1) if lbl_m else ''
+            add_sub_entry(sub_f, lbl)
+
         return {
             'id': video_id,
             'title': title,
             'url': response.get('url'),
             'ext': 'mp4',
+            'subtitles': subtitles,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://nhplayer.com/',
