@@ -1,3 +1,18 @@
+# Progress Report - September 18, 2026 (Fix: Interactive Single Episode Selection & Selector Default Index Across Hentai Scrapers)
+
+- **Interactive Episode Selection Across Hentai Scrapers (`scrapers/*/tui.py`, `core/ui.py`):**
+  - **Selector `default_index` Support (`core/ui.py`):** Added `default_index: int = 0` parameter with bounds validation to `Selector` so interactive menus and episode pickers can start with the matching episode pre-selected.
+  - **HentaiCity Single Episode Picker (`scrapers/hentaicity/tui.py`):**
+    - Fixed bug where picking "Single Episode" on an episode URL bypassed the episode selector because `filtered` matched the current page URL.
+    - When `len(videos) > 1 and sys.stdin.isatty()`, the TUI now always displays the episode selection list with the active episode pre-selected as the default cursor position, allowing the user to pick any other episode or press Enter for the current one.
+    - Added batch mode flag compliance (`_quick_grab`, `_batch_quick_grab`, `_chapter_limit`) to hentaicity TUI.
+  - **HentaiCity Workflow Title Polish (`scrapers/hentaicity/workflow.py`):**
+    - Preserved real series name for quick grab single episode downloads (`<Series Name> - Episode <N>`) instead of collapsing the title down to just `Episode <N>`.
+  - **Universal Hentai Scraper Alignment:**
+    - Applied the same seamless episode selector and `default_index` behavior to all hentai scrapers (`hanime_red`, `hentaihaven`, `hentaihaven_co`, `hentaimama`, `ohentai`, `hstream`, `oppai_stream`).
+
+---
+
 # Progress Report - September 18, 2026 (HentaiHaven Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Minimal Blinking Progress)
 
 - **HentaiHaven Scraper & Engine Upgrades (`scrapers/hentaihaven/`):**

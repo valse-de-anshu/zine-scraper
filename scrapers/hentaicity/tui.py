@@ -71,8 +71,24 @@ def handle_hentaicity_tui(
     scraper.franchise_structure = "flat"
 
     if is_batch_mode:
-        scraper.is_playlist = True
-        is_vacuum = True
+        if content_type == "gallery":
+            is_vacuum = True
+        elif getattr(scraper, "_quick_grab", False) or getattr(scraper, "_batch_quick_grab", False):
+            is_vacuum = False
+            scraper.is_playlist = False
+            norm = url.rstrip("/")
+            filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm]
+            videos[:] = filtered if filtered else videos[:1]
+            metadata["Total Videos"] = len(videos)
+        else:
+            scraper.is_playlist = True
+            is_vacuum = True
+
+        chapter_limit = getattr(scraper, "_chapter_limit", None)
+        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+            if videos and len(videos) > chapter_limit:
+                videos[:] = videos[:chapter_limit]
+                metadata["Total Videos"] = len(videos)
     elif content_type == "gallery":
         # Gallery is always downloaded as a whole (it's a single album)
         is_vacuum = True
@@ -90,16 +106,22 @@ def handle_hentaicity_tui(
             ], "Download", vertical=True).select()
 
             if choice == "single":
-                norm = url.rstrip("/")
-                filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm]
-                if not filtered and len(videos) > 1 and sys.stdin.isatty():
+                if len(videos) > 1 and sys.stdin.isatty():
+                    norm = url.rstrip("/")
+                    default_idx = 0
+                    for i, v in enumerate(videos):
+                        if v.get("url", "").rstrip("/") == norm:
+                            default_idx = i
+                            break
                     ep_options = [(v.get("title", f"Episode {i+1}"), i) for i, v in enumerate(videos)]
-                    selected_idx = Selector(ep_options, "Select Episode", vertical=True).select()
+                    selected_idx = Selector(ep_options, "Select Episode", vertical=True, default_index=default_idx).select()
                     if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos):
                         videos[:] = [videos[selected_idx]]
                     else:
                         return
                 else:
+                    norm = url.rstrip("/")
+                    filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm]
                     videos[:] = filtered if filtered else videos[:1]
                 metadata["Total Videos"] = len(videos)
                 scraper.is_playlist = False

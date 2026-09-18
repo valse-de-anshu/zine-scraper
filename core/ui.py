@@ -759,10 +759,10 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 class Selector:
-    def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", vertical: bool = False, align_width: int = 8):
+    def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", vertical: bool = False, align_width: int = 8, default_index: int = 0):
         self.options = options
         self.title = title
-        self.index = 0
+        self.index = default_index if (isinstance(default_index, int) and 0 <= default_index < len(options)) else 0
         self.vertical = vertical
         self.align_width = align_width
 

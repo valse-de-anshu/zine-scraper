@@ -91,16 +91,22 @@ def handle_hentaimama_tui(
             ], "Download", vertical=True).select()
 
             if choice == "single":
-                norm_url = url.rstrip("/")
-                filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
-                if not filtered and len(videos) > 1 and sys.stdin.isatty():
+                if len(videos) > 1 and sys.stdin.isatty():
+                    norm_url = url.rstrip("/")
+                    default_idx = 0
+                    for i, v in enumerate(videos):
+                        if v.get("url", "").rstrip("/") == norm_url:
+                            default_idx = i
+                            break
                     ep_options = [(v.get("title", f"Episode {i+1}"), i) for i, v in enumerate(videos)]
-                    selected_idx = Selector(ep_options, "Select Episode", vertical=True).select()
+                    selected_idx = Selector(ep_options, "Select Episode", vertical=True, default_index=default_idx).select()
                     if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos):
                         videos[:] = [videos[selected_idx]]
                     else:
                         return
                 else:
+                    norm_url = url.rstrip("/")
+                    filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
                     videos[:] = filtered if filtered else videos[:1]
                 metadata["Total Videos"] = len(videos)
                 scraper.is_playlist = False

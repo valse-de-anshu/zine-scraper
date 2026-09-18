@@ -45,9 +45,14 @@ def run_workflow(
 
     engine: HentaicityEngine = scraper.engine
     content_type = metadata.get("Content Type", "video")
-    series_title = metadata.get("Channel/Series", "Unknown")
+    series_name = metadata.get("Channel/Series", "Unknown")
+    series_title = series_name
     if not is_vacuum and videos and videos[0].get("title"):
-        series_title = videos[0]["title"]
+        vid_t = videos[0]["title"]
+        if series_name and series_name != "Unknown" and not vid_t.lower().startswith(series_name.lower()):
+            series_title = f"{series_name} - {vid_t}"
+        else:
+            series_title = vid_t
     if series_title and series_title != "Unknown":
         tracker.set_title(url, series_title)
     scraper.title = series_title
@@ -158,8 +163,8 @@ def run_workflow(
         vid_sub_folder = sub_folder
 
         target_vid_title = vid_title
-        if not is_vacuum and series_title and series_title != "Series" and not vid_title.lower().startswith(series_title.lower()):
-            target_vid_title = f"{series_title} - {vid_title}"
+        if not is_vacuum and series_name and series_name != "Series" and not vid_title.lower().startswith(series_name.lower()):
+            target_vid_title = f"{series_name} - {vid_title}"
 
         resolved_path, is_done = tracker.resolve_download_path(
             vid_sub_folder, vid_id, target_vid_title, ext
