@@ -296,6 +296,7 @@ class HentaiHavenEngine(VideoEngine):
             alt_title=alt_title,
             author=studio or clean_model,
             artist=studio,
+            studio=studio,
             description=summary,
             tags=tags_list,
             year=year,

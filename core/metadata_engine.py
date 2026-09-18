@@ -85,6 +85,7 @@ class ZineMetadataPayload:
     alt_title: Optional[str] = ""
     author: Optional[str] = ""                                        # Author / Creator / Uploader
     artist: Optional[str] = ""                                        # Artist / Studio
+    studio: Optional[str] = ""                                        # Studio
     description: Optional[str] = ""
     status: Optional[str] = ""                                        # "Ongoing", "Completed", "Hiatus", etc.
     rating: Optional[str] = ""                                        # Score / Rating (e.g. "8.8" or "9.5/10")
@@ -157,6 +158,11 @@ class MetadataEngine:
                 clean_artist = _clean_str(payload.artist)
                 if clean_artist:
                     data["artist"] = clean_artist
+
+            if payload.studio:
+                clean_studio = _clean_str(payload.studio)
+                if clean_studio:
+                    data["studio"] = clean_studio
 
             if payload.description:
                 clean_desc = _clean_html_text(payload.description)

@@ -346,6 +346,7 @@ class HanimeRedEngine(VideoEngine):
             alt_title=alt_title,
             author=studio or model_name,
             artist=studio,
+            studio=studio,
             description=summary,
             tags=tags_list,
             year=year,
