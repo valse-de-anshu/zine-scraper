@@ -130,14 +130,19 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 | **`bake`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
 | **`lyrs`** | **Audio** | Synced `.lrc` Lyrics Search & Downloader (6-tier waterfall: LRCLIB, NetEase, Megalobiz) |
 | **`sc-lyrics`** | **Audio** | Batch music folder scanner and automated `.lrc` lyrics synchronization |
+| **`breeze`** | **AI Speech** | Breeze-TTS-2 Neural Speech Hub (C++/GGUF Vulkan, Voice Design, Cloning, Vocal Events) |
+| **`tts`** | **AI Speech** | Universal Audiobook TTS Hub (select between Breeze-TTS-2 or Qwen3-TTS) |
 | **`subs`** | **AI Tools** | AI Subtitle Generator (`faster-whisper` local GPU transcription & translation) |
-| **`tts`** | **AI Tools** | Qwen-TTS Audiobook Synthesizer (voice design & character acting from `.txt`) |
 | **`slice`** | **Tools** | Webtoon & Manhua Image Slicer (splits long vertical strips into standard pages) |
 | **`batch`** | **System** | Batch Downloader (auto-processes all queued links in `Batch URL.txt`) |
 | **`settings`** | **System** | Interactive Settings Configurator (download paths, 80+ themes, network delays) |
 | **`site`** | **System** | Interactive Supported Sites Database & Catalog viewer |
 | **`help`** | **System** | In-app documentation and quick guide browser |
 | **`exit` / `q`** | **System** | Clean exit from Zine Scraper Suite |
+
+> [!TIP]
+> **💡 Pro-Tip on TUI Performance & Smooth Riding:**
+> Sometimes after a very long session or heavy continuous usage (large batch downloads, multi-chapter TTS synthesis), the terminal interface may become slightly sluggish. Simply exit (`exit` or `q`) and reopen Zine (`./run.sh` or `zine`) for a fresh, buttery-smooth ride!
 
 ---
 
@@ -277,11 +282,11 @@ Zine natively supports 49+ platforms across 8 dedicated categories (80+ supporte
   ```
   *(See [**AI Models Guide**](Models/README%20to%20downlode%20ai%20model.md) for small, medium, and large model options).*
 
-### 3. Qwen-TTS Audiobook Synthesizer (`tts`)
-* Transforms downloaded `.txt` web serials, light novels, and e-books into studio-grade `.wav` audiobooks with synchronized `.srt` subtitles.
-* **Semantic Context Splitting**: Detects chapter headers, character dialogue, poetry, and narrative action to modulate vocal inflection.
+### 3. Neural Speech & Audiobook Synthesis (`breeze`, `tts`)
+* **Breeze-TTS-2 Hub (`breeze`)**: C++ / GGUF neural speech engine running on Vulkan GPU acceleration. Features **Voice Design** (text prompt defines voice), **Voice Cloning** (5-15s reference audio), **Voice Direction** (tone/pace steering), **Saved Voice Profiles** (`.breeze` fast 280ms TTFA cache), **Voice Conversion** (`breeze-convert`), and **Vocal Event Tags** `(sigh)`, `(laugh)`, `(whispering)`, `(clears throat)` with dynamic 2.5x CFG auto-boost.
+* **Qwen-TTS Audiobook Synthesizer (`tts` / `qwen`)**: Converts `.txt` web serials, light novels, and e-books into studio-grade `.wav` audiobooks with synchronized `.srt` subtitles via ComfyUI integration.
+* **Semantic Context Splitting & Subtitles**: Detects chapter headers, character dialogue, poetry, system alerts, and emotional beats to dynamically adapt vocal intonation and generate frame-accurate `.srt` subtitles.
 * **Auto-Resume Caching**: Caches intermediate synthesized chunks in temp buffers to prevent loss on interruptions.
-* **ComfyUI Integration**: Seamlessly interfaces with local or remote GPU servers running Qwen-TTS custom nodes.
 
 ### 4. Webtoon & Manhua Image Slicer (`slice`)
 * Automatically detects tall continuous vertical image strips common in Korean Manhwa and Chinese Manhua.
@@ -339,6 +344,7 @@ zine-scraper/
 │       ├── tui.py           ← Site TUI interactive entrypoint
 │       └── workflow.py      ← Multi-threaded download orchestrator
 ├── Models/                  ← Local storage hub for offline AI models
+├── Breeze tts/              ← Breeze-TTS-2 C++/GGUF Neural Speech Synthesizer
 ├── Qween tts/               ← Qwen-TTS Audiobook Synthesizer Engine
 ├── preview/                 ← TUI screenshots & showcase gallery
 ├── theme/                   ← 80+ custom Tokyo Night & Dark color palettes
