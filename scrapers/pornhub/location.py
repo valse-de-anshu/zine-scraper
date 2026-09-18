@@ -29,6 +29,9 @@ def get_save_path(
     if batch_path is not None:
         return Path(batch_path)
 
+    if is_batch:
+        return default_root
+
     loc_choice = Selector(
         [
             ("Use Default Location", "DEFAULT"),

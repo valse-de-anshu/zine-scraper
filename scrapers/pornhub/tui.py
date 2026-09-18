@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 def handle_pornhub_tui(
     url: str,
     tracker: HistoryLayer,
-    library_root: Path,
+    library_root: Optional[Path],
     storage_layer: StorageLayer,
     scraper: PornHubScraper,
     is_batch_mode: bool = False,
@@ -39,50 +39,16 @@ def handle_pornhub_tui(
 ):
     """
     TUI flow for PornHub.
-    Stage 1 — Load metadata
-    Stage 2 — Quality selection (defaults to 1080p)
-    Stage 3 — Save location
-    Stage 4 — Kick off workflow
+    - Interactive: Stage 1 (Metadata) -> Stage 2 (Quality) -> Stage 3 (Location) -> Stage 4 (Workflow)
+    - Batch Mode: Zero interactive prompts, link logic decides vacuum/quick grab, honors flags (--0, limits)
     """
     startup_clear()
     print_banner()
 
+    is_batch = is_batch_mode or not sys.stdin.isatty()
     link_type = scraper.get_link_type()
     is_vacuum = (link_type == "model")
-    menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_vacuum else "Quick Grab")
-
-    # ── Stage 0: Pre-flight VPN verification ──────────────────────────────
-    if not is_batch_mode and sys.stdin.isatty():
-        console.print(f"[menu]{'Menu':<12}:[/menu] [site]{menu_label}[/site]")
-        console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]\n")
-        vpn_options = [
-            ("Yes", "YES"),
-            ("No", "NO"),
-        ]
-        vpn_choice = Selector(vpn_options, "VPN active?", vertical=False, align_width=12).select()
-        if vpn_choice != "YES":
-            msg = "turn the vpn on then come back once u are equiped with vpn "
-            logger.warning(msg)
-            console.show_cursor(True)
-            import os
-            sys.stdout.write("\033[?25h\033[0m\n")
-            sys.stdout.flush()
-            if os.name != 'nt':
-                try:
-                    import termios
-                    fd = sys.stdin.fileno()
-                    attrs = termios.tcgetattr(fd)
-                    attrs[3] = attrs[3] | termios.ICANON | termios.ECHO
-                    attrs[1] = attrs[1] | termios.OPOST
-                    termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
-                except Exception:
-                    pass
-            console.print(f"\n[warning]{msg}[/warning]\n")
-            sys.stdout.flush()
-            os._exit(0)
-
-        startup_clear()
-        print_banner()
+    menu_label = "Batch" if is_batch else ("Vacuum" if is_vacuum else "Quick Grab")
 
     # ── Stage 1: Fetch metadata ──────────────────────────────────────────
     metadata, videos, info = None, None, None
@@ -93,7 +59,7 @@ def handle_pornhub_tui(
         except RuntimeError as geo_err:
             # Geo-block / VPN required
             console.print(f"\n[error]{geo_err}[/error]")
-            time.sleep(3)
+            time.sleep(2.5)
             return
         except Exception as e:
             console.print(f"[error]Failed to load metadata: {e}[/error]")
@@ -106,6 +72,43 @@ def handle_pornhub_tui(
         return
 
     channel_name = metadata.get("Channel/Series", "Unknown")
+
+    # ── Batch Mode Bypass: Zero interactive prompts ──────────────────────
+    if is_batch:
+        if getattr(scraper, "_batch_quick_grab", False):
+            if videos:
+                videos = videos[:1]
+                metadata["Total Videos"] = 1
+            is_vacuum = False
+            scraper.is_playlist = False
+        else:
+            scraper.is_playlist = is_vacuum
+
+        chapter_limit = getattr(scraper, "_chapter_limit", None)
+        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+            if videos and len(videos) > chapter_limit:
+                videos = videos[:chapter_limit]
+                metadata["Total Videos"] = len(videos)
+
+        if batch_path is not None:
+            target_root = Path(batch_path)
+        else:
+            from core.paths import get_container_root
+            target_root = get_container_root(url, scraper, is_batch=True)
+
+        run_workflow(
+            url=url,
+            tracker=tracker,
+            target_root=target_root,
+            metadata=metadata,
+            videos=videos,
+            info=info,
+            scraper=scraper,
+            quality="1080p",
+            is_vacuum=is_vacuum,
+            is_batch_mode=True,
+        )
+        return
 
     # ── Quality options ──────────────────────────────────────────────────
     quality_options = [
@@ -126,9 +129,9 @@ def handle_pornhub_tui(
         if quality:
             console.print(f"[menu]{'Quality':<12}:[/menu] [site]{quality}[/site]")
 
-    # ── State machine ────────────────────────────────────────────────────
+    # ── Interactive State Machine ─────────────────────────────────────────
     state   = 0
-    quality = None
+    quality = "1080p"
 
     while True:
         if state == 0:
@@ -140,7 +143,8 @@ def handle_pornhub_tui(
             if quality == "toggle":
                 # Toggle vacuum ↔ quick grab
                 is_vacuum = not is_vacuum
-                menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_vacuum else "Quick Grab")
+                scraper.is_playlist = is_vacuum
+                menu_label = "Vacuum" if is_vacuum else "Quick Grab"
                 continue
             state = 1
 
@@ -152,10 +156,10 @@ def handle_pornhub_tui(
                 target_root = Path(batch_path)
             else:
                 from core.paths import get_container_root
-                default_container = get_container_root(url, scraper, is_batch_mode)
+                default_container = get_container_root(url, scraper, is_batch=False)
                 target_root = get_save_path(
-                    url, scraper, is_batch_mode, batch_path,
-                    default_container, storage_layer
+                    url, scraper, is_batch=False, batch_path=batch_path,
+                    default_root=default_container, store_layer=storage_layer
                 )
 
             if not target_root:
@@ -164,7 +168,7 @@ def handle_pornhub_tui(
             if target_root == "toggle":
                 is_vacuum = not is_vacuum
                 scraper.is_playlist = is_vacuum
-                menu_label = "Batch" if is_batch_mode else ("Vacuum" if is_vacuum else "Quick Grab")
+                menu_label = "Vacuum" if is_vacuum else "Quick Grab"
                 continue
 
             break  # proceed to download
@@ -180,16 +184,13 @@ def handle_pornhub_tui(
         scraper=scraper,
         quality=quality,
         is_vacuum=is_vacuum,
-        is_batch_mode=is_batch_mode,
+        is_batch_mode=False,
     )
 
-    if not is_batch_mode:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
-
-        pass
+    if sys.stdin.isatty():
         try:
-            input()
-        except EOFError:
+            console.input("\n[info]Download finished. Press Enter to return...[/info]")
+        except (EOFError, Exception):
             pass
 
 
