@@ -173,8 +173,16 @@ You can append smart flags directly to URLs at the main prompt or inside `Batch 
   * Continues from where you last left off in `Download History.json` and downloads exactly **`N`** chapters in systematic order (e.g. `--2`, `--4`, `--5`, `--10`).
   * Seamlessly processes decimal chapters (e.g. `Chapter 2.5`) in proper sequence without annoying confirmation prompts.
   * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5` *(downloads the next 5 unread chapters sequentially).*
+* **`--batch` (Custom File Batch Mode)**:
+  * Paste any custom text file path with `--batch` (or `batch <file>`) directly into the main prompt to run batch processing from that file instead of the default `Batch URL.txt`.
+  * Automatically retrieves all URLs, processes them with full batch automation (honoring per-line `--0` and `--N` flags), and automatically removes/checks off completed URLs from your custom file.
+  * Ensures custom batch files and their links are never recorded or cluttered into `Logs/URL History.txt`.
+  * *Examples:*
+    * `"/home/valse/my_queue.txt" --batch`
+    * `my_reading_list.txt --batch`
+    * `batch "/home/valse/downloads.txt"`
 * **Flag Combinations in Batch Mode**:
-  * Flags can be mixed freely inside `Batch URL.txt` per-line:
+  * Flags can be mixed freely inside your batch text file per-line:
     ```text
     https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5
     https://omegascans.org/series/my-lewd-college-friends/chapter-58 --0

@@ -49,14 +49,18 @@ def __getattr__(name: str) -> Any:
         return Path(config.get("download_base") or paths.get_downloads_root()) / "video"
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-def load_urls() -> List[str]:
+from core.paths import sanitize_user_path
+
+def load_urls(file_path: Optional[Path] = None) -> List[str]:
+    target_file = Path(file_path) if file_path else URLS_FILE
     urls = []
-    if URLS_FILE.exists():
+    if target_file.exists():
         try:
-            content = storage.read_file(URLS_FILE)
+            content = storage.read_file(target_file)
             for line in content.splitlines():
                 line = line.split("#")[0].strip()
-                if line and not line.startswith("="): urls.append(line)
+                if line and not line.startswith("="):
+                    urls.append(line)
         except Exception:
             pass
     return urls
@@ -85,16 +89,20 @@ def clear_lines(num_lines: int):
         sys.stdout.write("\033[1A\033[2K")
     sys.stdout.flush()
 
-def handle_batch(hist_layer, store_layer):
-    urls = load_urls()
+def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
+    target_file = Path(custom_file) if custom_file else URLS_FILE
+    urls = load_urls(target_file)
     if not urls:
-        console.print("[warning]No URLs found in Batch URL.txt![/warning]")
+        file_label = target_file.name
+        console.print(f"[warning]No URLs found in {file_label}![/warning]")
         time.sleep(1.5)
         return
     
     startup_clear()
     print_banner()
     console.print(f"[menu]Menu:[/menu] [site]Batch Mode[/site]")
+    if custom_file:
+        console.print(f"[menu]Source File:[/menu] [sexy_pink]{target_file.resolve()}[/sexy_pink]")
     console.print(f"[info]Batch: {len(urls)} URLs loaded.[/info]")
     
     if not sys.stdin.isatty():
@@ -157,15 +165,15 @@ def handle_batch(hist_layer, store_layer):
 
         if success:
             batch_mgr.record_finish(canonical_url, status="completed")
-            # Immediately remove completed URL from Batch URL.txt so a Revolt exit or crash can safely resume
+            # Immediately remove completed URL from the active batch file so a Revolt exit or crash can safely resume
             try:
-                current_urls = load_urls()
+                current_urls = load_urls(target_file)
                 remaining = [u for u in current_urls if u.strip() != raw_url_clean]
                 content = "\n".join(remaining) + ("\n" if remaining else "")
-                store_layer.write_file(URLS_FILE, content)
+                store_layer.write_file(target_file, content)
                 console.print(f"[success]✔ Completed & checked off: {raw_url_clean}[/success]")
             except Exception as e:
-                logging.error(f"Failed to update Batch URL.txt: {e}")
+                logging.error(f"Failed to update {target_file.name}: {e}")
         else:
             batch_mgr.record_finish(canonical_url, status="failed")
             console.print(f"[error]✘ Incomplete or failed: {raw_url_clean}[/error]")
@@ -888,6 +896,25 @@ def main():
             elif url_lower in ["batch", "/batch"]:
                 logging.info("User launched batch mode.")
                 handle_batch(history, storage)
+
+            elif re.search(r"(?i)(?:^|\s)(?:--batch|-batch|/batch)\b", url.strip()) or url_lower.startswith("batch ") or url_lower.startswith("/batch "):
+                url_input = url.strip()
+                if url_lower.startswith("batch ") or url_lower.startswith("/batch "):
+                    cleaned_path = url.split(" ", 1)[1].strip()
+                else:
+                    cleaned_path = re.sub(r"(?i)(?:^|\s)(?:--batch|-batch|/batch)\b", "", url_input).strip()
+
+                if cleaned_path:
+                    sanitized = sanitize_user_path(cleaned_path)
+                    custom_file = Path(sanitized).expanduser().resolve()
+                    if custom_file.exists() and custom_file.is_file():
+                        logging.info(f"User launched custom batch mode with file: {custom_file}")
+                        handle_batch(history, storage, custom_file=custom_file)
+                    else:
+                        console.print(f"[error]● Custom batch file not found:[/error] [site]{escape(str(custom_file))}[/site]")
+                        time.sleep(2)
+                else:
+                    handle_batch(history, storage)
 
             elif url_lower in ["settings", "/settings"]:
                 launch_settings_tui()

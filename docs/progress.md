@@ -1,3 +1,17 @@
+# Progress Report - September 18, 2026 (Custom File Batch Mode & URL Input Flag Resolution)
+
+- **Custom File Batch Mode (`core/funnel.py`, `README.md`):**
+  - **Overview**:
+    - Added ability to run batch mode directly from custom text file paths supplied at the main prompt with `--batch` (or `batch <file>` / `/batch <file>`).
+    - Enables users to paste file locations (e.g. `"/path/to/my_queue.txt" --batch`, `urls.txt --batch`) without editing the default `Batch URL.txt`.
+  - **Automated Workflow & Checkoff**:
+    - Parses and loads all URLs, ignoring blank lines and comments.
+    - Full batch automation: honors per-item `--0` (Quick grab) and `--<N>` (Chapter continuation) flags.
+    - Synchronously removes/checks off completed URLs from the active custom file upon successful completion so resumes after interrupts/revolts work seamlessly.
+    - Guarantees custom batch files and batch-downloaded links are never recorded or cluttered into `Logs/URL History.txt`.
+
+---
+
 # Progress Report - September 18, 2026 (Breeze-TTS-2 C++ / GGUF Neural Speech Integration)
 
 - **Breeze-TTS-2 Integration (`Breeze tts/`, `core/funnel.py`, `core/settings_tui.py`, `docs/`):**
