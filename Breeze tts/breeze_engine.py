@@ -1088,22 +1088,14 @@ def run_save_voice_flow():
 def run_breeze_tui():
     """Interactive main TUI launcher for Breeze-TTS-2 in Zine Scraper."""
     from rich.console import Console
-    from rich.panel import Panel
-    from rich.align import Align
-    from rich.text import Text
-    from core.settings_tui import prompt_field_value, Selector
-    from core.ui import custom_theme
+    from core.settings_tui import prompt_field_value
+    from core.ui import custom_theme, startup_clear, print_banner, BoxSelector
 
     console = Console(theme=custom_theme)
 
     while True:
-        console.clear()
-        menu_content = Text()
-        menu_content.append("🌬️ BREEZE-TTS-2 C++ / GGUF ENGINE\n", style="bold sexy_pink")
-        menu_content.append("Bilingual Instruction-Following Neural Speech Synthesis\n", style="white")
-        menu_content.append("Vulkan GPU Acceleration • Voice Design • Voice Cloning • Vocal Events • Voice Conversion\n", style="unselected")
-
-        console.print(Panel(Align.center(menu_content), border_style="sexy_pink", padding=(1, 2)))
+        startup_clear()
+        print_banner()
 
         options = [
             ("📖 Generate Audiobook (from .txt novel / chapter)", "audiobook"),
@@ -1114,7 +1106,7 @@ def run_breeze_tui():
             ("↩️  Return to Main Menu", "exit"),
         ]
 
-        choice = Selector(options, "Select Breeze TTS Action").select()
+        choice = BoxSelector(options, title="Breeze-TTS-2 Neural Speech Hub", width=86).select()
         if not choice or choice in ("exit", "ESC", "CTRL_C"):
             break
 

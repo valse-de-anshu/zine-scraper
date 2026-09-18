@@ -914,11 +914,14 @@ def main():
                 import book_tts
                 book_tts.run_tts_tui()
             elif url_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
+                startup_clear()
+                print_banner()
                 tts_opts = [
-                    ("🌬️ Breeze TTS 2 (GGUF / Vulkan C++ — High Performance & Voice Design/Cloning)", "breeze"),
+                    ("🌬️ Breeze TTS 2 (GGUF / Vulkan C++ — Voice Design & Cloning)", "breeze"),
                     ("🎙️ Qwen3 TTS (ComfyUI Workflow Server)", "qwen")
                 ]
-                selected_engine = Selector(tts_opts, "Select Audiobook TTS Engine").select()
+                from core.ui import BoxSelector
+                selected_engine = BoxSelector(tts_opts, title="Audiobook TTS Engine", width=84).select()
                 if selected_engine == "breeze":
                     breeze_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Breeze tts")
                     if breeze_path not in sys.path:

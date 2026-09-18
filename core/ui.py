@@ -967,6 +967,55 @@ class Selector:
                     full_text.append(f"  {label} ", style="unselected")
         return full_text
 
+
+class BoxSelector(Selector):
+    """Renders options cleanly inside a stylized Panel box with title, border, and footer navigation."""
+    def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", border_style: str = "sexy_pink", width: int = 86):
+        super().__init__(options, title=title, vertical=True)
+        self.border_style = border_style
+        self.width = width
+
+    def _render(self) -> Any:
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        table = Table(box=None, show_header=False, padding=(0, 1))
+        table.add_column("icon", width=3, justify="right")
+        table.add_column("option", width=max(40, self.width - 12))
+
+        for i, (label, _) in enumerate(self.options):
+            is_active = (i == self.index)
+            if is_active:
+                table.add_row(
+                    Text("▶", style="bold sexy_pink"),
+                    Text(label, style="bold white")
+                )
+            else:
+                table.add_row(
+                    Text(" ", style="unselected"),
+                    Text(label, style="unselected")
+                )
+
+        footer = Text(justify="center")
+        footer.append("↑↓", style="bold white")
+        footer.append(" Navigate  ", style="unselected")
+        footer.append("Enter", style="bold white")
+        footer.append(" Select  ", style="unselected")
+        footer.append("Esc", style="bold white")
+        footer.append(" Return to Menu", style="unselected")
+
+        return Panel(
+            table,
+            title=f"[bold white]◆ {self.title.upper()} ◆[/bold white]",
+            subtitle=footer,
+            subtitle_align="center",
+            border_style=self.border_style,
+            padding=(1, 2),
+            width=self.width,
+        )
+
+
 class MinimalPulseBar(ProgressColumn):
     def __init__(self, bar_width: int = 40):
         super().__init__()
