@@ -52,20 +52,9 @@ def _log_event(event: str, data: dict | None = None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Binary & Model Discovery Helpers
 # ---------------------------------------------------------------------------
-
-DEFAULT_MODEL_CANDIDATES = [
-    "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf",
-    "/mnt/maiden/tts/breeze-tts-2-q4_k.gguf",
-    "/mnt/maiden/tts/breeze-tts-2-f16.gguf",
-]
-
-DEFAULT_BIN_CANDIDATES = [
-    "/mnt/maiden/tts/Breeze-TTS-2.cpp/build",
-    "/mnt/maiden/tts/Breeze-TTS-2.cpp",
-]
-
+# Binary & Model Discovery Helpers (Rooted at suite Models/)
+# ---------------------------------------------------------------------------
 
 def get_tts_dir() -> Path:
     """Returns the unified zine tts directory."""
@@ -75,53 +64,94 @@ def get_tts_dir() -> Path:
 
 
 def resolve_model_path() -> str:
-    """Finds the active Breeze GGUF model path from settings or defaults."""
+    """Finds the active Breeze GGUF model path from settings or Models/ directory."""
     from core.settings_tui import config
-    from core.paths import sanitize_user_path
+    from core.paths import sanitize_user_path, PathAuthority
+    
+    models_root = PathAuthority().get_models_root()
     
     cfg_path = config.get("breeze_model_path", "")
     if cfg_path:
         clean = sanitize_user_path(cfg_path)
-        if os.path.exists(clean):
-            return clean
+        cand = Path(clean).expanduser().resolve() if os.path.isabs(clean) else (models_root.parent / clean).resolve()
+        if cand.exists() and cand.is_file():
+            return str(cand)
             
-    for cand in DEFAULT_MODEL_CANDIDATES:
+    # Priority 1: Check standard Models/ directory
+    preferred = [
+        models_root / "breeze-tts-2-q8_0.gguf",
+        models_root / "breeze-tts-2-q4_k.gguf",
+        models_root / "breeze-tts-2-f16.gguf",
+        models_root / "Breeze-TTS-2" / "breeze-tts-2-q8_0.gguf",
+    ]
+    for p in preferred:
+        if p.exists() and p.is_file():
+            return str(p.resolve())
+            
+    # Priority 2: Glob any breeze .gguf in Models/
+    if models_root.exists():
+        for gguf in models_root.rglob("*breeze*.gguf"):
+            if gguf.is_file():
+                return str(gguf.resolve())
+
+    # Priority 3: Fallback candidates
+    fallback_cands = [
+        "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf",
+        "/mnt/maiden/tts/breeze-tts-2-q4_k.gguf",
+        "/mnt/maiden/tts/breeze-tts-2-f16.gguf",
+    ]
+    for cand in fallback_cands:
         if os.path.exists(cand):
             return cand
             
-    # Check local Models directory in project
-    local_models = Path(__file__).parent.parent / "Models"
-    for gguf in local_models.glob("*breeze*.gguf"):
-        if gguf.exists():
-            return str(gguf.resolve())
-            
-    return DEFAULT_MODEL_CANDIDATES[0]
+    return str(models_root / "breeze-tts-2-q8_0.gguf")
 
 
 def resolve_binary(name: str) -> str:
     """Finds the given binary (e.g. breeze-cli, breeze-server, breeze-convert)."""
     from core.settings_tui import config
-    from core.paths import sanitize_user_path
+    from core.paths import sanitize_user_path, PathAuthority
+
+    models_root = PathAuthority().get_models_root()
 
     cfg_dir = config.get("breeze_bin_dir", "")
     if cfg_dir:
         clean_dir = sanitize_user_path(cfg_dir)
-        bin_path = os.path.join(clean_dir, name)
-        if os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
-            return bin_path
+        cand_dir = Path(clean_dir).expanduser().resolve() if os.path.isabs(clean_dir) else (models_root.parent / clean_dir).resolve()
+        bin_path = cand_dir / name
+        if bin_path.is_file() and os.access(bin_path, os.X_OK):
+            return str(bin_path.resolve())
 
-    for cand_dir in DEFAULT_BIN_CANDIDATES:
-        bin_path = os.path.join(cand_dir, name)
-        if os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
-            return bin_path
+    # Priority 1: Check Models/ build directories
+    model_bin_dirs = [
+        models_root / "Breeze-TTS-2.cpp" / "build",
+        models_root / "Breeze-TTS-2.cpp",
+        models_root / "breeze.cpp" / "build",
+        models_root / "bin",
+        models_root,
+    ]
+    for d in model_bin_dirs:
+        bin_p = d / name
+        if bin_p.is_file() and os.access(bin_p, os.X_OK):
+            return str(bin_p.resolve())
 
-    # Check system PATH
+    # Priority 2: System PATH
     import shutil
     sys_path = shutil.which(name)
     if sys_path:
         return sys_path
 
-    return os.path.join(DEFAULT_BIN_CANDIDATES[0], name)
+    # Priority 3: Fallback external candidates
+    fallback_bin_dirs = [
+        "/mnt/maiden/tts/Breeze-TTS-2.cpp/build",
+        "/mnt/maiden/tts/Breeze-TTS-2.cpp",
+    ]
+    for cand_dir in fallback_bin_dirs:
+        bin_path = os.path.join(cand_dir, name)
+        if os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
+            return bin_path
+
+    return str(models_root / "Breeze-TTS-2.cpp" / "build" / name)
 
 
 def get_wav_duration(wav_path: str) -> float:

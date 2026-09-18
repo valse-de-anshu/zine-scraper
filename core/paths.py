@@ -67,10 +67,17 @@ class PathAuthority:
         self._batch_history_file = self._logs_root / "Batch History.json"
         self._url_history_file = self._logs_root / "URL History.txt"
 
+        # AI Models Hub
+        self._models_root = self._suite_root / "Models"
+
     # ── Core paths ──────────────────────────────────────────────────────────
 
     def get_app_root(self) -> Path:
         return self._app_root
+
+    def get_models_root(self) -> Path:
+        """The AI models directory for Voice-to-Text and TTS models (suite_root / Models)."""
+        return self._models_root
 
     def get_downloads_root(self) -> Path:
         """The user-chosen library root (e.g. ~/Downloads/Zine)."""
