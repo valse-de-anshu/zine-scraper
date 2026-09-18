@@ -808,17 +808,29 @@ def process_book_breeze(txt_path_str: str):
             _active_live.update(update_tui())
             _active_live.refresh()
 
+    old_termios_settings = None
+    fd = None
+    try:
+        if sys.stdin.isatty():
+            import termios
+            fd = sys.stdin.fileno()
+            old_termios_settings = termios.tcgetattr(fd)
+    except Exception:
+        pass
+
     def monitor_keyboard():
         nonlocal abort_requested, stop_thread
+        if fd is None:
+            return
         import tty, termios, select
-        fd = sys.stdin.fileno()
         try:
-            old_settings = termios.tcgetattr(fd)
             tty.setcbreak(fd)
             while not stop_thread:
-                ready, _, _ = select.select([fd], [], [], 0.2)
-                if ready:
+                ready, _, _ = select.select([fd], [], [], 0.1)
+                if ready and not stop_thread:
                     raw = os.read(fd, 1)
+                    if not raw:
+                        break
                     if raw == b'\x03':  # Ctrl+C
                         import signal
                         os.kill(os.getpid(), signal.SIGINT)
@@ -834,12 +846,16 @@ def process_book_breeze(txt_path_str: str):
         except Exception:
             pass
         finally:
-            try: termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            except: pass
+            if old_termios_settings is not None and fd is not None:
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_termios_settings)
+                except Exception:
+                    pass
 
     import threading
     kbd_thread = threading.Thread(target=monitor_keyboard, daemon=True)
-    kbd_thread.start()
+    if fd is not None:
+        kbd_thread.start()
 
     srt_file = out_dir / f"{txt_path.stem}.srt"
 
@@ -849,115 +865,128 @@ def process_book_breeze(txt_path_str: str):
                 sf.write("\n".join(srt_lines))
         except: pass
 
-    with Live(update_tui("Initializing Breeze-TTS-2...", f"0/{total_chunks}"), console=console, refresh_per_second=10) as live:
-        set_active_live(live)
-        _active_live = live
+    try:
+        with Live(update_tui("Initializing Breeze-TTS-2...", f"0/{total_chunks}"), console=console, refresh_per_second=10) as live:
+            set_active_live(live)
+            _active_live = live
 
-        for i, chunk in enumerate(chunks, 1):
-            if abort_requested:
-                break
+            for i, chunk in enumerate(chunks, 1):
+                if abort_requested:
+                    break
 
-            chunk_text = chunk["text"]
-            chunk_kind = chunk.get("kind", "prose")
-            has_vocal = chunk.get("has_vocal_events", False)
+                chunk_text = chunk["text"]
+                chunk_kind = chunk.get("kind", "prose")
+                has_vocal = chunk.get("has_vocal_events", False)
 
-            filename = f"{i:06d}.wav"
-            local_wav = temp_dir / filename
+                filename = f"{i:06d}.wav"
+                local_wav = temp_dir / filename
 
-            # Check cache
-            if local_wav.exists() and local_wav.stat().st_size > 1000:
-                status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
-                chunk_files.append(local_wav)
+                # Check cache
+                if local_wav.exists() and local_wav.stat().st_size > 1000:
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
+                    chunk_files.append(local_wav)
 
-                duration = get_wav_duration(str(local_wav))
-                start_str = format_srt_time(current_time)
-                end_str = format_srt_time(current_time + duration)
-                srt_lines.append(f"{i}")
-                srt_lines.append(f"{start_str} --> {end_str}")
-                srt_lines.append(chunk_text)
-                srt_lines.append("")
-                current_time += duration
-                save_srt_live()
+                    duration = get_wav_duration(str(local_wav))
+                    start_str = format_srt_time(current_time)
+                    end_str = format_srt_time(current_time + duration)
+                    srt_lines.append(f"{i}")
+                    srt_lines.append(f"{start_str} --> {end_str}")
+                    srt_lines.append(chunk_text)
+                    srt_lines.append("")
+                    current_time += duration
+                    save_srt_live()
+
+                    live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
+                    continue
+
+                # Dynamic CFG scale: Elevate to 2.5 when vocal event tags are present
+                effective_cfg = 2.5 if (auto_vocal_cfg and has_vocal) else base_cfg
+                _active_chunk_num = i
+                _active_vocal_tag = bool(auto_vocal_cfg and has_vocal)
+                live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
+                live.refresh()
+
+                instruction = resolve_breeze_instruction(chunk_kind)
+
+                success = False
+                if "Server" in backend:
+                    success = BreezeTTS.generate_chunk_http(
+                        text=chunk_text,
+                        output_wav=str(local_wav),
+                        server_url=server_url,
+                        instruction=instruction,
+                        mode=mode,
+                        saved_voice=saved_voice,
+                        ref_audio=ref_audio,
+                        ref_text=ref_text,
+                        cfg_scale=effective_cfg,
+                        seed=seed + i,
+                        temperature=temp,
+                        top_k=top_k,
+                        top_p=top_p,
+                        rep_penalty=rep_pen,
+                        split_chars=split_chars,
+                        progress_callback=tick_tui,
+                    )
+                else:
+                    success = BreezeTTS.generate_chunk_cli(
+                        text=chunk_text,
+                        output_wav=str(local_wav),
+                        instruction=instruction,
+                        mode=mode,
+                        saved_voice=saved_voice,
+                        ref_audio=ref_audio,
+                        ref_text=ref_text,
+                        cfg_scale=effective_cfg,
+                        seed=seed + i,
+                        temperature=temp,
+                        top_k=top_k,
+                        top_p=top_p,
+                        rep_penalty=rep_pen,
+                        split_chars=split_chars,
+                        use_cpu=use_cpu,
+                        progress_callback=tick_tui,
+                    )
+
+                _active_chunk_num = None
+                _active_vocal_tag = False
+
+                if success and local_wav.exists() and local_wav.stat().st_size > 1000:
+                    tag_note = " [sexy_pink](Vocal Event)[/sexy_pink]" if has_vocal else ""
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]{tag_note}")
+                    chunk_files.append(local_wav)
+
+                    duration = get_wav_duration(str(local_wav))
+                    start_str = format_srt_time(current_time)
+                    end_str = format_srt_time(current_time + duration)
+
+                    srt_lines.append(f"{i}")
+                    srt_lines.append(f"{start_str} --> {end_str}")
+                    srt_lines.append(chunk_text)
+                    srt_lines.append("")
+
+                    current_time += duration
+                    save_srt_live()
+                else:
+                    status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
 
                 live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
-                continue
 
-            # Dynamic CFG scale: Elevate to 2.5 when vocal event tags are present
-            effective_cfg = 2.5 if (auto_vocal_cfg and has_vocal) else base_cfg
-            _active_chunk_num = i
-            _active_vocal_tag = bool(auto_vocal_cfg and has_vocal)
-            live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
-            live.refresh()
-
-            instruction = resolve_breeze_instruction(chunk_kind)
-
-            success = False
-            if "Server" in backend:
-                success = BreezeTTS.generate_chunk_http(
-                    text=chunk_text,
-                    output_wav=str(local_wav),
-                    server_url=server_url,
-                    instruction=instruction,
-                    mode=mode,
-                    saved_voice=saved_voice,
-                    ref_audio=ref_audio,
-                    ref_text=ref_text,
-                    cfg_scale=effective_cfg,
-                    seed=seed + i,
-                    temperature=temp,
-                    top_k=top_k,
-                    top_p=top_p,
-                    rep_penalty=rep_pen,
-                    split_chars=split_chars,
-                    progress_callback=tick_tui,
-                )
-            else:
-                success = BreezeTTS.generate_chunk_cli(
-                    text=chunk_text,
-                    output_wav=str(local_wav),
-                    instruction=instruction,
-                    mode=mode,
-                    saved_voice=saved_voice,
-                    ref_audio=ref_audio,
-                    ref_text=ref_text,
-                    cfg_scale=effective_cfg,
-                    seed=seed + i,
-                    temperature=temp,
-                    top_k=top_k,
-                    top_p=top_p,
-                    rep_penalty=rep_pen,
-                    split_chars=split_chars,
-                    use_cpu=use_cpu,
-                    progress_callback=tick_tui,
-                )
-
-            _active_chunk_num = None
-            _active_vocal_tag = False
-
-            if success and local_wav.exists() and local_wav.stat().st_size > 1000:
-                tag_note = " [sexy_pink](Vocal Event)[/sexy_pink]" if has_vocal else ""
-                status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]{tag_note}")
-                chunk_files.append(local_wav)
-
-                duration = get_wav_duration(str(local_wav))
-                start_str = format_srt_time(current_time)
-                end_str = format_srt_time(current_time + duration)
-
-                srt_lines.append(f"{i}")
-                srt_lines.append(f"{start_str} --> {end_str}")
-                srt_lines.append(chunk_text)
-                srt_lines.append("")
-
-                current_time += duration
-                save_srt_live()
-            else:
-                status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
-
-            live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
-
-        status_log.append("[bold yellow]● Merging audio chunks with ffmpeg...[/bold yellow]")
-        live.update(update_tui("Merging Audio...", f"{total_chunks}/{total_chunks}"))
+            status_log.append("[bold yellow]● Merging audio chunks with ffmpeg...[/bold yellow]")
+            live.update(update_tui("Merging Audio...", f"{total_chunks}/{total_chunks}"))
+    finally:
         set_active_live(None)
+        _active_live = None
+        stop_thread = True
+        if fd is not None and kbd_thread.is_alive():
+            kbd_thread.join(timeout=0.3)
+        if old_termios_settings is not None and fd is not None:
+            try:
+                import termios
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_termios_settings)
+                termios.tcflush(fd, termios.TCIFLUSH)
+            except Exception:
+                pass
 
     # Merge chunks via FFmpeg concat filter
     if chunk_files:
@@ -1005,9 +1034,18 @@ def process_book_breeze(txt_path_str: str):
         console.print(f"[bold red]No chunks were generated.[/bold red]")
 
 
-# ---------------------------------------------------------------------------
-# Voice Conversion & Utilities TUI
-# ---------------------------------------------------------------------------
+def wait_for_enter(console, prompt: str = "\nPress Enter to continue..."):
+    console.print(prompt)
+    try:
+        from core.ui import read_tty_key
+        while True:
+            k = read_tty_key()
+            if k in ('ENTER', 'ESC', 'CTRL_C', ''):
+                break
+    except Exception:
+        try: input()
+        except: pass
+
 
 def run_voice_conversion_flow():
     """Interactive flow to respeak an existing recording in a target voice."""
@@ -1071,8 +1109,7 @@ def run_voice_conversion_flow():
     except Exception as e:
         console.print(f"\n[bold red]● Voice Conversion Failed: {e}[/bold red]")
 
-    console.print("\nPress Enter to continue...")
-    input()
+    wait_for_enter(console)
 
 
 def run_save_voice_flow():
@@ -1107,8 +1144,7 @@ def run_save_voice_flow():
     else:
         console.print(f"\n[bold red]● Failed to save voice profile.[/bold red]")
 
-    console.print("\nPress Enter to continue...")
-    input()
+    wait_for_enter(console)
 
 
 # ---------------------------------------------------------------------------
@@ -1143,8 +1179,7 @@ def run_breeze_tui():
             txt_path = prompt_field_value("Input Text File Path", "", "(Drag and drop .txt novel here)")
             if txt_path:
                 process_book_breeze(txt_path)
-                console.print("\n[bold green]Generation Complete![/bold green] Press Enter to return...")
-                input()
+                wait_for_enter(console, "\n[bold green]Generation Complete![/bold green] Press Enter to return...")
 
         elif choice == "convert":
             run_voice_conversion_flow()

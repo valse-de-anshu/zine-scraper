@@ -860,17 +860,29 @@ def process_book_live(txt_path_str: str):
             _active_live.update(update_tui())
             _active_live.refresh()
 
+    old_termios_settings = None
+    fd = None
+    try:
+        if sys.stdin.isatty():
+            import termios
+            fd = sys.stdin.fileno()
+            old_termios_settings = termios.tcgetattr(fd)
+    except Exception:
+        pass
+
     def monitor_keyboard():
         nonlocal abort_requested, stop_thread
+        if fd is None:
+            return
         import tty, termios, select, os
-        fd = sys.stdin.fileno()
         try:
-            old_settings = termios.tcgetattr(fd)
             tty.setcbreak(fd)
             while not stop_thread:
-                ready, _, _ = select.select([fd], [], [], 0.2)
-                if ready:
+                ready, _, _ = select.select([fd], [], [], 0.1)
+                if ready and not stop_thread:
                     raw = os.read(fd, 1)
+                    if not raw:
+                        break
                     if raw == b'\x03': # Ctrl+C
                         import signal
                         os.kill(os.getpid(), signal.SIGINT)
@@ -886,13 +898,15 @@ def process_book_live(txt_path_str: str):
         except Exception:
             pass
         finally:
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            except:
-                pass
+            if old_termios_settings is not None and fd is not None:
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_termios_settings)
+                except Exception:
+                    pass
                 
     kbd_thread = threading.Thread(target=monitor_keyboard, daemon=True)
-    kbd_thread.start()
+    if fd is not None:
+        kbd_thread.start()
 
     srt_file = out_dir / f"{txt_path.stem}.srt"
     
@@ -903,86 +917,99 @@ def process_book_live(txt_path_str: str):
         except:
             pass
 
-    with Live(update_tui("Initializing...", f"0/{total_chunks}"), console=console, refresh_per_second=10) as live:
-        set_active_live(live)
-        _active_live = live
-        
-        for i, chunk in enumerate(chunks, 1):
-            if abort_requested:
-                break
-                
-            chunk_text = chunk["text"] if isinstance(chunk, dict) else str(chunk)
-            filename = f"{i:011d}.wav"
-            local_path = temp_dir / filename
+    try:
+        with Live(update_tui("Initializing...", f"0/{total_chunks}"), console=console, refresh_per_second=10) as live:
+            set_active_live(live)
+            _active_live = live
             
-            # Check if chunk is already generated and cached on disk
-            is_cached = local_path.exists() and local_path.stat().st_size > 1000
-            if is_cached:
-                status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
-                chunk_files.append(local_path)
+            for i, chunk in enumerate(chunks, 1):
+                if abort_requested:
+                    break
+                    
+                chunk_text = chunk["text"] if isinstance(chunk, dict) else str(chunk)
+                filename = f"{i:011d}.wav"
+                local_path = temp_dir / filename
                 
-                duration = get_wav_duration(str(local_path))
-                start_str = format_srt_time(current_time)
-                end_str = format_srt_time(current_time + duration)
-                srt_lines.append(f"{i}")
-                srt_lines.append(f"{start_str} --> {end_str}")
-                srt_lines.append(chunk_text)
-                srt_lines.append("")
-                current_time += duration
-                save_srt_live()
+                # Check if chunk is already generated and cached on disk
+                is_cached = local_path.exists() and local_path.stat().st_size > 1000
+                if is_cached:
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
+                    chunk_files.append(local_path)
+                    
+                    duration = get_wav_duration(str(local_path))
+                    start_str = format_srt_time(current_time)
+                    end_str = format_srt_time(current_time + duration)
+                    srt_lines.append(f"{i}")
+                    srt_lines.append(f"{start_str} --> {end_str}")
+                    srt_lines.append(chunk_text)
+                    srt_lines.append("")
+                    current_time += duration
+                    save_srt_live()
+                    
+                    live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
+                    continue
+                
+                # Mark chunk i as active -> update_tui renders spinning Braille line automatically
+                _active_chunk_num = i
+                live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
+                live.refresh()
+                
+                server_filename, server_subfolder = generate_tts_for_chunk(chunk, progress_callback=tick_tui)
+                _active_chunk_num = None  # Clear active spinner line
+                
+                if not server_filename:
+                    status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
+                    live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
+                    continue
+                    
+                success = download_audio(server_filename, str(local_path), subfolder=server_subfolder or "")
+                if success:
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]")
+                    chunk_files.append(local_path)
+                    
+                    tts_history[str(i)] = {
+                        "filename": filename,
+                        "server_filename": server_filename,
+                        "server_subfolder": server_subfolder or "",
+                        "timestamp": time.time(),
+                    }
+                    try:
+                        with open(history_file, 'w', encoding='utf-8') as f:
+                            json.dump(tts_history, f, indent=4)
+                    except Exception:
+                        pass
+                    
+                    duration = get_wav_duration(str(local_path))
+                    start_str = format_srt_time(current_time)
+                    end_str = format_srt_time(current_time + duration)
+                    
+                    srt_lines.append(f"{i}")
+                    srt_lines.append(f"{start_str} --> {end_str}")
+                    srt_lines.append(chunk_text)
+                    srt_lines.append("")
+                    
+                    current_time += duration
+                    save_srt_live()
+                else:
+                    status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
                 
                 live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
-                continue
-            
-            # Mark chunk i as active -> update_tui renders spinning Braille line automatically
-            _active_chunk_num = i
-            live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
-            live.refresh()
-            
-            server_filename, server_subfolder = generate_tts_for_chunk(chunk, progress_callback=tick_tui)
-            _active_chunk_num = None  # Clear active spinner line
-            
-            if not server_filename:
-                status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
-                live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
-                continue
-                
-            success = download_audio(server_filename, str(local_path), subfolder=server_subfolder or "")
-            if success:
-                status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]")
-                chunk_files.append(local_path)
-                
-                tts_history[str(i)] = {
-                    "filename": filename,
-                    "server_filename": server_filename,
-                    "server_subfolder": server_subfolder or "",
-                    "timestamp": time.time(),
-                }
-                try:
-                    with open(history_file, 'w', encoding='utf-8') as f:
-                        json.dump(tts_history, f, indent=4)
-                except Exception:
-                    pass
-                
-                duration = get_wav_duration(str(local_path))
-                start_str = format_srt_time(current_time)
-                end_str = format_srt_time(current_time + duration)
-                
-                srt_lines.append(f"{i}")
-                srt_lines.append(f"{start_str} --> {end_str}")
-                srt_lines.append(chunk_text)
-                srt_lines.append("")
-                
-                current_time += duration
-                save_srt_live()
-            else:
-                status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
-            
-            live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
 
-        status_log.append("[bold yellow]● Merging audio chunks...[/bold yellow]")
-        live.update(update_tui("Merging...", f"{total_chunks}/{total_chunks}"))
+            status_log.append("[bold yellow]● Merging audio chunks...[/bold yellow]")
+            live.update(update_tui("Merging...", f"{total_chunks}/{total_chunks}"))
+    finally:
         set_active_live(None)
+        _active_live = None
+        stop_thread = True
+        if fd is not None and kbd_thread.is_alive():
+            kbd_thread.join(timeout=0.3)
+        if old_termios_settings is not None and fd is not None:
+            try:
+                import termios
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_termios_settings)
+                termios.tcflush(fd, termios.TCIFLUSH)
+            except Exception:
+                pass
 
     # Write concat list with ABSOLUTE paths so ffmpeg can find files
     # regardless of cwd
@@ -1069,7 +1096,15 @@ def run_tts_tui():
         
     process_book_live(txt_path)
     console.print("\n[bold green]Generation Complete![/bold green] Press Enter to return to main menu...")
-    input()
+    try:
+        from core.ui import read_tty_key
+        while True:
+            k = read_tty_key()
+            if k in ('ENTER', 'ESC', 'CTRL_C', ''):
+                break
+    except Exception:
+        try: input()
+        except: pass
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
