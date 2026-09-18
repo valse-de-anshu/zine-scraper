@@ -198,10 +198,10 @@ class TopmanhuaScraper(BaseScraper):
                 seen.add(s)
                 filtered_imgs.append(s)
 
-        chapter_dir = folder / f"Chapter{ch_num}"
+        dest_folder = folder if folder.name == f"Chapter{ch_num}" else (folder / f"Chapter{ch_num}")
         return self.process_chapter_multi(
             filtered_imgs,
-            chapter_dir,
+            dest_folder,
             ch_num,
             ch_url,
             live=live,
