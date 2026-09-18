@@ -1,3 +1,19 @@
+# Progress Report - September 18, 2026 (Fix: TUI Episode Selector Validation Across Hentai Scrapers)
+
+- **Interactive TUI Episode Selector Robustness (`scrapers/*/tui.py`):**
+  - Resolved `TypeError: list indices must be integers or slices, not str` when selecting episodes or cancelling (ESC/Back/Quit) across all hentai video scrapers:
+    - `scrapers/hentaihaven/tui.py`
+    - `scrapers/hentaihaven_co/tui.py`
+    - `scrapers/hentaimama/tui.py`
+    - `scrapers/hstream/tui.py`
+    - `scrapers/hentaicity/tui.py`
+    - `scrapers/ohentai/tui.py`
+    - `scrapers/oppai_stream/tui.py`
+  - Replaced ambiguous truthiness checks (`if selected_idx is not None and selected_idx != "toggle"`) with explicit integer type and range validation (`if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos)`).
+  - Cleanly exits/returns without crashing when the user presses ESC, Q, or cancels episode selection.
+
+---
+
 # Progress Report - September 18, 2026 (HanimeRed Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Progress Bar)
 
 - **HanimeRed Scraper & Engine Upgrades (`scrapers/hanime_red/`):**
