@@ -284,9 +284,9 @@ Zine natively supports 49+ platforms across 8 dedicated categories (80+ supporte
 ### 2. AI Speech & Subtitle Generator (`subs`)
 * Powered by **`faster-whisper`** (CTranslate2), executing up to **4x faster than standard OpenAI Whisper** with efficient GPU VRAM utilization.
 * Transcribes spoken dialogue and translates foreign audio into synchronized `.srt` and `.vtt` subtitles directly on your local GPU/CPU with zero telemetry.
-* Models reside in the unified `Models/` directory (`Models/faster-whisper-large-v3-turbo`). Quick download:
+* Models reside in the unified `Models/STT/` directory (`Models/STT/faster-whisper-large-v3-turbo`). Quick download:
   ```bash
-  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo', local_dir='Models/faster-whisper-large-v3-turbo')"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo', local_dir='Models/STT/faster-whisper-large-v3-turbo')"
   ```
   *(See [**AI Models Hub Guide**](Models/README%20to%20downlode%20ai%20model.md) for small, medium, and large model options).*
 
@@ -295,7 +295,7 @@ Zine natively supports 49+ platforms across 8 dedicated categories (80+ supporte
 * **Qwen-TTS Audiobook Synthesizer (`tts` / `qwen`)**: Converts `.txt` web serials, light novels, and e-books into studio-grade `.wav` audiobooks with synchronized `.srt` subtitles via ComfyUI integration.
 * **Semantic Context Splitting & Subtitles**: Detects chapter headers, character dialogue, poetry, system alerts, and emotional beats to dynamically adapt vocal intonation and generate frame-accurate `.srt` subtitles.
 * **Auto-Resume Caching**: Caches intermediate synthesized chunks in temp buffers to prevent loss on interruptions.
-* **Unified AI Models Hub (`Models/`)**: All Whisper VTT models and Breeze GGUF weights/C++ binaries are organized inside `Models/` (see [**AI Models Hub Guide**](Models/README%20to%20downlode%20ai%20model.md)).
+* **Unified AI Models Hub (`Models/`)**: Organized into `Models/STT/` (Whisper models) and `Models/TTS/` (Breeze GGUF weights & C++ binaries). See [**AI Models Hub Guide**](Models/README%20to%20downlode%20ai%20model.md).
 
 ### 4. Webtoon & Manhua Image Slicer (`slice`)
 * Automatically detects tall continuous vertical image strips common in Korean Manhwa and Chinese Manhua.
@@ -353,6 +353,8 @@ zine-scraper/
 │       ├── tui.py           ← Site TUI interactive entrypoint
 │       └── workflow.py      ← Multi-threaded download orchestrator
 ├── Models/                  ← Local storage hub for offline AI models
+│   ├── STT/                 ← Speech-to-Text models (faster-whisper)
+│   └── TTS/                 ← Text-to-Speech models & binaries (Breeze-TTS-2 / Qwen)
 ├── Breeze tts/              ← Breeze-TTS-2 C++/GGUF Neural Speech Synthesizer
 ├── Qween tts/               ← Qwen-TTS Audiobook Synthesizer Engine
 ├── preview/                 ← TUI screenshots & showcase gallery

@@ -69,6 +69,8 @@ class PathAuthority:
 
         # AI Models Hub
         self._models_root = self._suite_root / "Models"
+        self._stt_models_root = self._models_root / "STT"
+        self._tts_models_root = self._models_root / "TTS"
 
     # ── Core paths ──────────────────────────────────────────────────────────
 
@@ -78,6 +80,14 @@ class PathAuthority:
     def get_models_root(self) -> Path:
         """The AI models directory for Voice-to-Text and TTS models (suite_root / Models)."""
         return self._models_root
+
+    def get_stt_models_root(self) -> Path:
+        """The Speech-to-Text models directory (suite_root / Models / STT)."""
+        return self._stt_models_root
+
+    def get_tts_models_root(self) -> Path:
+        """The Text-to-Speech models directory (suite_root / Models / TTS)."""
+        return self._tts_models_root
 
     def get_downloads_root(self) -> Path:
         """The user-chosen library root (e.g. ~/Downloads/Zine)."""

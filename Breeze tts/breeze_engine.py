@@ -77,18 +77,31 @@ def resolve_model_path() -> str:
         if cand.exists() and cand.is_file():
             return str(cand)
             
-    # Priority 1: Check standard Models/ directory
+    models_root = PathAuthority().get_models_root()
+    tts_root = PathAuthority().get_tts_models_root()
+
+    # Priority 1: Check standard Models/TTS and Models/ directory
     preferred = [
+        tts_root / "breeze-tts-2-q8_0.gguf",
+        tts_root / "breeze-tts-2-q4_k.gguf",
+        tts_root / "breeze-tts-2-f16.gguf",
+        tts_root / "breeze-tts-2-fp16.gguf",
+        tts_root / "Breeze-TTS-2" / "breeze-tts-2-q8_0.gguf",
         models_root / "breeze-tts-2-q8_0.gguf",
         models_root / "breeze-tts-2-q4_k.gguf",
         models_root / "breeze-tts-2-f16.gguf",
+        models_root / "breeze-tts-2-fp16.gguf",
         models_root / "Breeze-TTS-2" / "breeze-tts-2-q8_0.gguf",
     ]
     for p in preferred:
         if p.exists() and p.is_file():
             return str(p.resolve())
             
-    # Priority 2: Glob any breeze .gguf in Models/
+    # Priority 2: Glob any breeze .gguf in Models/TTS/ or Models/
+    if tts_root.exists():
+        for gguf in tts_root.rglob("*breeze*.gguf"):
+            if gguf.is_file():
+                return str(gguf.resolve())
     if models_root.exists():
         for gguf in models_root.rglob("*breeze*.gguf"):
             if gguf.is_file():
@@ -104,7 +117,7 @@ def resolve_model_path() -> str:
         if os.path.exists(cand):
             return cand
             
-    return str(models_root / "breeze-tts-2-q8_0.gguf")
+    return str(tts_root / "breeze-tts-2-q8_0.gguf")
 
 
 def resolve_binary(name: str) -> str:
@@ -112,18 +125,30 @@ def resolve_binary(name: str) -> str:
     from core.settings_tui import config
     from core.paths import sanitize_user_path, PathAuthority
 
-    models_root = PathAuthority().get_models_root()
+    pa = PathAuthority()
+    models_root = pa.get_models_root()
+    tts_root = pa.get_tts_models_root()
 
     cfg_dir = config.get("breeze_bin_dir", "")
     if cfg_dir:
         clean_dir = sanitize_user_path(cfg_dir)
-        cand_dir = Path(clean_dir).expanduser().resolve() if os.path.isabs(clean_dir) else (models_root.parent / clean_dir).resolve()
+        cand_dir = Path(clean_dir).expanduser().resolve() if os.path.isabs(clean_dir) else (pa.get_app_root() / clean_dir).resolve()
         bin_path = cand_dir / name
         if bin_path.is_file() and os.access(bin_path, os.X_OK):
             return str(bin_path.resolve())
+        # Try cand_dir / bin / name or cand_dir / build / bin / name
+        for sub in [cand_dir / "bin" / name, cand_dir / "build" / "bin" / name, cand_dir / "build" / name]:
+            if sub.is_file() and os.access(sub, os.X_OK):
+                return str(sub.resolve())
 
-    # Priority 1: Check Models/ build directories
+    # Priority 1: Check Models/TTS/ and Models/ build directories
     model_bin_dirs = [
+        tts_root / "Breeze-TTS-2.cpp" / "build" / "bin",
+        tts_root / "Breeze-TTS-2.cpp" / "build",
+        tts_root / "Breeze-TTS-2.cpp",
+        tts_root / "bin",
+        tts_root,
+        models_root / "Breeze-TTS-2.cpp" / "build" / "bin",
         models_root / "Breeze-TTS-2.cpp" / "build",
         models_root / "Breeze-TTS-2.cpp",
         models_root / "breeze.cpp" / "build",

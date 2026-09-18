@@ -393,7 +393,7 @@ def whisper_settings_tui():
         startup_clear()
         print_banner()
         curr_sub_mode = config.get("ai_subtitles_mode", "Both")
-        curr_sub_model = config.get("ai_subtitles_model", "Models/faster-whisper-large-v3-turbo")
+        curr_sub_model = config.get("ai_subtitles_model", "Models/STT/faster-whisper-large-v3-turbo")
         curr_sub_vram = config.get("ai_subtitles_vram", "6GB (INT8)")
         curr_target_lang = config.get("ai_target_lang", "English")
 
@@ -680,8 +680,8 @@ def breeze_tts_settings_tui():
 
         curr_backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
         curr_mode = config.get("breeze_mode", "Voice Design")
-        curr_model = config.get("breeze_model_path", "Models/breeze-tts-2-q8_0.gguf")
-        curr_bin_dir = config.get("breeze_bin_dir", "Models/Breeze-TTS-2.cpp/build")
+        curr_model = config.get("breeze_model_path", "Models/TTS/breeze-tts-2-q8_0.gguf")
+        curr_bin_dir = config.get("breeze_bin_dir", "Models/TTS/Breeze-TTS-2.cpp/build")
         curr_server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
 
         default_instruct = "A warm, thoughtful narrator with a clear, calm delivery and expressive emotional nuance."
