@@ -1,3 +1,21 @@
+# Progress Report - September 19, 2026 (Ohentai Series Overview & Quick Grab Link Recognition)
+
+- **Ohentai Link Recognition & Batch/Interactive Routing (`scrapers/ohentai/`):**
+  - **Series Overview (`sery_video.php`) & Single Episode (`detail.php`) Support (`scraper.py`):**
+    - Enabled fast direct extraction using `curl_cffi` session (`impersonate="chrome124"`), bypassing Cloudflare in ~1-2 seconds with automatic headless Playwright fallback if challenged.
+    - Added parsing for series overview URLs (`sery_video.php`): extracts clean series title, official series cover (`video_data/.../cover.png`), tags, and discovers all franchise episode links (`detail.php?vid=...`).
+    - Added bi-directional franchise discovery for episode URLs (`detail.php`): automatically locates the `sery_video.php` parent link, retrieves sibling episodes, clean series title, and cover artwork.
+  - **Batch & Interactive Routing (`tui.py`):**
+    - Enforced link-type detection (`is_serie_url = "sery_video.php" in url`).
+    - In Batch Mode: series links (`sery_video.php`) vacuum all franchise episodes, while single episode links (`detail.php`) quick grab only the specified episode. Strictly respects `--0` quick grab and chapter limit flags.
+    - In Interactive Mode: series links prioritize "Whole Franchise" as the default option, while episode links prioritize "Single Episode" with pre-selected episode cursor.
+    - Removed redundant double `input()` prompt on download completion.
+  - **Workflow Title & Folder Resolution (`workflow.py`):**
+    - Preserves clean series name for vacuum subfolders (`<creator_root>/video/Episode <N>.mp4`).
+    - Formats Quick Grab downloads as `<Series Name> - Episode <N>.mp4`.
+
+---
+
 # Progress Report - September 19, 2026 (Fix: Hentaimama Video Stream Extraction vs Thumbnail VTT)
 
 - **Hentaimama Video Stream Extraction Fix (`scrapers/hentaimama/engine.py`, `scrapers/hentaimama/workflow.py`):**
