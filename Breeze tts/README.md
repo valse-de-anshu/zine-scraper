@@ -91,7 +91,7 @@ Breeze tts/
 ├── breeze_engine.py      # Core audiobook engine, TUI, chunker & vocal dispatcher
 ├── README.md             # This comprehensive guide
 ├── TTS prompt.txt        # Container for voice design & direction instructions
-└── zine tts/             # Unified output folder for generated audio (.wav), subtitles (.srt), logs & voices
+└── zine tts/             # Unified output folder for generated audio (.wav), subtitles (.srt) & logs
 ```
 
 ---

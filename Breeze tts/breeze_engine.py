@@ -67,11 +67,11 @@ DEFAULT_BIN_CANDIDATES = [
 ]
 
 
-def get_voices_dir() -> Path:
-    """Returns the dedicated directory where .breeze saved voices live in zine tts."""
-    voices_dir = Path(__file__).parent / "zine tts" / "voices"
-    voices_dir.mkdir(parents=True, exist_ok=True)
-    return voices_dir
+def get_tts_dir() -> Path:
+    """Returns the unified zine tts directory."""
+    tts_dir = Path(__file__).parent / "zine tts"
+    tts_dir.mkdir(parents=True, exist_ok=True)
+    return tts_dir
 
 
 def resolve_model_path() -> str:
@@ -160,10 +160,10 @@ def check_breeze_server_online(server_url: str) -> bool:
 
 
 def list_saved_voices() -> list[dict]:
-    """Lists all saved .breeze voice profiles in the voices directory."""
-    voices_dir = get_voices_dir()
+    """Lists all saved .breeze voice profiles in zine tts."""
+    tts_dir = get_tts_dir()
     voices = []
-    for f in sorted(voices_dir.glob("*.breeze")):
+    for f in sorted(tts_dir.glob("*.breeze")):
         # Parse transcript from binary .breeze container if possible
         ref_text = ""
         try:
@@ -427,11 +427,11 @@ class BreezeTTS:
     def save_voice(ref_audio: str, ref_text: str, voice_name: str) -> bool:
         """
         Encodes reference audio + transcript into a reusable .breeze voice file.
-        Stored in Breeze tts/voices/<voice_name>.breeze.
+        Stored in zine tts/<voice_name>.breeze.
         """
         cli_bin = resolve_binary("breeze-cli")
         model_path = resolve_model_path()
-        voices_dir = get_voices_dir()
+        tts_dir = get_tts_dir()
 
         if not os.path.exists(ref_audio):
             _log_event("SAVE_VOICE_ERROR", {"reason": "ref_audio not found", "path": ref_audio})
@@ -447,7 +447,7 @@ class BreezeTTS:
             "--ref-audio", ref_audio,
             "--ref-text", ref_text,
             "--save-voice", clean_name,
-            "--voices-dir", str(voices_dir)
+            "--voices-dir", str(tts_dir)
         ]
         _log_event("SAVE_VOICE_START", {"cmd": cmd})
 
@@ -481,7 +481,6 @@ class BreezeTTS:
         """Generates audio for one text chunk via direct breeze-cli subprocess."""
         cli_bin = resolve_binary("breeze-cli")
         model_path = resolve_model_path()
-        voices_dir = get_voices_dir()
 
         cmd = [
             cli_bin,
@@ -495,14 +494,14 @@ class BreezeTTS:
             "--top-p", str(top_p),
             "--rep-penalty", str(rep_penalty),
             "--split-chars", str(split_chars),
-            "--voices-dir", str(voices_dir),
         ]
 
         if use_cpu:
             cmd.append("--cpu")
 
         if mode == "Saved Voice" and saved_voice:
-            cmd.extend(["--voice", saved_voice])
+            tts_dir = get_tts_dir()
+            cmd.extend(["--voice", saved_voice, "--voices-dir", str(tts_dir)])
             if instruction:
                 cmd.extend(["--instruction", instruction])
         elif mode in ("Voice Cloning", "Voice Direction") and ref_audio and os.path.exists(ref_audio):
@@ -1140,7 +1139,7 @@ def run_save_voice_flow():
     ok = BreezeTTS.save_voice(ref_clean, ref_text, voice_name)
     if ok:
         console.print(f"\n[bold green]● Successfully saved voice profile '{voice_name}.breeze'![/bold green]")
-        console.print(f"Stored in: {get_voices_dir() / (voice_name + '.breeze')}")
+        console.print(f"Stored in: {get_tts_dir() / (voice_name + '.breeze')}")
     else:
         console.print(f"\n[bold red]● Failed to save voice profile.[/bold red]")
 
