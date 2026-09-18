@@ -161,22 +161,22 @@ class VideoEngine:
                 "--batch-file", str(temp_batch),
                 "-o", str(poop_dir / f"{clean_title}.%(ext)s"),
                 "--no-playlist",
-                "--write-subs",
-                "--write-auto-subs",
-                "--all-subs",
-                "--embed-subs",
-                "--retries", "10",
-                "--fragment-retries", "10",
-                "--concurrent-fragments", "16",
+                "--retries", "15",
+                "--fragment-retries", "15",
+                "--concurrent-fragments", "8",
                 "--no-check-certificate",
                 "--no-warnings",
-                "--socket-timeout", "5"
+                "--socket-timeout", "30"
             ]
             
             if shutil.which("aria2c"):
+                aria_args = kwargs.get(
+                    "downloader_args",
+                    "aria2c:-c -x 8 -s 8 -k 2M --file-allocation=none --connect-timeout=20 --timeout=30 --max-tries=15 --retry-wait=2 --allow-overwrite=true --auto-file-renaming=false"
+                )
                 cmd.extend([
                     "--downloader", "aria2c",
-                    "--downloader-args", "aria2c:-x 16 -s 16 -k 1M --file-allocation=none"
+                    "--downloader-args", aria_args
                 ])
             
             for k, v in self.headers.items():

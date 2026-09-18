@@ -36,13 +36,16 @@ class HanimeRedIE(InfoExtractor):
     def _real_extract(self, url):
         video_id = self._match_id(url)
         page = self._download_webpage(url, video_id)
-        title = self._html_search_regex(r'<h1 duration="" .+>([^<]+)</h1>', page, 'Video Title')
+        title = self._html_search_regex(
+            (r'<h1[^>]*>([^<]+)</h1>', r'<title>([^<]+)</title>'),
+            page, 'Video Title', default=video_id
+        )
         player_url = self._search_regex(r'<iframe src="([^"]+)"', page, 'Player Wrapper URL')
         player_page = self._download_webpage(player_url, video_id)
         real_player_url = self._search_regex(r'li data-id="([^"]+)"', player_page, 'Player URL')
         real_player_page = self._download_webpage(f'https://nhplayer.com/{real_player_url}', video_id)
         pv = self._search_json(r'window._pV=', real_player_page, 'Player Parameters', video_id,
-                               transform_source=js_to_json)
+                                transform_source=js_to_json)
         player_script_url = self._search_regex(r'script src="(player-core[^"]+)"', real_player_page, 'Player Script URL')
         player_script = self._download_webpage(f'https://nhplayer.com/{player_script_url}', video_id)
         epoch_ts = time.monotonic_ns() // 1000000
@@ -84,5 +87,11 @@ class HanimeRedIE(InfoExtractor):
         return {
             'id': video_id,
             'title': title,
-            'url': response.get('url')
+            'url': response.get('url'),
+            'ext': 'mp4',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://nhplayer.com/',
+                'Origin': 'https://nhplayer.com',
+            }
         }
