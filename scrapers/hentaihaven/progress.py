@@ -33,12 +33,7 @@ def render_metadata_tree(
     root_tree.add(align_header("Existing", f"[success]{verified_count} videos[/success]"))
 
     if is_vacuum:
-        has_cover = False
-        if creator_root.exists():
-            for ext in ["cover.jpg", "cover.png", "cover.webp"]:
-                for p in creator_root.rglob(ext):
-                    has_cover = True
-                    break
+        has_cover = any(creator_root.glob("cover.*"))
         cover_status = "[success]●[/success]" if has_cover else "[unselected]○[/unselected]"
         root_tree.add(align_header("Cover", cover_status))
 

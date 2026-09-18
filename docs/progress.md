@@ -1,3 +1,26 @@
+# Progress Report - September 18, 2026 (HentaiHaven Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Minimal Blinking Progress)
+
+- **HentaiHaven Scraper & Engine Upgrades (`scrapers/hentaihaven/`):**
+  - **Minimal Blinking Progress Indicator (`workflow.py`, `progress.py`):**
+    - Ported the minimal, glitch-free Tokyo Night progress indicator from `hanime_red`: eliminated the bulky progress bar that caused layout jittering and jumping ETAs during fragment downloads.
+    - Added clean multi-phase blinking dot state machine (`● Downloading...`, `● Downloading (Almost done)...` at >=90%, `● Almost done with baking...`, and `● Complete` / `● Failed`).
+    - Dedicated 10Hz background `refresh_loop()` thread guarantees smooth blinking animation during downloads.
+    - Integrated TUI reconstructor (`set_tui_callback`) and `completed_history` log replay for clean recovery when internet connection drops and restores.
+    - Render metadata tree shows clean status with fast glob-based cover detection (`any(creator_root.glob("cover.*"))`).
+  - **Rich Metadata & Full JSON-LD Extraction (`scraper.py`):**
+    - Deep extraction from JSON-LD schemas (`BreadcrumbList`, `WebPage`, `ImageObject`, `VideoObject`) across both series catalog pages and episode watch pages.
+    - Captures complete series metadata: Clean Series Title, Animation Studio/Brand (`/studio/<name>/`), Release Year (`/release/<year>/`), ISO Release Date (`uploadDate`/`datePublished`), Genres/Tags (`/series/<tag>/` and `/genre/<tag>/`), and full work content synopsis.
+    - Franchise episode discovery: naturally sorts all episodes (`Episode 1`, `Episode 2`, ...) and populates full per-episode metadata (URL, clean title, numeric ID, studio uploader, thumbnail, release date, tags, 1080p quality).
+  - **2-Step Magic Byte Verified Cover Art & Metadata Engine (`engine.py`):**
+    - Discovers full-resolution series posters by stripping thumbnail `/s_` prefixes from `img.hentaihaven.xxx` image sources.
+    - Implemented binary magic-byte inspection (`RIFF...WEBP`, `JPEG`, etc.) via `core.cover_utils.save_verified_cover` with Cloudflare-impersonated session.
+    - Writes standard `.zine/metadata.json` using `core.metadata_engine.MetadataEngine` and `ZineMetadataPayload`.
+  - **Batch Mode Compliance & TUI Polish (`tui.py`):**
+    - Enforced zero-prompt batch mode rules: series links vacuum the full franchise; single episode links quick-grab without prompt; strictly honors `--0` quick grab and `--<N>` chapter flags.
+    - Default interactive prompt adapts based on link type: series links default to "Whole Franchise", episode links default to "Single Episode".
+
+---
+
 # Progress Report - September 18, 2026 (Fix: TUI Episode Selector Validation Across Hentai Scrapers)
 
 - **Interactive TUI Episode Selector Robustness (`scrapers/*/tui.py`):**

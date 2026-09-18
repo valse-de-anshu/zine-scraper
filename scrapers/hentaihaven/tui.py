@@ -80,10 +80,30 @@ def handle_hentaihaven_tui(
     is_vacuum = False
     scraper.franchise_structure = "flat"
 
+    is_serie_url = not bool(re.search(r"/episode-\d+", url))
+
     if is_batch_mode:
-        # In batch mode: download all flat, no prompt
-        scraper.is_playlist = True
-        is_vacuum = True
+        if is_serie_url:
+            scraper.is_playlist = True
+            is_vacuum = True
+        else:
+            scraper.is_playlist = False
+            is_vacuum = False
+
+        if getattr(scraper, "_quick_grab", False):
+            is_vacuum = False
+            scraper.is_playlist = False
+            norm_url = url.rstrip("/")
+            filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
+            videos[:] = filtered if filtered else videos[:1]
+            metadata["Total Videos"] = len(videos)
+
+        chapter_limit = getattr(scraper, "_chapter_limit", None)
+        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+            if videos and len(videos) > chapter_limit:
+                videos[:] = videos[:chapter_limit]
+                metadata["Total Videos"] = len(videos)
+
     elif len(videos) == 1:
         # Only one episode exists — skip the prompt, just download it
         scraper.is_playlist = False
@@ -92,6 +112,9 @@ def handle_hentaihaven_tui(
 
         if __import__("sys").stdin.isatty():
             choice = Selector([
+                ("Whole Franchise", "franchise"),
+                ("Single Episode", "single"),
+            ] if is_serie_url else [
                 ("Single Episode", "single"),
                 ("Whole Franchise", "franchise"),
             ], "Download", vertical=True).select()
@@ -118,8 +141,8 @@ def handle_hentaihaven_tui(
                 return
         else:
             # Headless/piped: download all
-            scraper.is_playlist = True
-            is_vacuum = True
+            scraper.is_playlist = is_serie_url
+            is_vacuum = is_serie_url
 
     # ── Stage 3: Resolve target path directly from user choice ─────────
     if batch_path is not None:

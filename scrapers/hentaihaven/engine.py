@@ -196,82 +196,56 @@ class HentaiHavenEngine(VideoEngine):
         avatar_url: Optional[str] = None,
         videos: Optional[List[Dict[str, Any]]] = None,
         skip_cover: bool = False,
+        custom_metadata: Optional[Dict[str, Any]] = None,
     ):
         """
-        Writes .zine/metadata.json with:
-          - Clean model name (HTML decoded)
-          - sorted lists: most_viewed, top_rated, latest, longest
-          - All titles HTML decoded, no garbage
-        Also downloads cover.png if not already present.
+        Persists clean, normalized metadata and 2-step verified cover art into folder.
         """
-        zine_dir = root_dir / ".zine"
-        zine_dir.mkdir(parents=True, exist_ok=True)
-        meta_path = zine_dir / "metadata.json"
-
-        video_list = videos or []
-
-        # ── Sort lists (use real metadata, skip entries with zero values) ─
-        def _entry(v: Dict[str, Any]) -> Dict[str, Any]:
-            return {
-                "id":          v.get("id", ""),
-                "title":       _decode(v.get("title", "") or ""),
-                "upload_date": _fmt_date(v.get("upload_date", "") or ""),
-                "view_count":  v.get("view_count", 0) or 0,
-                "like_count":  v.get("like_count",  0) or 0,
-                "duration":    v.get("duration",    0) or 0,
-                "url":         v.get("url", ""),
-            }
-
-        all_entries = [_entry(v) for v in video_list]
-
-        # most_viewed — descending view_count (only entries that have counts)
-        most_viewed = sorted(
-            [e for e in all_entries if e["view_count"] > 0],
-            key=lambda e: e["view_count"], reverse=True
-        )[:10] or all_entries[:10]
-
-        # top_rated — descending like_count
-        top_rated = sorted(
-            [e for e in all_entries if e["like_count"] > 0],
-            key=lambda e: e["like_count"], reverse=True
-        )[:10] or all_entries[:10]
-
-        # latest — descending upload_date (ISO string, lexicographic sort works)
-        latest = sorted(
-            [e for e in all_entries if e["upload_date"]],
-            key=lambda e: e["upload_date"], reverse=True
-        )[:10]
-
-        # longest — descending duration in seconds
-        longest = sorted(
-            [e for e in all_entries if e["duration"] > 0],
-            key=lambda e: e["duration"], reverse=True
-        )[:10] or all_entries[:10]
-
-        # ── Build clean metadata dict ─────────────────────────────────
-        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
         clean_model = _decode(model_name)
-        total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
-        total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
+        url = info.get("url", "")
+        if custom_metadata and "URL" in custom_metadata:
+            url = custom_metadata["URL"]
+
+        alt_title = (custom_metadata.get("Alternative Title") or info.get("alt_title") or "") if custom_metadata else ""
+        studio = (custom_metadata.get("Studio") or info.get("uploader_id") or "") if custom_metadata else ""
+        tags = (custom_metadata.get("Tags") or "") if custom_metadata else ""
+        summary = (custom_metadata.get("Description") or "") if custom_metadata else ""
+        raw_date = (custom_metadata.get("Release Date") or info.get("upload_date") or "") if custom_metadata else ""
+        year = str(custom_metadata.get("Year") or "").strip() if custom_metadata else ""
+        if not year and raw_date:
+            year = str(raw_date).split("-")[0]
+        views = str(custom_metadata.get("Views") or info.get("views") or "") if custom_metadata else ""
+        likes = str(custom_metadata.get("Likes") or info.get("likes") or "") if custom_metadata else ""
+
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        if isinstance(tags, list):
+            tags_list = tags
+        elif isinstance(tags, str):
+            tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+        else:
+            tags_list = []
 
         payload = ZineMetadataPayload(
             title=clean_model,
             type="Series",
-            author=clean_model,
-            url=info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
-            views=f"{total_v:,}" if total_v > 0 else "",
-            likes=f"{total_l:,}" if total_l > 0 else "",
-            hottest=most_viewed,
-            most_rated=top_rated,
+            alt_title=alt_title,
+            author=studio or clean_model,
+            artist=studio,
+            description=summary,
+            tags=tags_list,
+            year=year,
+            views=views,
+            likes=likes,
+            url=url,
         )
         MetadataEngine.save_metadata(root_dir, payload)
         logger.info(f"HentaiHaven metadata saved via MetadataEngine for {clean_model}")
 
-        # ── Download cover.jpg ────────────────────────────────────────
-        if not skip_cover:
-            cover_path = root_dir / "cover.jpg"
-            if not cover_path.exists() and avatar_url:
-                self.download_avatar(avatar_url, cover_path)
+        # 2-step verification cover download
+        if not skip_cover and avatar_url:
+            has_cover = any(root_dir.glob("cover.*"))
+            if not has_cover:
+                self.download_avatar(avatar_url, root_dir / "cover")
 
     # ─── Video download ──────────────────────────────────────────────────
 

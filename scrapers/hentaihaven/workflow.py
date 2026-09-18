@@ -23,15 +23,12 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from core.ui import (
-    MinimalPulseBar,
-    console, align_header, MbpsColumn,
-    CustomDownloadColumn, CustomTimeRemainingColumn,
+    console, align_header,
     set_active_live, get_theme_input_ansi, active_status,
 )
 from core.history import HistoryLayer
 from rich.tree import Tree
 from rich.live import Live
-from rich.progress import Progress, TextColumn, TaskProgressColumn
 
 from .verification import verify_videos
 from .progress import render_metadata_tree
@@ -114,6 +111,7 @@ def run_workflow(
                 avatar_url=avatar_url,
                 videos=videos,
                 skip_cover=False,
+                custom_metadata=metadata,
             )
         except Exception as e:
             logger.error(f"Failed to save HentaiHaven metadata/cover: {e}")
@@ -231,17 +229,6 @@ def run_workflow(
             "retry":   0,
         }
 
-        progress_bar = Progress(
-            TextColumn("[progress.description]{task.description}"),
-            MinimalPulseBar(bar_width=40),
-            TaskProgressColumn(),
-            CustomDownloadColumn(),
-            MbpsColumn(),
-            CustomTimeRemainingColumn(),
-            transient=False,
-        )
-        task_id = progress_bar.add_task("Downloading", total=None)
-
         def render_video_tree() -> Tree:
             tree = Tree(f"[info]●[/info] [menu]Progress[/menu]", guide_style="unselected")
             tree.add(align_header("Current", vid_title))
@@ -252,30 +239,25 @@ def run_workflow(
 
             if not progress_data["done"]:
                 total      = progress_data["total_bytes"]
-                downloaded = progress_data["downloaded_bytes"]
+                downloaded = min(progress_data["downloaded_bytes"], total) if total > 0 else progress_data["downloaded_bytes"]
                 is_small_file = (total < 30 * 1024 * 1024) if total > 0 else (downloaded < 30 * 1024 * 1024)
+                
                 is_100_percent = (total > 0 and downloaded >= total)
+                is_90_percent = (total > 0 and downloaded >= total * 0.9)
 
                 if progress_data.get("baking") or is_100_percent:
+                    blink_state = int(time.time() * 6) % 3
+                    ball_style = "success" if blink_state == 0 else "white" if blink_state == 1 else "unselected"
                     status_text = "Almost done with baking..." if not is_small_file else "Baking metadata..."
-                    spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-                    frame = spinner_frames[int(time.time() * 10) % len(spinner_frames)]
-                    res_branch.add(f"[cyan]{frame}[/cyan] [unselected]{status_text}[/unselected]")
+                    res_branch.add(f"[{ball_style}]●[/{ball_style}] {status_text}")
+                elif is_90_percent:
+                    blink_state = int(time.time() * 6) % 3
+                    ball_style = "success" if blink_state == 0 else "white" if blink_state == 1 else "unselected"
+                    res_branch.add(f"[{ball_style}]●[/{ball_style}] Downloading (Almost done)...")
                 else:
-                    if is_small_file:
-                        blink_state = int(time.time() * 3) % 2
-                        ball_style = "warning" if blink_state == 0 else "unselected"
-                        res_branch.add(f"[{ball_style}]●[/{ball_style}] Downloading...")
-                    else:
-                        progress_bar.update(
-                            task_id,
-                            total       = total or None,
-                            completed   = downloaded,
-                            description = progress_data["status"],
-                            speed       = progress_data.get("speed", 0),
-                            eta         = progress_data.get("eta"),
-                        )
-                        res_branch.add(progress_bar)
+                    blink_state = int(time.time() * 3) % 2
+                    ball_style = "warning" if blink_state == 0 else "unselected"
+                    res_branch.add(f"[{ball_style}]●[/{ball_style}] Downloading...")
             else:
                 success   = progress_data.get("success", False)
                 res_color = "success" if success else "error"
@@ -291,12 +273,12 @@ def run_workflow(
             filename = d.get("filename")
             if d["status"] == "downloading":
                 progress_data["status"]           = "Downloading"
-                downloaded_now                    = d.get("downloaded_bytes", 0)
+                downloaded_now                    = d.get("downloaded_bytes") or 0
                 total_now                         = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 completed_files[filename]         = {"downloaded": downloaded_now, "total": total_now}
-                progress_data["downloaded_bytes"] = sum(f["downloaded"] for f in completed_files.values())
-                progress_data["total_bytes"]      = sum(f["total"]      for f in completed_files.values())
-                progress_data["speed"]            = d.get("speed", 0)
+                progress_data["downloaded_bytes"] = sum((f.get("downloaded") or 0) for f in completed_files.values())
+                progress_data["total_bytes"]      = sum((f.get("total") or 0) for f in completed_files.values())
+                progress_data["speed"]            = d.get("speed") or 0
                 progress_data["eta"]              = d.get("eta")
 
             elif d["status"] == "finished":
@@ -307,8 +289,8 @@ def run_workflow(
                     if completed_files[filename]["total"] == 0:
                         completed_files[filename]["total"] = total
                     completed_files[filename]["downloaded"] = completed_files[filename]["total"]
-                progress_data["downloaded_bytes"] = sum(f["downloaded"] for f in completed_files.values())
-                progress_data["total_bytes"]      = sum(f["total"]      for f in completed_files.values())
+                progress_data["downloaded_bytes"] = sum((f.get("downloaded") or 0) for f in completed_files.values())
+                progress_data["total_bytes"]      = sum((f.get("total") or 0)      for f in completed_files.values())
                 progress_data["speed"]  = 0
                 progress_data["eta"]    = 0
                 progress_data["status"] = "Almost done with baking..."
