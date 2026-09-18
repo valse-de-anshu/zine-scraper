@@ -85,7 +85,10 @@ def handle_ohentai_tui(
     is_serie_url = "sery_video.php" in url
 
     if is_batch_mode:
-        if is_serie_url:
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            scraper.is_playlist = True
+            is_vacuum = True
+        elif is_serie_url:
             scraper.is_playlist = True
             is_vacuum = True
         else:
@@ -96,19 +99,20 @@ def handle_ohentai_tui(
             videos[:] = filtered if filtered else videos[:1]
             metadata["Total Videos"] = len(videos)
 
-        if getattr(scraper, "_quick_grab", False):
-            is_vacuum = False
-            scraper.is_playlist = False
-            norm_url = url.rstrip("/")
-            filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
-            videos[:] = filtered if filtered else videos[:1]
-            metadata["Total Videos"] = len(videos)
-
-        chapter_limit = getattr(scraper, "_chapter_limit", None)
-        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
-            if videos and len(videos) > chapter_limit:
-                videos[:] = videos[:chapter_limit]
+        if not getattr(scraper, "_force_vacuum", False) and not getattr(scraper, "_batch_all", False):
+            if getattr(scraper, "_quick_grab", False):
+                is_vacuum = False
+                scraper.is_playlist = False
+                norm_url = url.rstrip("/")
+                filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
+                videos[:] = filtered if filtered else videos[:1]
                 metadata["Total Videos"] = len(videos)
+
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos[:] = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
 
     elif len(videos) == 1:
         scraper.is_playlist = False

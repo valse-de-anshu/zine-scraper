@@ -1,3 +1,23 @@
+# Progress Report - September 19, 2026 (Feature: Smart URL Flag --A / --a for Forced Vacuum All into Batch)
+
+- **Smart URL Flag `--A` / `--a` Implementation (`core/paths.py`, `core/funnel.py`, `core/ui.py`, `scrapers/*/`):**
+  - **Concept & Purpose**:
+    - Created `--A` / `--a` flag: allows any URL (whether series, episode, chapter, gallery, or profile) to be immediately vacuumed as a complete set.
+    - Eliminates interactive single vs franchise prompts and manual save location selection.
+    - Automatically routes downloads directly to the `Batch/` destination folder (`<library_root>/Batch/`), creating proper series/creator folders, scraping all metadata (`.zine/metadata.json`), saving cover art, and processing all episodes, chapters, and materials.
+  - **Funnel & Route Integration (`core/funnel.py`, `core/paths.py`):**
+    - Updated URL flag parsing in both `handle_batch()` (for batch files) and `main()` (for main CLI prompt) with `re.findall(r"--(\d+|[aA])\b", url)`.
+    - Added `get_default_batch_path()` to dynamically resolve `<downloads_root>/Batch` (respecting `download_base` settings).
+    - When `--A` or `--a` is passed, `route_url` is called with `is_batch=True`, `batch_path=get_default_batch_path()`, `batch_all=True`, `flags=["--a"]`, and `chapter_limit=None`.
+    - Automatically initializes atomic tracking in `BatchHistoryManager` (`mode="Vacuum"`, `flags=["--a"]`).
+  - **UI & Scraper Execution Alignment (`core/ui.py`, `scrapers/*/tui.py`, `scrapers/*/workflow.py`):**
+    - Updated `apply_chapter_limit()` and `filter_subchapters()` in `core/ui.py` to bypass chapter limits and sub-chapter prompts when `_force_vacuum` or `_batch_all` is set.
+    - Updated `scrapers/ohentai/tui.py`, `scrapers/hentaihaven/tui.py`, `scrapers/hanime_red/tui.py`, `scrapers/hentaicity/tui.py`, `scrapers/pornhub/tui.py`, `scrapers/youtube/tui.py`, `scrapers/facebook/tui.py`, `scrapers/instagram/tui.py`, `scrapers/pinterest/tui.py`, `scrapers/hianime/workflow.py`, `scrapers/anitaku/workflow.py`, `scrapers/anineko/workflow.py`, `scrapers/anikai/workflow.py`, `scrapers/anikoto/workflow.py`, `scrapers/archive/workflow.py`, and `scrapers/gutenberg/workflow.py` to recognize `_force_vacuum` / `_batch_all` and download all materials into the batch directory.
+  - **Documentation**:
+    - Documented `--A` / `--a` in [`README.md`](file:///home/valse-de-anshu/.config/zine%20scraper/README.md) and [`docs/help.md`](file:///home/valse-de-anshu/.config/zine%20scraper/docs/help.md).
+
+---
+
 # Progress Report - September 19, 2026 (Ohentai Series Overview & Quick Grab Link Recognition)
 
 - **Ohentai Link Recognition & Batch/Interactive Routing (`scrapers/ohentai/`):**

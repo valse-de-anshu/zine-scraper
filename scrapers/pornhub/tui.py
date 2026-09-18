@@ -75,7 +75,10 @@ def handle_pornhub_tui(
 
     # ── Batch Mode Bypass: Zero interactive prompts ──────────────────────
     if is_batch:
-        if getattr(scraper, "_batch_quick_grab", False):
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            is_vacuum = True
+            scraper.is_playlist = True
+        elif getattr(scraper, "_batch_quick_grab", False):
             if videos:
                 videos = videos[:1]
                 metadata["Total Videos"] = 1
@@ -84,11 +87,12 @@ def handle_pornhub_tui(
         else:
             scraper.is_playlist = is_vacuum
 
-        chapter_limit = getattr(scraper, "_chapter_limit", None)
-        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
-            if videos and len(videos) > chapter_limit:
-                videos = videos[:chapter_limit]
-                metadata["Total Videos"] = len(videos)
+        if not getattr(scraper, "_force_vacuum", False) and not getattr(scraper, "_batch_all", False):
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
 
         if batch_path is not None:
             target_root = Path(batch_path)

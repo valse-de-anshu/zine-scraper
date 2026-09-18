@@ -188,8 +188,9 @@ def handle_instagram_tui(
             selected_boards = [b for b in selected_boards if b.get("id") != "BACK"]
         else:
             selected_boards = [b for b in board_options if b.get("id") != "BACK"]
-            if getattr(scraper, '_batch_quick_grab', False):
-                selected_boards = selected_boards[:1]
+            if not getattr(scraper, '_force_vacuum', False) and not getattr(scraper, '_batch_all', False):
+                if getattr(scraper, '_batch_quick_grab', False):
+                    selected_boards = selected_boards[:1]
 
     startup_clear()
     print_banner()

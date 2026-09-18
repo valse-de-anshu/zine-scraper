@@ -85,7 +85,10 @@ def handle_hanime_red_tui(
 
     if is_batch_mode:
         # Zero interactive prompts in batch mode! Link logic + flags decide.
-        if getattr(scraper, "_batch_quick_grab", False):
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            is_vacuum = True
+            scraper.is_playlist = True
+        elif getattr(scraper, "_batch_quick_grab", False):
             is_vacuum = False
             scraper.is_playlist = False
             if videos:
@@ -103,11 +106,12 @@ def handle_hanime_red_tui(
             videos[:] = filtered if filtered else videos[:1]
             metadata["Total Videos"] = len(videos)
 
-        chapter_limit = getattr(scraper, "_chapter_limit", None)
-        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
-            if videos and len(videos) > chapter_limit:
-                videos[:] = videos[:chapter_limit]
-                metadata["Total Videos"] = len(videos)
+        if not getattr(scraper, "_force_vacuum", False) and not getattr(scraper, "_batch_all", False):
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos[:] = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
 
     elif len(videos) == 1:
         scraper.is_playlist = False

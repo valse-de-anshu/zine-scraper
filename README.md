@@ -169,6 +169,13 @@ You can append smart flags directly to URLs at the main prompt or inside `Batch 
 * **`--0` (Quick Grab Mode)**:
   * Forces the download directly into the `Quick grab/` directory, bypassing series indexing and vacuum directory creation.
   * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664/chapter/211 --0`
+* **`--A` / `--a` (Vacuum All Mode)**:
+  * Forces full vacuum download of all episodes, chapters, and materials for the series into the `Batch/` destination folder, bypassing single-item quick grab and interactive selection.
+  * Automatically scrapes complete metadata, cover art, and creates the proper series folder structure.
+  * *Examples:*
+    * `https://hentaihaven.xxx/watch/shoujo-ramune/episode-1/ --a`
+    * `https://ohentai.org/detail.php?vid=NjcyNg== --A`
+    * `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664/chapter/211 --a`
 * **`--<N>` (Sequential Continuation Limit)**:
   * Continues from where you last left off in `Download History.json` and downloads exactly **`N`** chapters in systematic order (e.g. `--2`, `--4`, `--5`, `--10`).
   * Seamlessly processes decimal chapters (e.g. `Chapter 2.5`) in proper sequence without annoying confirmation prompts.

@@ -78,7 +78,9 @@ def handle_youtube_tui(
                 time.sleep(2)
                 return
 
-    if getattr(scraper, "_batch_quick_grab", False):
+    if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+        is_multi = (link_type in ["channel", "playlist"])
+    elif getattr(scraper, "_batch_quick_grab", False):
         if videos:
             videos = videos[:1]
             metadata["Total Videos"] = 1
@@ -86,7 +88,9 @@ def handle_youtube_tui(
 
     # Check if channel/playlist exceeds 200 videos and prompt the user
     if link_type in ["channel", "playlist"] and videos and len(videos) > 200:
-        if is_batch or not sys.stdin.isatty():
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            choice = "all"
+        elif is_batch or not sys.stdin.isatty():
             # In batch mode: don't scan the whole channel — cap at first 200
             # to avoid infinite yt-dlp loops on massive channels (e.g. Netflix)
             videos = videos[:200]

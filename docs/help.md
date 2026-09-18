@@ -74,6 +74,10 @@ You can append flags directly to URLs at the main prompt or inside `Batch URL.tx
   Forces the download directly into the `Quick grab/` directory, bypassing series indexing.
   *Example:* `https://asurascans.com/comics/my-series/chapter-1 --0`
 
+- **`--A` / `--a`** (Vacuum All Mode):
+  Forces full vacuum download of all episodes, chapters, and materials for the series into the `Batch/` directory, bypassing single-item quick grab and interactive selection prompts. Scrapes all metadata, cover art, and creates the proper series folder structure.
+  *Example:* `https://asurascans.com/comics/my-series/chapter-1 --a`
+
 - **`--<N>`** (Sequential Chapter Limit):
   Continues from where you left off in `Download History.json` and downloads exactly `N` chapters in systematic order (e.g. `--2`, `--5`, `--10`). Automatically handles decimal chapters without prompting.
   *Example:* `https://asurascans.com/comics/my-series --5`

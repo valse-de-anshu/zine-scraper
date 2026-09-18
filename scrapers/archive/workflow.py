@@ -94,8 +94,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             return
     else:
         selected_assets = pre_assets
-        if getattr(scraper, '_batch_quick_grab', False):
-            selected_assets = selected_assets[:1]
+        if not getattr(scraper, '_force_vacuum', False) and not getattr(scraper, '_batch_all', False):
+            if getattr(scraper, '_batch_quick_grab', False):
+                selected_assets = selected_assets[:1]
         
     console.print("")
     for asset in selected_assets:

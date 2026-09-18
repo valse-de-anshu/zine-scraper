@@ -71,7 +71,10 @@ def handle_hentaicity_tui(
     scraper.franchise_structure = "flat"
 
     if is_batch_mode:
-        if content_type == "gallery":
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            scraper.is_playlist = True
+            is_vacuum = True
+        elif content_type == "gallery":
             is_vacuum = True
         elif getattr(scraper, "_quick_grab", False) or getattr(scraper, "_batch_quick_grab", False):
             is_vacuum = False
@@ -84,11 +87,12 @@ def handle_hentaicity_tui(
             scraper.is_playlist = True
             is_vacuum = True
 
-        chapter_limit = getattr(scraper, "_chapter_limit", None)
-        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
-            if videos and len(videos) > chapter_limit:
-                videos[:] = videos[:chapter_limit]
-                metadata["Total Videos"] = len(videos)
+        if not getattr(scraper, "_force_vacuum", False) and not getattr(scraper, "_batch_all", False):
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos[:] = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
     elif content_type == "gallery":
         # Gallery is always downloaded as a whole (it's a single album)
         is_vacuum = True

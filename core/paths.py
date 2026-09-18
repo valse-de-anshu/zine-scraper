@@ -255,6 +255,25 @@ def get_category_for_scraper(site_folder: str, is_music: bool = False, is_video:
     if is_asset: return "asset"
     return "toon"
 
+def get_default_batch_path() -> Path:
+    """Returns the default batch download directory (<library_root>/Batch)."""
+    paths = PathAuthority()
+    library_root = paths.get_downloads_root()
+    config_file = paths.get_config_file()
+    if config_file.exists():
+        try:
+            import json
+            with open(config_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                custom_base = data.get("download_base", "")
+                if custom_base:
+                    candidate = Path(custom_base).expanduser().resolve()
+                    if candidate.parent.exists() and os.access(candidate.parent, os.W_OK):
+                        library_root = candidate
+        except Exception:
+            pass
+    return library_root / "Batch"
+
 def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optional[Path] = None) -> Path:
     """
     Returns the container root directory for a given scraper/URL.
@@ -288,7 +307,9 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
             pass
             
     is_vacuum = False
-    if getattr(scraper, "is_playlist", False):
+    if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+        is_vacuum = True
+    elif getattr(scraper, "is_playlist", False):
         is_vacuum = True
     elif getattr(scraper, "get_link_type", lambda: "")() in ["playlist", "channel", "board", "profile", "album", "artist", "model"]:
         is_vacuum = True

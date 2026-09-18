@@ -234,7 +234,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         else:
             return
     else:
-        if getattr(scraper, "_batch_quick_grab", False):
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            scraper.is_playlist = True
+            is_single_episode = False
+        elif getattr(scraper, "_batch_quick_grab", False):
             if is_single_ep_url:
                 target_videos = []
                 ep_match = re.search(r'(?:[?&]ep=|/ep-|-episode-)(\d+)', url)

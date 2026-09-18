@@ -1816,7 +1816,10 @@ def apply_chapter_limit(to_process: List[Tuple[str, str]], scraper: Any) -> List
     Limits the un-downloaded items/chapters according to active flags.
     --<N> (e.g. --2, --5) downloads the next N un-downloaded items in systematic order.
     --0 (Quick grab) downloads the single next item.
+    --A / --a (Vacuum all) downloads all un-downloaded items.
     """
+    if getattr(scraper, '_force_vacuum', False) or getattr(scraper, '_batch_all', False):
+        return to_process
     chapter_limit = getattr(scraper, '_chapter_limit', None)
     if isinstance(chapter_limit, int) and chapter_limit > 0:
         return to_process[:chapter_limit]
@@ -1847,6 +1850,8 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
     # Never prompt if any flags, batch flags, or chapter limits are active
     has_flags = False
     if scraper:
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            has_flags = True
         if getattr(scraper, "_chapter_limit", None) is not None:
             has_flags = True
         if getattr(scraper, "_batch_quick_grab", False):
@@ -1858,7 +1863,7 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
     if getattr(HistoryLayer, "_active_instance", None) and getattr(HistoryLayer._active_instance, "_active_batch_flags", None):
         has_flags = True
 
-    if re.search(r"--\d+\b", url):
+    if re.search(r"--(\d+|[aA])\b", url):
         has_flags = True
 
     if has_flags:

@@ -133,32 +133,47 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
         flags = []
         batch_quick_grab = False
         chapter_limit = None
+        batch_all = False
         
-        # Parse flags: --0 (Quick grab), --<N> (chapter limit e.g. --2, --4, --5)
-        flag_matches = re.findall(r"--(\d+)\b", url)
-        for num_str in flag_matches:
-            val = int(num_str)
-            if val == 0:
-                batch_quick_grab = True
-                flags.append("--0")
+        # Parse flags: --0 (Quick grab), --<N> (chapter limit e.g. --2, --4, --5), --A/--a (Vacuum all)
+        flag_matches = re.findall(r"--(\d+|[aA])\b", url)
+        for flag_str in flag_matches:
+            if flag_str.lower() == 'a':
+                batch_all = True
+                flags.append("--a")
             else:
-                chapter_limit = val
-                flags.append(f"--{val}")
-        url = re.sub(r"\s*--\d+\b", "", url).strip()
+                val = int(flag_str)
+                if val == 0:
+                    batch_quick_grab = True
+                    flags.append("--0")
+                else:
+                    chapter_limit = val
+                    flags.append(f"--{val}")
+        url = re.sub(r"\s*--(\d+|[aA])\b", "", url).strip()
 
-        mode = "Quick grab" if batch_quick_grab else "Vacuum"
+        if batch_all:
+            batch_quick_grab = False
+            chapter_limit = None
+            mode = "Vacuum"
+        else:
+            mode = "Quick grab" if batch_quick_grab else "Vacuum"
+
         canonical_url = HistoryLayer.normalize_url(url)
 
         # Record start in Batch History (both Logs/Batch History.json and Logs/💩/batch_history.json)
         batch_mgr.record_start(raw_input=raw_url_clean, url=canonical_url, flags=flags, mode=mode)
 
+        from core.paths import get_default_batch_path
+        item_batch_path = global_path if global_path is not None else (get_default_batch_path() if batch_all else None)
+
         success = route_url(
             url,
             hist_layer,
             store_layer,
-            batch_path=global_path,
+            batch_path=item_batch_path,
             is_batch=True,
             batch_quick_grab=batch_quick_grab,
+            batch_all=batch_all,
             flags=flags,
             chapter_limit=chapter_limit
         )
@@ -184,7 +199,7 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
 
     console.input("\n[info]Batch finished. Press Enter to return to menu...[/info]")
 
-def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
+def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, batch_all: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
     import core.ui
     if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
         core.ui.trigger_revolt_exit()
@@ -359,6 +374,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         time.sleep = patched_sleep
         try:
             scraper._batch_quick_grab = batch_quick_grab
+            scraper._batch_all = batch_all
+            scraper._force_vacuum = batch_all
             scraper._batch_flags = flags or []
             scraper._chapter_limit = chapter_limit
             hist_layer._active_batch_flags = flags or []
@@ -975,17 +992,46 @@ def main():
                 flags = []
                 batch_quick_grab = False
                 chapter_limit = None
-                flag_matches = re.findall(r"--(\d+)\b", url_input)
-                for num_str in flag_matches:
-                    val = int(num_str)
-                    if val == 0:
-                        batch_quick_grab = True
-                        flags.append("--0")
+                batch_all = False
+                flag_matches = re.findall(r"--(\d+|[aA])\b", url_input)
+                for flag_str in flag_matches:
+                    if flag_str.lower() == 'a':
+                        batch_all = True
+                        flags.append("--a")
                     else:
-                        chapter_limit = val
-                        flags.append(f"--{val}")
-                clean_url = re.sub(r"\s*--\d+\b", "", url_input).strip()
-                route_url(clean_url, history, storage, batch_quick_grab=batch_quick_grab, flags=flags, chapter_limit=chapter_limit)
+                        val = int(flag_str)
+                        if val == 0:
+                            batch_quick_grab = True
+                            flags.append("--0")
+                        else:
+                            chapter_limit = val
+                            flags.append(f"--{val}")
+                clean_url = re.sub(r"\s*--(\d+|[aA])\b", "", url_input).strip()
+
+                if batch_all:
+                    from core.paths import PathAuthority, get_default_batch_path
+                    from core.history import BatchHistoryManager
+                    batch_path = get_default_batch_path()
+                    batch_mgr = BatchHistoryManager(PathAuthority(), storage)
+                    canonical_url = HistoryLayer.normalize_url(clean_url)
+                    batch_mgr.record_start(raw_input=url_input, url=canonical_url, flags=flags, mode="Vacuum")
+                    success = route_url(
+                        clean_url,
+                        history,
+                        storage,
+                        batch_path=batch_path,
+                        is_batch=True,
+                        batch_quick_grab=False,
+                        batch_all=True,
+                        flags=flags,
+                        chapter_limit=None
+                    )
+                    if success:
+                        batch_mgr.record_finish(canonical_url, status="completed")
+                    else:
+                        batch_mgr.record_finish(canonical_url, status="failed")
+                else:
+                    route_url(clean_url, history, storage, batch_quick_grab=batch_quick_grab, batch_all=False, flags=flags, chapter_limit=chapter_limit)
                 
         except KeyboardInterrupt:
             clean_exit(forceful=True)
