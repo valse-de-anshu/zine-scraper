@@ -1,3 +1,21 @@
+# Progress Report - September 19, 2026 (Refactor: Scraper Categorization, Taxonomy Reorganization & Architecture Guides)
+
+- **Categorized Scraper Taxonomy Reorganization (`scrapers/1_SFW/`, `scrapers/2_NSFW_ADULT/`, `scrapers/3_SYSTEM/`):**
+  - **Structure Reorganization**:
+    - Reorganized all 48 scrapers into standard categorical taxonomy: `1_SFW/` (9 categories: ANIME, MANGA, MANHWA, HYBRID_COMICS, NOVELS, WEBTOONS, MUSIC, WESTERN_COMICS, BOOKS), `2_NSFW_ADULT/` (3 categories: HENTAI, ADULT_DOUJIN_MANGA, ADULT_NOVELS), and `3_SYSTEM/` (shared system extractors: `hls_extractor.py`, `playwright_extractor.py`).
+  - **Core Routing & Discovery Updates (`core/paths.py`, `core/domain_manager.py`, `core/site_map.py`, `core/site_tui.py`, `scrapers/__init__.py`):**
+    - `core/paths.py`: Centralized system script resolution (`get_system_script`).
+    - `core/domain_manager.py`: Implemented dynamic recursive discovery (`rglob("site_config.json")`) across categories.
+    - `core/site_map.py`: Length-descending subdomain-prioritized router matching and updated all categorized import targets.
+    - `core/site_tui.py`: Completely overhauled interactive UI to support 12 categories, 47 user-facing platforms, dual-line SFW/NSFW category bar, and category hotkeys.
+    - `scrapers/__init__.py`: Added backwards-compatible aliases for `hls_extractor` and `playwright_extractor`.
+  - **Documentation & Agent Guidelines (`scrapers/README.md`, `README.md`, `.agents/AGENTS.md`):**
+    - Created `scrapers/README.md` as the complete catalog detailing capabilities, URL patterns, flags, and destination paths for all 48 platforms.
+    - Updated `README.md` with the new categorized tree and updated category guides.
+    - Updated `.agents/AGENTS.md` with categorized architecture standards, essential file references, and removed duplicate blocks.
+
+---
+
 # Progress Report - September 19, 2026 (Feature: Smart URL Flag --A / --a for Forced Vacuum All into Batch)
 
 - **Smart URL Flag `--A` / `--a` Implementation (`core/paths.py`, `core/funnel.py`, `core/ui.py`, `scrapers/*/`):**
