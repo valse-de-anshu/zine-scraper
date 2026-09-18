@@ -1,18 +1,34 @@
-# Scrapers Directory - Root Files Overview
+# Scrapers Directory - Structure & Extractors Overview
 
-## 1. Directory Tree (Root Files Only)
+## 1. Directory Tree
 
 ```text
 scrapers/
+├── 1_SFW/
+│   ├── ANIME/           # anikai, anikoto, anineko, anitaku, hianime, miruro
+│   ├── MANGA/           # mangadex
+│   ├── MANHWA/          # asurascans, projectsuki, manhuaplus
+│   ├── HYBRID_COMICS/   # kunmanga, topmanhua, weebcentral, fanfox, mangak
+│   ├── NOVELS/          # chikari, novelarchive, novelbuddy, novelfire, novelphoenix
+│   ├── KNOWLEDGE_STUDY/ # archive, gutenberg
+│   ├── MUSIC/           # idagio, soundcloud, yt_music
+│   └── SOCIAL_MEDIA/    # facebook, instagram, pinterest, youtube
+├── 2_NSFW_ADULT/
+│   ├── ADULT_ANIME/     # hanime, hanime_red, hentaihaven, hentaihaven_co, hentaimama, hstream, ohentai, hentaicity, oppai_stream
+│   ├── ADULT_PORN/      # pornhub
+│   ├── Doujinshi/       # asmhentai, nhentai
+│   └── ADULT_Webtoons/  # manhwaus, omegascans, hentai20, manga18fx, hentai18, oppai_stream_toon
+├── 3_SYSTEM/
+│   ├── hls_extractor.py
+│   ├── playwright_extractor.py
+│   └── ytdlp/
 ├── README.md
-├── __init__.py
-├── hls_extractor.py
-└── playwright_extractor.py
+└── __init__.py
 ```
 
-## 2. Overview of the Root Files
+## 2. Overview of the System Extractors
 
-The root files in this directory serve as the foundational backend extraction and downloading engines for the individual site scrapers (which reside in their respective subdirectories). These scripts act as isolated workers that can be invoked across the suite to handle complex stream resolution, JavaScript execution, and resilient video downloading without tightly coupling those processes to the specific scraper's logic.
+The helper scripts in `scrapers/3_SYSTEM/` serve as the foundational backend extraction and downloading engines for the individual site scrapers. These scripts act as isolated workers that can be invoked across the suite to handle complex stream resolution, JavaScript execution, and resilient video downloading without tightly coupling those processes to the specific scraper's logic.
 
 ---
 
@@ -20,8 +36,8 @@ The root files in this directory serve as the foundational backend extraction an
 
 ```mermaid
 graph TD
-    SiteScrapers["Sub-directory Scrapers (e.g., /miruro, /hianime, /hanime)"] -->|Extract stream URLs & Subtitles| PE[playwright_extractor.py]
-    SiteScrapers -->|Download m3u8 streams| HE[hls_extractor.py]
+    SiteScrapers["Categorized Scrapers (e.g., 1_SFW/ANIME/miruro, 2_NSFW_ADULT/ADULT_ANIME/hanime)"] -->|Extract stream URLs & Subtitles| PE[3_SYSTEM/playwright_extractor.py]
+    SiteScrapers -->|Download m3u8 streams| HE[3_SYSTEM/hls_extractor.py]
     
     PE -->|1. Returns JSON with Stream URL| SiteScrapers
     SiteScrapers -->|2. Passes Stream URL & Headers| HE
@@ -32,7 +48,7 @@ graph TD
     PE -->|Spawns Headless Browser| Chromium[Playwright Chromium + Stealth]
 ```
 
-- **Integration with Site Scrapers (`scrapers/<site>/`)**: The individual site scrapers orchestrate the workflow. When they encounter an obfuscated video player, they invoke `playwright_extractor.py` (often via a subprocess or async call) to sniff the network traffic and extract the raw `.m3u8` or `.mp4` stream URLs along with subtitles.
+- **Integration with Site Scrapers (`scrapers/<category>/<site>/`)**: The individual site scrapers orchestrate the workflow. When they encounter an obfuscated video player, they invoke `playwright_extractor.py` (resolved via `core.paths.get_system_script`) to sniff network traffic and extract raw `.m3u8` or `.mp4` streams.
 - **HLS Downloading**: Once the raw stream URL is obtained, the site scraper calls `hls_extractor.py` to efficiently download the fragmented video. 
 - **Decoupling Strategy**: By keeping these tools as standalone CLI-like Python scripts, the system maintains **absolute site-level isolation**. If `playwright` crashes or gets stuck, it does not crash the main scraper monolith. The main scraper simply reads the JSON output from `sys.stdout`.
 

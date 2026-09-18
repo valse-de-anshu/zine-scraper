@@ -2253,3 +2253,29 @@ The scraper architecture is split into 3 distinct stages:
   - Implemented dynamic dimension querying (`_get_dimensions()`) using `console.size` to dynamically constrain height (between 10 and 20 lines) and width (between 64 and 120 columns).
   - Dynamically calculated left/right panel padding and right-panel text wrapping to guarantee render frames remain strictly within terminal bounds with zero flicker.
   - Verified batch mode isolation: when `is_batch=True` or `not sys.stdin.isatty()`, all interactive selectors and the wizard are completely bypassed.
+
+***
+
+# Progress Report - September 2026 (Scrapers Taxonomy Reorganization & Catalog TUI Modernization)
+
+## 1. Categorized Taxonomy Architecture
+- **Reorganization**:
+  - Reorganized all 48 scrapers and system extractors into a structured directory hierarchy via `git mv`:
+    - `scrapers/1_SFW/`: `ANIME`, `MANGA`, `MANHWA`, `HYBRID_COMICS`, `NOVELS`, `KNOWLEDGE_STUDY`, `MUSIC`, `SOCIAL_MEDIA`
+    - `scrapers/2_NSFW_ADULT/`: `ADULT_ANIME`, `ADULT_PORN`, `Doujinshi`, `ADULT_Webtoons`
+    - `scrapers/3_SYSTEM/`: `hls_extractor.py`, `playwright_extractor.py`, `ytdlp/`
+  - Created `__init__.py` markers in every directory level to enable dynamic dotted package resolution via Python `importlib`.
+  - Added `get_system_script(script_name)` and `get_project_root()` to `core/paths.py` for centralized, path-independent discovery of `3_SYSTEM` helper scripts.
+  - Updated `core/domain_manager.py` to recursively discover `site_config.json` via `rglob()` and map dotted paths.
+  - Updated `core/site_map.py` to map all domains to their categorized dotted modules with length-descending sorting for prioritized subdomain resolution.
+  - Added fallback module aliasing in `scrapers/__init__.py` ensuring backward compatibility for legacy imports.
+
+## 2. Site Database TUI (`core/site_tui.py`) Catalog Overhaul
+- Updated catalog dataset to match the 12 taxonomy categories with all 47 user-facing platforms.
+- Fixed placement of `hentaicity` (moved from Doujinshi to `ADULT_ANIME`), `hentai18` (moved from Video to `ADULT_Webtoons`), and added missing scrapers (`anikai`, `hanime`, `hentaihaven_co`, `oppai_stream_toon`).
+- Designed a dual-line category bar (`SFW` and `NSFW`) fitting cleanly within the 144-character panel frame.
+- Implemented expanded hotkeys: `1-8` for SFW categories, `9`, `0`, `-`, `=` for NSFW categories, and `[` / `]` for category cycling.
+
+## 3. Documentation & Verification
+- Updated `README.md` and `scrapers/README.md` with the new categorized tree and updated platform tables.
+- Executed empirical verification confirming 100% test pass rate across all 47 scrapers, dynamic imports, and URL routing.

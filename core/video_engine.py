@@ -593,10 +593,10 @@ class VideoEngine:
             import json
             import base64
             
-            project_root = Path(__file__).parent.parent
+            from core.paths import get_system_script
             import sys
             venv_python = sys.executable
-            script_path = project_root / "scrapers" / "hls_extractor.py"
+            script_path = get_system_script("hls_extractor.py")
             
             headers_b64 = base64.b64encode(json.dumps(self.headers).encode('utf-8')).decode('utf-8')
             

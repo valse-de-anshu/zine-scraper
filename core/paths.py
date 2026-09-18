@@ -77,6 +77,12 @@ class PathAuthority:
     def get_app_root(self) -> Path:
         return self._app_root
 
+    def get_suite_root(self) -> Path:
+        return self._suite_root
+
+    def get_project_root(self) -> Path:
+        return self._suite_root
+
     def get_models_root(self) -> Path:
         """The AI models directory for Voice-to-Text and TTS models (suite_root / Models)."""
         return self._models_root
@@ -200,10 +206,24 @@ class ZineFolder(type(Path())):
             return Path(super().__truediv__(f"_temp_Chapter_{digits}"))
         return Path(super().__truediv__(other))
 
+def get_system_script(script_name: str) -> Path:
+    """Returns absolute path to a system script located in scrapers/3_SYSTEM/ or scrapers/."""
+    paths = PathAuthority()
+    project_root = paths.get_project_root()
+    cand1 = project_root / "scrapers" / "3_SYSTEM" / script_name
+    if cand1.exists():
+        return cand1
+    cand2 = project_root / "scrapers" / script_name
+    if cand2.exists():
+        return cand2
+    return cand1
+
 def get_category_for_scraper(site_folder: str, is_music: bool = False, is_video: bool = False, is_asset: bool = False, scraper: Any = None) -> str:
     """
     Resolve the download category for a given site/scraper.
     """
+    folder_slug = site_folder.split(".")[-1] if site_folder else ""
+
     if scraper is not None:
         s_url = str(getattr(scraper, "url", "")).lower()
         if "music.youtube.com" in s_url or getattr(scraper, "is_music", False):
@@ -227,27 +247,28 @@ def get_category_for_scraper(site_folder: str, is_music: bool = False, is_video:
             return "book"
 
     # ── Priority 2: legacy site-name lookup ─────────
-    if site_folder == "youtube":
+    if folder_slug == "youtube" or site_folder == "youtube":
         return "music" if is_music else "video"
-    if site_folder in ["soundcloud", "idagio", "youtube.yt_music", "yt_music"]:
+    if folder_slug in ["soundcloud", "idagio", "yt_music"] or site_folder in ["soundcloud", "idagio", "youtube.yt_music", "yt_music"]:
         return "music"
-    if site_folder == "pornhub":
+    if folder_slug == "pornhub" or site_folder == "pornhub":
         return "video"
-    if site_folder == "pinterest":
+    if folder_slug == "pinterest" or site_folder == "pinterest":
         return "image"
-    if site_folder == "archive":
+    if folder_slug == "archive" or site_folder == "archive":
         if is_video: return "video"
         if is_music: return "music"
         return "asset"
-    if site_folder == "gutenberg":
+    if folder_slug == "gutenberg" or site_folder == "gutenberg":
         return "book"
 
     _LEGACY_TOON_SITES = {
         "manhuaplus", "manhwaus", "asurascans", "omegascans",
         "kunmanga", "fanfox", "nhentai", "weebcentral", "mangak",
-        "projectsuki", "hentai18", "hentai20", "manga18fx", "topmanhua"
+        "projectsuki", "hentai18", "hentai20", "manga18fx", "topmanhua",
+        "oppai_stream_toon"
     }
-    if site_folder in _LEGACY_TOON_SITES:
+    if folder_slug in _LEGACY_TOON_SITES or site_folder in _LEGACY_TOON_SITES:
         return "toon"
 
     if is_music: return "music"

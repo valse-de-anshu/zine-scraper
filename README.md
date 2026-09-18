@@ -200,31 +200,40 @@ You can append smart flags directly to URLs at the main prompt or inside `Batch 
 
 ## 🌐 Supported Platforms
 
-Zine natively supports 49+ platforms across 8 dedicated categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
+Zine natively supports 48+ platforms across 12 structured categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
 
-### 📺 1. Anime (SFW)
+### 📺 1. Anime (`1_SFW/ANIME`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
-| **HiAnime** | `hianime.to` | `hianime.sx`, `hianime.mn`, `hianime.nz`, `hianime.ad` | Multi-server HLS streams, Sub & Dub multi-audio |
-| **Anikoto** | `anikoto.cz` | `anikototv.to`, `anikoto.me`, `anikoto.net` | Low-latency streaming, auto domain rotation |
+| **HiAnime** | `hianime.to` | `hianime.sx`, `hianime.mn`, `hianime.nz`, `hianime.ad`, `hianime.re`, `hianime.pm` | Multi-server HLS streams, Sub & Dub multi-audio |
+| **Anikoto** | `anikoto.cz` | `anikototv.to`, `anikoto.me`, `anikoto.net`, `anikototv.se`, `anikoto.online` | Low-latency streaming, auto domain rotation |
 | **Anineko** | `anineko.to` | — | Minimalist, ad-light subbed episode streams |
 | **Anitaku** | `anitaku.online` | `anitaku.to`, `anitaku.me` | Legacy anime archive, multi-quality resolutions |
 | **Miruro** | `miruro.to` | `miruro.ru`, `miruro.tv`, `miruro.bz` | Fast API stream extraction, AniList GraphQL sync |
+| **Anikai** | `anikai.to` | — | Fast high-definition streams with full episode catalogs |
 
-### 📖 2. Manga & Manhwa (SFW)
+### 📖 2. Manga (`1_SFW/MANGA`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
 | **MangaDex** | `mangadex.org` | `api.mangadex.org` | Official REST API v5, MangaDex@Home, multi-language, decimal parsing ([Guide](docs/ManaDex.md)) |
+
+### 🇰🇷 3. Manhwa (`1_SFW/MANHWA`)
+| Platform | Primary Domain | Alternate Domains | Capabilities |
+|---|---|---|---|
 | **Asura Scans** | `asurascans.com` | `asuracomic.net`, `asuratoon.com` | Manhwa/Webtoons, decimal chapter resolution |
-| **Weeb Central** | `weebcentral.com` | — | High-speed CDN reader scans, series archiving |
 | **Project Suki** | `projectsuki.com` | — | Clean ad-free comic scans and chapter batches |
 | **Manhuaplus** | `manhuaplus.org` | — | Chinese manhua, cultivation & martial arts releases |
-| **MangaK** | `mangak.io` | — | Historic manga archive, high-res chapter reader |
-| **Kunmanga** | `kunmanga.com` | `kunmanga.co.uk` | Fast chapter image extraction & auto-retry |
-| **Fanfox** | `fanfox.net` | `m.fanfox.net` | Global manga directory and complete classic series |
-| **Topmanhua** | `topmanhua.fan` | `www.topmanhua.fan` | High-res manhua/webtoon strip reader, full metadata extraction |
 
-### 📚 3. Light Novels & Web Serials (SFW)
+### 📑 4. Hybrid Comics (`1_SFW/HYBRID_COMICS`)
+| Platform | Primary Domain | Alternate Domains | Capabilities |
+|---|---|---|---|
+| **Weeb Central** | `weebcentral.com` | — | High-speed CDN reader scans, series archiving |
+| **Kunmanga** | `kunmanga.com` | `kunmanga.co.uk` | Fast chapter image extraction & auto-retry |
+| **Topmanhua** | `topmanhua.fan` | — | High-res manhua/webtoon strip reader, full metadata extraction |
+| **Fanfox** | `fanfox.net` | `m.fanfox.net` | Global manga directory and complete classic series |
+| **MangaK** | `mangak.io` | — | Historic manga archive, high-res chapter reader |
+
+### 📚 5. Light Novels & Web Serials (`1_SFW/NOVELS`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
 | **Chikari** | `chikari.moe` | — | SvelteKit REST API extraction, ultra-fast 1,400+ chapters indexing |
@@ -233,21 +242,20 @@ Zine natively supports 49+ platforms across 8 dedicated categories (80+ supporte
 | **NovelBuddy** | `novelbuddy.me` | `novelbuddy.com` | Next.js API chapter discovery, rich synopsis & cover grabs |
 | **NovelArchive** | `novelarchive.cc` | — | Lightweight REST API web novel repository |
 
-### 🎵 4. Music & Audio (SFW)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **YouTube Music** | `music.youtube.com` | `youtube.com` | Lossless FLAC, Vorbis tagging, embedded cover art, auto synced `.lrc` lyrics |
-| **SoundCloud** | `soundcloud.com` | — | High-bitrate audio, track metadata, automated lyrics synchronization |
-| **Idagio** | `idagio.com` | — | Classical music streams, conductor/orchestra/opus metadata tagging |
-| **Internet Archive Music** | `archive.org/details/audio` | `archive.org` | Lossless live concerts (250,000+ shows), historical audio recordings |
-
-### 🏛 5. Books & Public Archives (SFW)
+### 🏛 6. Books & Public Archives (`1_SFW/KNOWLEDGE_STUDY`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
 | **Project Gutenberg** | `gutenberg.org` | — | 70,000+ public domain e-books, classic literature, philosophy |
 | **Internet Archive** | `archive.org` | — | Scanned texts, rare manuscripts, permanent open access archives |
 
-### 🌐 6. Video & Social Platforms (SFW)
+### 🎵 7. Music & Audio (`1_SFW/MUSIC`)
+| Platform | Primary Domain | Alternate Domains | Capabilities |
+|---|---|---|---|
+| **SoundCloud** | `soundcloud.com` | — | High-bitrate audio, track metadata, automated lyrics synchronization |
+| **Idagio** | `idagio.com` | — | Classical music streams, conductor/orchestra/opus metadata tagging |
+| **YouTube Music** | `music.youtube.com` | — | Lossless FLAC, Vorbis tagging, embedded cover art, auto synced `.lrc` lyrics |
+
+### 🌐 8. Video & Social Platforms (`1_SFW/SOCIAL_MEDIA`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
 | **YouTube** | `youtube.com` | `youtu.be` | Videos, playlists, channels, shorts, auto-subs & rolling ASR sync |
@@ -255,29 +263,39 @@ Zine natively supports 49+ platforms across 8 dedicated categories (80+ supporte
 | **Facebook** | `facebook.com` | `fb.watch` | Public photo albums, full-resolution profile media, video reels |
 | **Pinterest** | `pinterest.com` | `pin.it` | Ultra-high-resolution boards, aesthetic pins, concept art |
 
-### 🔞 7. Adult Video (NSFW)
+### 🔞 9. Adult Anime (`2_NSFW_ADULT/ADULT_ANIME`)
+| Platform | Primary Domain | Alternate Domains | Capabilities |
+|---|---|---|---|
+| **Hanime** | `hanime1.me` | `hanime.tv` | Full HD 1080p uncensored video streams, playlist feeds |
+| **Hanime Red** | `hanime.red` | — | Franchise collections, tagged releases, subtitle extraction |
+| **Hentai Haven** | `hentaihaven.xxx` | `hentaihaven.red`, `hentaihaven.online`, `hentaihaven.club` | Multi-mirror stream extraction |
+| **HentaiHaven Co** | `hentaihaven.co` | — | Headless browser bridge extraction via nhplayer |
+| **Hentaimama** | `hentaimama.io` | — | Translated adult anime releases, episode archiving |
+| **HStream** | `hstream.moe` | — | HD adult anime streaming, clean direct streams |
+| **OHentai** | `ohentai.org` | — | Vintage OVA and classic adult anime archives |
+| **HentaiCity** | `hentaicity.com` | — | Comprehensive video repository, multi-episode series tracking |
+| **Oppai Stream** | `oppai.stream` | — | Fast direct HLS adult video streaming |
+
+### 🔞 10. Adult Video (`2_NSFW_ADULT/ADULT_PORN`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
 | **Pornhub** | `pornhub.com` | `phncdn.com` | Multi-resolution video downloads (up to 1080p/4K), playlists |
-| **HStream** | `hstream.moe` | — | HD adult anime streaming, clean direct streams |
-| **Hentai18** | `hentai18.net` | — | Uncensored HD releases, multi-server feeds |
-| **OHentai** | `ohentai.org` | — | Vintage OVA and classic adult anime archives |
-| **Hentaimama** | `hentaimama.io` | — | Translated adult anime releases, episode archiving |
-| **Oppai Stream** | `oppai.stream` | `read.oppai.stream` | Unified adult video streaming and webtoon reader |
-| **hanime.red** | `hanime.red` | — | Franchise collections, tagged releases, creator catalogs |
-| **Hentai Haven** | `hentaihaven.xxx` | `hentaihaven.red`, `hentaihaven.co` | Multi-mirror stream extraction |
 
-### 🔞 8. Adult Comics & Doujinshi (NSFW)
+### 🔞 11. Doujinshi (`2_NSFW_ADULT/Doujinshi`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
 |---|---|---|---|
 | **NHentai** | `nhentai.net` | — | Fast 6-digit ID lookups, complete tag indexing, tankōbon archives |
-| **Omega Scans** | `omegascans.org` | — | Uncensored adult manhwa & webtoons, English scanlations |
-| **Hentai8** | `hentai8.net` | — | Fast-loading translated Japanese doujinshi galleries |
 | **AsmHentai** | `asmhentai.com` | — | Curated doujinshi and adult comics with extensive tag matrix |
-| **Hentaicity** | `hentaicity.com` | — | Granular tag intersection search and chapter downloads |
-| **Hentai20** | `hentai20.io` | — | Western adult comics, webtoons, and doujinshi releases |
+
+### 🔞 12. Adult Webtoons (`2_NSFW_ADULT/ADULT_Webtoons`)
+| Platform | Primary Domain | Alternate Domains | Capabilities |
+|---|---|---|---|
 | **ManhwaUS** | `manhwaus.net` | — | Adult Korean webtoons, romance & drama ongoing manhwa |
+| **Omega Scans** | `omegascans.org` | — | Uncensored adult manhwa & webtoons, English scanlations |
+| **Hentai20** | `hentai20.io` | — | Western adult comics, webtoons, and doujinshi releases |
 | **Manga18fx** | `manga18fx.com` | — | Mixed SFW & NSFW manhwa/webtoons, vertical strip slicing |
+| **Hentai18** | `hentai18.net` | — | Uncensored adult manhwa & webtoons, multi-server feeds |
+| **Oppai Stream Toon** | `read.oppai.stream` | — | Dedicated webtoon and comic vertical strip reader |
 
 ---
 
@@ -342,6 +360,8 @@ zine-scraper/
 ├── orchestrator.py          ← Main entry point — launches the suite
 ├── core/
 │   ├── funnel.py            ← Command router & input sanitization
+│   ├── site_map.py          ← Centralized site-to-category domain mapper
+│   ├── domain_manager.py    ← Dynamic site_config.json loader
 │   ├── ui.py                ← Rich TUI primitives, revolt listener & raw cbreak TTY loop
 │   ├── bake_engine.py       ← Audio Metadata & Cover Art Baking Engine
 │   ├── lyrics_engine.py     ← Multi-tier Synced Lyrics Search & Batch Sync
@@ -353,12 +373,22 @@ zine-scraper/
 │   ├── paths.py             ← Filesystem authority & path routing (Vacuum vs Quick Grab)
 │   ├── storage.py           ← Atomic disk I/O layer
 │   └── history.py           ← Download registry & duplicate protection
-├── scrapers/                ← 47+ isolated site scraper packages (80+ domains)
-│   └── <category>/<site>/
-│       ├── engine.py        ← Extraction logic & API queries
-│       ├── scraper.py       ← Scraper interface definition
-│       ├── tui.py           ← Site TUI interactive entrypoint
-│       └── workflow.py      ← Multi-threaded download orchestrator
+├── scrapers/                ← 48+ categorized site scraper packages (80+ domains)
+│   ├── 1_SFW/
+│   │   ├── ANIME/           ← anikai, anikoto, anineko, anitaku, hianime, miruro
+│   │   ├── MANGA/           ← mangadex
+│   │   ├── MANHWA/          ← asurascans, projectsuki, manhuaplus
+│   │   ├── HYBRID_COMICS/   ← kunmanga, topmanhua, weebcentral, fanfox, mangak
+│   │   ├── NOVELS/          ← chikari, novelarchive, novelbuddy, novelfire, novelphoenix
+│   │   ├── KNOWLEDGE_STUDY/ ← archive, gutenberg
+│   │   ├── MUSIC/           ← idagio, soundcloud, yt_music
+│   │   └── SOCIAL_MEDIA/    ← facebook, instagram, pinterest, youtube
+│   ├── 2_NSFW_ADULT/
+│   │   ├── ADULT_ANIME/     ← hanime, hanime_red, hentaihaven, hentaihaven_co, hentaimama, hstream, ohentai, hentaicity, oppai_stream
+│   │   ├── ADULT_PORN/      ← pornhub
+│   │   ├── Doujinshi/       ← asmhentai, nhentai
+│   │   └── ADULT_Webtoons/  ← manhwaus, omegascans, hentai20, manga18fx, hentai18, oppai_stream_toon
+│   └── 3_SYSTEM/            ← hls_extractor.py, playwright_extractor.py, ytdlp/
 ├── Models/                  ← Unified storage hub for offline AI models & engines
 │   ├── STT/                 ← Speech-to-Text models (faster-whisper)
 │   └── TTS/                 ← Text-to-Speech models & engines (Breeze-TTS-2 / Qwen)
