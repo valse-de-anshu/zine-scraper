@@ -214,8 +214,39 @@ class HentaiHavenEngine(VideoEngine):
         year = str(custom_metadata.get("Year") or "").strip() if custom_metadata else ""
         if not year and raw_date:
             year = str(raw_date).split("-")[0]
-        views = str(custom_metadata.get("Views") or info.get("views") or "") if custom_metadata else ""
-        likes = str(custom_metadata.get("Likes") or info.get("likes") or "") if custom_metadata else ""
+        video_list = videos or []
+
+        def _entry(v: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id":          str(v.get("id", "")),
+                "title":       _decode(v.get("title", "") or ""),
+                "upload_date": _fmt_date(v.get("upload_date", "") or ""),
+                "view_count":  v.get("view_count", 0) or 0,
+                "like_count":  v.get("like_count",  0) or 0,
+                "duration":    v.get("duration",    0) or 0,
+                "url":         v.get("url", ""),
+            }
+
+        all_entries = [_entry(v) for v in video_list]
+
+        # most_viewed — descending view_count
+        most_viewed = sorted(
+            [e for e in all_entries if e["view_count"] > 0],
+            key=lambda e: e["view_count"], reverse=True
+        )[:10] or all_entries[:10]
+
+        # top_rated — descending like_count
+        top_rated = sorted(
+            [e for e in all_entries if e["like_count"] > 0],
+            key=lambda e: e["like_count"], reverse=True
+        )[:10] or all_entries[:10]
+
+        raw_views = str((custom_metadata.get("Views") if custom_metadata else "") or info.get("views") or "")
+        raw_likes = str((custom_metadata.get("Likes") if custom_metadata else "") or info.get("likes") or "")
+        total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
+        total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
+        views_val = raw_views or (f"{total_v:,}" if total_v > 0 else "0")
+        likes_val = raw_likes or (f"{total_l:,}" if total_l > 0 else "0")
 
         from core.metadata_engine import MetadataEngine, ZineMetadataPayload
         if isinstance(tags, list):
@@ -234,8 +265,10 @@ class HentaiHavenEngine(VideoEngine):
             description=summary,
             tags=tags_list,
             year=year,
-            views=views,
-            likes=likes,
+            views=views_val,
+            likes=likes_val,
+            hottest=most_viewed,
+            most_rated=top_rated,
             url=url,
         )
         MetadataEngine.save_metadata(root_dir, payload)
