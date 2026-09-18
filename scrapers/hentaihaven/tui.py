@@ -11,6 +11,7 @@ The Vacuum / Quick Grab label is NEVER shown. Label is always "Hentai".
 Save Location prompt is NEVER shown — path is derived automatically from user choice.
 """
 
+import re
 import sys
 import time
 import logging
