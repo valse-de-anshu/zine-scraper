@@ -693,6 +693,226 @@ def qwen_tts_settings_tui():
                 try: config.set("tts_max_new_tokens", int(new_val))
                 except: pass
 
+
+def breeze_tts_settings_tui():
+    """Settings configurator for Breeze-TTS-2 (C++ / GGUF engine)."""
+    while True:
+        startup_clear()
+        print_banner()
+
+        curr_backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
+        curr_mode = config.get("breeze_mode", "Voice Design")
+        curr_model = config.get("breeze_model_path", "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf")
+        curr_bin_dir = config.get("breeze_bin_dir", "/mnt/maiden/tts/Breeze-TTS-2.cpp/build")
+        curr_server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
+
+        default_instruct = "A warm, thoughtful narrator with a clear, calm delivery and expressive emotional nuance."
+        curr_instruct = config.get("breeze_voice_instruct", default_instruct)
+        curr_instruct_display = _short_path(curr_instruct) if curr_instruct else "None"
+
+        curr_saved_voice = config.get("breeze_saved_voice", "") or "None"
+
+        curr_ref_audio = config.get("breeze_clone_ref_audio", "")
+        curr_ref_audio_display = _short_path(curr_ref_audio) if curr_ref_audio else "None"
+
+        curr_ref_transcript = config.get("breeze_clone_ref_transcript", "")
+        curr_ref_transcript_display = (
+            _short_path(curr_ref_transcript) if (curr_ref_transcript and ('/' in curr_ref_transcript or '\\' in curr_ref_transcript))
+            else (curr_ref_transcript[:38] + "…" if len(curr_ref_transcript) > 38 else curr_ref_transcript)
+        ) if curr_ref_transcript else "None"
+
+        curr_cfg = float(config.get("breeze_cfg_scale", 1.0))
+        curr_auto_vocal = "Enabled (2.5x Boost)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
+        curr_hardware = config.get("breeze_hardware", "Vulkan (GPU)")
+        curr_seed = config.get("breeze_seed", 42)
+        curr_temp = config.get("breeze_temperature", 0.9)
+        curr_top_k = config.get("breeze_top_k", 50)
+        curr_top_p = config.get("breeze_top_p", 1.0)
+        curr_rep_pen = config.get("breeze_rep_penalty", 1.1)
+        curr_split_chars = config.get("breeze_split_chars", 600)
+
+        is_saved = curr_mode == "Saved Voice"
+        is_clone = curr_mode in ("Voice Cloning", "Voice Direction")
+
+        options = [
+            (("Execution Backend",     curr_backend),        "breeze_backend"),
+            (("Breeze TTS Mode",       curr_mode),           "breeze_mode"),
+        ]
+
+        if "Server" in curr_backend:
+            options.append((("Breeze Server URL",   curr_server_url), "breeze_server_url"))
+        else:
+            options.append((("Model GGUF Path",     _short_path(curr_model)), "breeze_model_path"))
+            options.append((("Binaries Directory",  _short_path(curr_bin_dir)), "breeze_bin_dir"))
+
+        if is_saved:
+            options.append((("Saved Voice Profile", curr_saved_voice), "breeze_saved_voice"))
+            options.append((("Delivery Instruction", curr_instruct_display), "breeze_voice_instruct"))
+        elif is_clone:
+            options.append((("Clone Audio (.wav)",  curr_ref_audio_display), "breeze_clone_ref_audio"))
+            options.append((("Clone Transcript",    curr_ref_transcript_display), "breeze_clone_ref_transcript"))
+            if curr_mode == "Voice Direction":
+                options.append((("Direction Prompt", curr_instruct_display), "breeze_voice_instruct"))
+        else:
+            # Voice Design
+            options.append((("Voice Design Prompt", curr_instruct_display), "breeze_voice_instruct"))
+
+        options += [
+            (("Base CFG Scale",        str(curr_cfg)),       "breeze_cfg_scale"),
+            (("Vocal Event Auto-Boost",curr_auto_vocal),     "breeze_auto_vocal_cfg"),
+            (("Hardware Acceleration", curr_hardware),       "breeze_hardware"),
+            (("RNG Seed",              str(curr_seed)),      "breeze_seed"),
+            (("Temperature",           str(curr_temp)),      "breeze_temperature"),
+            (("Top K",                 str(curr_top_k)),     "breeze_top_k"),
+            (("Top P",                 str(curr_top_p)),     "breeze_top_p"),
+            (("Repetition Penalty",    str(curr_rep_pen)),   "breeze_rep_penalty"),
+            (("Split Character Cap",   str(curr_split_chars)), "breeze_split_chars"),
+        ]
+
+        choice = SettingsSelector(options).select()
+        if not choice or choice in ("ESC", "CTRL_C"):
+            break
+
+        elif choice == "breeze_backend":
+            opts = [
+                ("Direct CLI (breeze-cli — Vulkan GPU / No Server Required)", "Direct CLI (breeze-cli)"),
+                ("HTTP Server (breeze-server — Streaming API on port 8080)", "HTTP Server (breeze-server)")
+            ]
+            new_val = Selector(opts, "Select Breeze TTS Execution Backend").select()
+            if new_val and new_val != "ESC":
+                config.set("breeze_backend", new_val)
+
+        elif choice == "breeze_mode":
+            mode_opts = [
+                ("Voice Design (Text description shapes narrator)", "Voice Design"),
+                ("Saved Voice (Instant cached .breeze profile)", "Saved Voice"),
+                ("Voice Cloning (Reference .wav + transcript)", "Voice Cloning"),
+                ("Voice Direction (Reference audio + emotional direction)", "Voice Direction")
+            ]
+            new_mode = Selector(mode_opts, "Select Breeze Generation Mode").select()
+            if new_mode and new_mode != "ESC":
+                config.set("breeze_mode", new_mode)
+
+        elif choice == "breeze_model_path":
+            new_val = prompt_field_value("Model GGUF Path", curr_model, "(Absolute path to breeze-tts-2-*.gguf)")
+            if new_val is not None and new_val.strip():
+                from core.paths import sanitize_user_path
+                config.set("breeze_model_path", sanitize_user_path(new_val))
+
+        elif choice == "breeze_bin_dir":
+            new_val = prompt_field_value("Binaries Directory", curr_bin_dir, "(Path to build/ containing breeze-cli)")
+            if new_val is not None and new_val.strip():
+                from core.paths import sanitize_user_path
+                config.set("breeze_bin_dir", sanitize_user_path(new_val))
+
+        elif choice == "breeze_server_url":
+            new_val = prompt_field_value("Breeze Server URL", curr_server_url, "(e.g. http://127.0.0.1:8080)")
+            if new_val is not None and new_val.strip():
+                config.set("breeze_server_url", new_val.strip())
+
+        elif choice == "breeze_voice_instruct":
+            hint = (
+                "Describe the voice personality or acting direction.\n"
+                "Type text OR pass an absolute path to a .txt file."
+            )
+            new_val = prompt_field_value("Voice Style Prompt", curr_instruct, hint)
+            if new_val is not None:
+                from core.paths import sanitize_user_path
+                config.set("breeze_voice_instruct", sanitize_user_path(new_val) if ('/' in new_val or '\\' in new_val) else new_val.strip())
+
+        elif choice == "breeze_saved_voice":
+            voices_dir = Path(__file__).parent.parent / "Breeze tts" / "voices"
+            v_files = sorted(voices_dir.glob("*.breeze"))
+            if not v_files:
+                console.print("\n[warning]● No .breeze voices found in Breeze tts/voices/ folder.[/warning]")
+                console.print("[unselected]Bake a reference audio into a voice profile first via 'breeze' menu.[/unselected]")
+                time.sleep(2)
+            else:
+                opts = [(vf.stem, vf.stem) for vf in v_files]
+                new_v = Selector(opts, "Select Saved .breeze Voice Profile").select()
+                if new_v and new_v != "ESC":
+                    config.set("breeze_saved_voice", new_v)
+
+        elif choice == "breeze_clone_ref_audio":
+            new_val = prompt_field_value("Clone Audio Path", curr_ref_audio, "(Path to reference .wav)")
+            if new_val is not None:
+                from core.paths import sanitize_user_path
+                config.set("breeze_clone_ref_audio", sanitize_user_path(new_val))
+
+        elif choice == "breeze_clone_ref_transcript":
+            new_val = prompt_field_value("Clone Transcript", curr_ref_transcript, "(Exact words spoken in reference audio)")
+            if new_val is not None:
+                from core.paths import sanitize_user_path
+                val = sanitize_user_path(new_val) if ('/' in new_val or '\\' in new_val) else new_val.strip()
+                config.set("breeze_clone_ref_transcript", val)
+
+        elif choice == "breeze_cfg_scale":
+            table = Table(box=None, show_header=False, padding=(0, 1))
+            table.add_column("info", width=70)
+            table.add_row(Text("Classifier-Free Guidance (CFG Scale)", style="bold sexy_pink"))
+            table.add_row(Text("1.0 = Default natural narration.\n2.0 - 2.8 = Strong guidance for acting / dramatic delivery.", style="unselected"))
+            console.print()
+            console.print(Panel(table, title="[bold white]◆ CFG SCALE ◆[/bold white]", border_style="sexy_pink", padding=(1, 2), width=80))
+            new_val = prompt_field_value("CFG Scale", str(curr_cfg), "(e.g. 1.0 or 1.5)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_cfg_scale", float(new_val))
+                except: pass
+
+        elif choice == "breeze_auto_vocal_cfg":
+            opts = [
+                ("Enabled (Boosts to 2.5 when (sigh), (laugh), etc. detected - Recommended)", True),
+                ("Disabled (Keeps base CFG Scale constant)", False)
+            ]
+            new_val = Selector(opts, "Auto-Boost CFG on Vocal Event Tags").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_auto_vocal_cfg", bool(new_val))
+
+        elif choice == "breeze_hardware":
+            opts = [
+                ("Vulkan (GPU Acceleration — Blazing Fast)", "Vulkan (GPU)"),
+                ("CPU (Force CPU Backend)", "CPU")
+            ]
+            new_val = Selector(opts, "Select Hardware Acceleration Backend").select()
+            if new_val and new_val != "ESC":
+                config.set("breeze_hardware", new_val)
+
+        elif choice == "breeze_seed":
+            new_val = prompt_field_value("RNG Seed", str(curr_seed), "(Integer seed)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_seed", int(new_val))
+                except: pass
+
+        elif choice == "breeze_temperature":
+            new_val = prompt_field_value("Temperature", str(curr_temp), "(0.9 = Natural variation)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_temperature", float(new_val))
+                except: pass
+
+        elif choice == "breeze_top_k":
+            new_val = prompt_field_value("Top K", str(curr_top_k), "(50 = Default)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_top_k", int(new_val))
+                except: pass
+
+        elif choice == "breeze_top_p":
+            new_val = prompt_field_value("Top P", str(curr_top_p), "(1.0 = Default)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_top_p", float(new_val))
+                except: pass
+
+        elif choice == "breeze_rep_penalty":
+            new_val = prompt_field_value("Repetition Penalty", str(curr_rep_pen), "(1.1 = Default)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_rep_penalty", float(new_val))
+                except: pass
+
+        elif choice == "breeze_split_chars":
+            new_val = prompt_field_value("Split Character Cap", str(curr_split_chars), "(Default 600)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_split_chars", int(new_val))
+                except: pass
+
+
 def launch_settings_tui():
     """Interactive settings menu to configure Zine preferences cleanly in a single panel box."""
     while True:
@@ -739,6 +959,7 @@ def launch_settings_tui():
             (("Chapter Download Delay", f"{curr_delay}s"), "chapter_delay"),
             (("Connection Check Delay", f"{curr_check}s"), "internet_check_interval"),
             (("Whisper AI Subtitles",   "▶ Configure Options"), "submenu_whisper"),
+            (("Breeze TTS 2 (GGUF / C++)","▶ Configure Options"), "submenu_breeze"),
             (("Qwen Audiobooks TTS",    "▶ Configure Options"), "submenu_qwen"),
             (("Color Theme",            curr_theme), "theme"),
             (("Quick Guide",            curr_tips), "show_tips"),
@@ -751,6 +972,9 @@ def launch_settings_tui():
 
         elif choice == "submenu_whisper":
             whisper_settings_tui()
+
+        elif choice == "submenu_breeze":
+            breeze_tts_settings_tui()
             
         elif choice == "submenu_qwen":
             qwen_tts_settings_tui()

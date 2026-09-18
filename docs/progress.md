@@ -1,3 +1,28 @@
+# Progress Report - September 18, 2026 (Breeze-TTS-2 C++ / GGUF Neural Speech Integration)
+
+- **Breeze-TTS-2 Integration (`Breeze tts/`, `core/funnel.py`, `core/settings_tui.py`, `docs/`):**
+  - **Overview & High-Performance Synthesis**:
+    - Integrated the Breeze-TTS-2 C++/GGUF neural text-to-speech engine with native Vulkan GPU acceleration and CPU fallback into the Zine Scraper Suite.
+    - Added dedicated package `Breeze tts/` containing `breeze_engine.py`, `README.md`, `TTS prompt.txt`, and `voices/` directory for saved `.breeze` voice container profiles.
+  - **Core Voice Modes**:
+    - **Voice Design**: Shapes custom narrator identity purely from natural language descriptions (e.g. *"A deep, authoritative male narrator with dramatic gravitas"*).
+    - **Voice Cloning**: Replicates speaker timbre and pronunciation from 5-15s clean reference audio (`.wav`) and exact transcript.
+    - **Voice Direction**: Steers pitch, tone, pace, and delivery emotion on top of reference voice profiles.
+    - **Saved Voices (`.breeze`)**: Bakes reference voice once into an ultra-compact binary cache file (`voices/<name>.breeze`), slashing time-to-first-audio from ~900ms to ~280ms.
+    - **Voice Conversion (`breeze-convert`)**: Respeaks existing audio recordings in another speaker's voice with selectable melody retention (`keep-acoustic`).
+  - **Vocal Event Enhancer & Dynamic CFG Scaling**:
+    - Implemented real-time regex parsing for vocal tags (`(laugh)`, `(sigh)`, `(cough)`, `(clears throat)`, `(whispering)`, `(gasp)`, `(nervous chuckle)`).
+    - Added dynamic guidance scaling: automatically elevates CFG scale to 2.5 on chunks containing vocal tags to ensure they fire with high fidelity, while keeping base CFG at 1.0 for standard narrative prose.
+  - **Interactive TUI & Workflow**:
+    - Tokyo Night / Sexy Pink split panel Live interface with highlighted vocal event tokens, braille progress spinners, duration counters, and dev logging.
+    - Global `Ctrl+R` revolt handler: gracefully aborts generation after active chunk, executes FFmpeg concatenation (24 kHz mono signed 16-bit PCM WAV), saves microsecond-accurate `.srt` subtitles, and cleans up temporary chunk files.
+  - **Core Funnel & Settings Wiring**:
+    - Added `breeze` and `/breeze` commands directly to the main prompt.
+    - Added universal `tts` selector allowing instant selection between Breeze-TTS-2 and Qwen3-TTS.
+    - Configured dedicated "Breeze TTS 2 (GGUF / C++)" settings submenu in `core/settings_tui.py`.
+
+---
+
 # Progress Report - September 18, 2026 (2-Step Magic-Byte Cover Verification & Universal Image Sniffing)
 
 - **2-Step Magic-Byte Cover Verification & Universal Preview Compatibility (`core/cover_utils.py` & Scraper Suite):**

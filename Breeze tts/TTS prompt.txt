@@ -1,0 +1,21 @@
+# ==============================================================================
+# Breeze TTS 2 — Voice Design & Voice Direction Prompt Container
+# ==============================================================================
+# You can write your custom Voice Design description or Voice Direction prompt here.
+#
+# Examples for Voice Design (invent a voice from scratch):
+#   - A warm, thoughtful young woman with a clear, calm delivery.
+#   - An authoritative, deep male narrator with dramatic gravitas and measured cadence.
+#   - An energetic and cheerful young anime heroine with a bright, lively tone.
+#   - A gravelly, tired old detective speaking in a low, raspy whisper.
+#
+# Examples for Voice Direction (steering tone on a cloned/saved voice):
+#   - Speak slowly with a restrained, serious tone.
+#   - Whisper anxiously with a trembling, breathless delivery.
+#   - Deliver with intense dramatic emphasis and rapid emotional pacing.
+#
+# Vocal event tags work directly inside the text!
+# Examples: (sigh), (laugh), (whispering), (gasp), (nervous chuckle), (clears throat)
+# ==============================================================================
+
+A warm, thoughtful narrator with a clear, calm delivery and expressive emotional nuance.
