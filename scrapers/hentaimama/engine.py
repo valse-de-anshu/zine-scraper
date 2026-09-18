@@ -13,6 +13,23 @@ HEADERS = {
     "Referer": "https://hentaimama.io/",
 }
 
+NON_VIDEO_EXTS = (".vtt", ".srt", ".ass", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".json", ".xml")
+
+
+def _is_valid_video_url(u: str) -> bool:
+    if not u or not isinstance(u, str):
+        return False
+    u = u.strip()
+    if not u.startswith(("http://", "https://")):
+        return False
+    path = u.split("?")[0].lower()
+    if path.endswith(NON_VIDEO_EXTS):
+        return False
+    if "/images/thumbnail/" in path or "/thumbnails/" in path or "thumbnail.vtt" in path:
+        return False
+    return True
+
+
 class HentaimamaEngine(VideoEngine):
     def __init__(self):
         super().__init__()
@@ -67,6 +84,133 @@ class HentaimamaEngine(VideoEngine):
             cover_path = root_dir / "cover.jpg"
             if not cover_path.exists():
                 self.download_avatar(avatar_url, cover_path)
+    def _extract_video_from_html(self, html: str) -> Optional[str]:
+        # 1. Look for sources: [...] in jwplayer / script setup
+        src_m = re.search(r"sources\s*:\s*(\[[^\]]+\])", html, re.DOTALL)
+        if src_m:
+            files = re.findall(r"['\"]?file['\"]?\s*:\s*['\"]([^'\"]+)['\"]", src_m.group(1))
+            for f in files:
+                clean = f.replace(r"\/", "/")
+                if _is_valid_video_url(clean):
+                    return clean
+
+        # 2. General file regex for video streams (quoted or unquoted key)
+        for f in re.findall(r"['\"]?file['\"]?\s*:\s*['\"](https?://[^'\"]+)['\"]", html):
+            clean = f.replace(r"\/", "/")
+            if _is_valid_video_url(clean):
+                return clean
+
+        # 3. Direct mp4 / m3u8 search in html
+        for m in re.finditer(r"['\"](https?://[^\s'\"<>]+\.(?:mp4|m3u8)(?:\?[^\s'\"<>]*)?)['\"]", html):
+            clean = m.group(1).replace(r"\/", "/")
+            if _is_valid_video_url(clean):
+                return clean
+
+        # 4. window.open download links
+        dl_m = re.search(r"window\.open\(['\"](https?://[^'\"]+)['\"]\)", html)
+        if dl_m:
+            clean = dl_m.group(1).replace(r"\/", "/")
+            if _is_valid_video_url(clean):
+                return clean
+
+        return None
+
+    def extract_subtitles_candidates(self, page_url: str) -> List[Dict[str, str]]:
+        """
+        Extracts genuine companion subtitles (excluding thumbnail scrubber tracks).
+        """
+        candidates = []
+        try:
+            r = self.session.get(page_url, headers=self.headers, impersonate="chrome124", timeout=15)
+            if r.status_code != 200:
+                return []
+
+            m = re.search(r"action:\s*['\"]get_player_contents['\"],\s*a:\s*['\"](\d+)['\"]", r.text)
+            if not m:
+                m = re.search(r"['\"]postId['\"]:\s*(\d+)", r.text)
+            if not m:
+                m = re.search(r"['\"]episode['\"]:\s*['\"](\d+)['\"]", r.text)
+
+            if not m:
+                return []
+
+            post_id = m.group(1)
+            ajax_headers = self.headers.copy()
+            ajax_headers["X-Requested-With"] = "XMLHttpRequest"
+
+            for opt in [1, 2, 3, 4]:
+                data = {"action": "get_player_contents", "a": post_id, "i": str(opt)}
+                try:
+                    r_ajax = self.session.post(
+                        "https://hentaimama.io/wp-admin/admin-ajax.php",
+                        data=data,
+                        headers=ajax_headers,
+                        impersonate="chrome124",
+                        timeout=10,
+                    )
+                    if r_ajax.status_code == 200:
+                        import html as html_lib
+                        items = json.loads(r_ajax.text)
+                        for item in items:
+                            if not item:
+                                continue
+                            ifr_m = re.search(r"src=['\"]([^'\"]+)['\"]", item)
+                            if ifr_m:
+                                ifr_url = html_lib.unescape(ifr_m.group(1))
+                                if ifr_url.startswith("//"):
+                                    ifr_url = f"https:{ifr_url}"
+                                r_ifr = self.session.get(
+                                    ifr_url,
+                                    headers=self.headers,
+                                    impersonate="chrome124",
+                                    timeout=10,
+                                )
+                                if r_ifr.status_code == 200:
+                                    tracks_m = re.search(r"tracks\s*:\s*(\[[^\]]+\])", r_ifr.text, re.DOTALL)
+                                    if tracks_m:
+                                        raw_tracks = re.findall(r"\{([^}]+)\}", tracks_m.group(1))
+                                        for tr in raw_tracks:
+                                            kind_m = re.search(r"['\"]?kind['\"]?\s*:\s*['\"]([^'\"]+)['\"]", tr)
+                                            kind = kind_m.group(1).lower() if kind_m else ""
+                                            if kind in ("thumbnails", "preview", "thumb"):
+                                                continue
+                                            file_m = re.search(r"['\"]?file['\"]?\s*:\s*['\"]([^'\"]+)['\"]", tr)
+                                            if not file_m:
+                                                continue
+                                            sub_url = file_m.group(1).replace(r"\/", "/")
+                                            if "/images/thumbnail/" in sub_url.lower() or "thumbnail.vtt" in sub_url.lower():
+                                                continue
+                                            lbl_m = re.search(r"['\"]?label['\"]?\s*:\s*['\"]([^'\"]+)['\"]", tr)
+                                            label = lbl_m.group(1).strip() if lbl_m else "English"
+                                            lang = "en" if "eng" in label.lower() else "und"
+                                            candidates.append({"url": sub_url, "label": label, "lang": lang})
+                except Exception:
+                    pass
+                if candidates:
+                    break
+        except Exception as e:
+            logger.debug(f"[Hentaimama] Subtitle candidate extraction error: {e}")
+
+        return candidates
+
+    def download_subtitle(self, sub_url: str, output_dir: Path, clean_title: str, lang: str = "en") -> bool:
+        if not sub_url:
+            return False
+        try:
+            ext = ".vtt" if ".vtt" in sub_url.lower() else ".srt"
+            dest_lang = output_dir / f"{clean_title}.{lang}{ext}"
+            dest_plain = output_dir / f"{clean_title}{ext}"
+
+            r = self.session.get(sub_url, headers=self.headers, impersonate="chrome124", timeout=15)
+            if r.status_code == 200 and len(r.content) > 50:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                dest_lang.write_bytes(r.content)
+                dest_plain.write_bytes(r.content)
+                logger.info(f"[Hentaimama] Downloaded subtitle: {dest_lang.name}")
+                return True
+        except Exception as e:
+            logger.warning(f"[Hentaimama] Failed to download subtitle {sub_url}: {e}")
+        return False
 
     def extract_stream_url(self, page_url: str) -> Optional[str]:
         try:
@@ -87,7 +231,7 @@ class HentaimamaEngine(VideoEngine):
                 ajax_headers = self.headers.copy()
                 ajax_headers["X-Requested-With"] = "XMLHttpRequest"
 
-                for opt in [1, 2, 3]:
+                for opt in [1, 2, 3, 4]:
                     data = {"action": "get_player_contents", "a": post_id, "i": str(opt)}
                     try:
                         r_ajax = self.session.post(
@@ -115,22 +259,17 @@ class HentaimamaEngine(VideoEngine):
                                         timeout=10,
                                     )
                                     if r_ifr.status_code == 200:
-                                        f_m = re.search(r"file:\s*['\"]([^'\"]+)['\"]", r_ifr.text)
-                                        if f_m:
-                                            file_url = f_m.group(1).replace("\\/", "/")
-                                            logger.info(f"[Hentaimama] Found stream URL via option {opt}: {file_url}")
-                                            return file_url
-                                        dl_m = re.search(r"window\.open\(['\"]([^'\"]+)['\"]\)", r_ifr.text)
-                                        if dl_m:
-                                            file_url = dl_m.group(1).replace("\\/", "/")
-                                            return file_url
+                                        stream_url = self._extract_video_from_html(r_ifr.text)
+                                        if stream_url:
+                                            logger.info(f"[Hentaimama] Found stream URL via option {opt}: {stream_url}")
+                                            return stream_url
                     except Exception as e:
                         logger.debug(f"[Hentaimama] Error probing player option {opt}: {e}")
 
             # Fallback: direct mp4 / m3u8 search in page
-            direct_m = re.search(r"['\"](https?://[^\s'\"<>]+\.(?:mp4|m3u8)(?:\?[^\s'\"<>]*)?)['\"]", r.text)
-            if direct_m:
-                return direct_m.group(1)
+            fallback = self._extract_video_from_html(r.text)
+            if fallback:
+                return fallback
 
             return None
         except Exception as e:

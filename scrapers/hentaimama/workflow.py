@@ -83,6 +83,8 @@ def run_workflow(
         creator_root.mkdir(parents=True, exist_ok=True)
         sub_folder = creator_root / "video"
         sub_folder.mkdir(parents=True, exist_ok=True)
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
         # Migrate any legacy files sitting directly in creator_root to video/
         try:
@@ -98,6 +100,8 @@ def run_workflow(
         creator_root = target_root
         sub_folder = target_root
         sub_folder.mkdir(parents=True, exist_ok=True)
+        subtitle_folder = sub_folder / "subtitle"
+        subtitle_folder.mkdir(parents=True, exist_ok=True)
 
     is_quick_grab = not is_vacuum
 
@@ -371,6 +375,17 @@ def run_workflow(
                 if success:
                     tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
+                    try:
+                        sub_candidates = engine.extract_subtitles_candidates(vid_url)
+                        for sub_info in sub_candidates:
+                            engine.download_subtitle(
+                                sub_url=sub_info.get("url", ""),
+                                output_dir=subtitle_folder,
+                                clean_title=resolved_file_path.stem,
+                                lang=sub_info.get("lang", "en")
+                            )
+                    except Exception as e:
+                        logger.debug(f"[Hentaimama] Subtitle fetch error: {e}")
                     break
                 else:
                     from core.video_engine import handle_internet_loss
