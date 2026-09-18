@@ -81,7 +81,8 @@ class BaseScraper:
             try:
                 r = self.session.get(url, timeout=35)
                 r.raise_for_status()
-                return BeautifulSoup(r.text, "lxml")
+                content = r.content.decode("utf-8", errors="replace")
+                return BeautifulSoup(content, "lxml")
             except Exception as e:
                 time.sleep(2 ** attempt)
         raise RuntimeError(f"Failed page: {url}")

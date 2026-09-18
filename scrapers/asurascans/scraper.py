@@ -17,6 +17,7 @@ class AsuraScansScraper(BaseScraper):
 
 
     def get_title_and_chapters(self):
+        import json
         original_url = self.url
         is_chapter = self.is_chapter_link()
 
@@ -38,73 +39,183 @@ class AsuraScansScraper(BaseScraper):
                 fetch_url = self.series_url
 
         soup = self.get_soup(fetch_url)
-        self.description = ""
-        for selector in ["#syn-target", "div.description-summary", "div.summary-content", "div.post-content", "div.manga-excerpt", "p.summary"]:
-            el = soup.select_one(selector)
-            if el:
-                self.description = re.sub(r"\s+", " ", el.get_text(strip=True))
-                break
-        if not self.description:
+
+        # 1. Parse JSON-LD structured schema
+        json_ld_data = {}
+        for s in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(s.string)
+                if isinstance(data, dict):
+                    if data.get("@type") == "ComicSeries":
+                        json_ld_data = data
+                        break
+                    elif not json_ld_data and data.get("@type") == "Article":
+                        json_ld_data = data
+            except Exception:
+                pass
+
+        # 2. Extract and sanitize Title
+        h1 = soup.select_one("h1.entry-title, h1")
+        raw_title = h1.get_text(strip=True) if h1 else (json_ld_data.get("name") or json_ld_data.get("headline") or "")
+        if not raw_title or raw_title.lower() == "unknown":
+            og_meta = soup.find("meta", {"property": "og:title"})
+            raw_title = og_meta.get("content") if og_meta else (soup.title.get_text(strip=True) if soup.title else "")
+
+        # Clean mojibake and normalize unicode punctuation
+        clean_title = raw_title.replace("â€”", "—").replace("â€“", "–").replace("Â ", " ").replace("Â", "").strip()
+        clean_title = re.sub(r"(?i)\s*[-—–]\s*(read|online|raw|eng|free|manga|manhua|manhwa).*", "", clean_title)
+        clean_title = re.sub(r"\s+", " ", clean_title).strip()
+
+        if not clean_title or clean_title.lower() == "unknown":
+            slug = self.url.rstrip("/").split("/")[-1]
+            slug = re.sub(r"-[0-9a-fA-F]{6,}$", "", slug)
+            clean_title = slug.replace("-", " ").title()
+
+        self.title = clean_title
+
+        # 3. Extract Alternative Titles
+        alt_titles = ""
+        alt_el = soup.select_one("#alt-titles, .alt-titles")
+        if alt_el:
+            alt_titles = alt_el.get_text(strip=True)
+        if not alt_titles:
+            alt_titles = json_ld_data.get("alternateName") or json_ld_data.get("alternativeHeadline") or ""
+        self.alt_title = alt_titles.replace("Â", "").strip()
+
+        # 4. Extract Full Description (avoid truncated "...")
+        desc = ""
+        desc_el = soup.select_one("#description-text")
+        if desc_el:
+            desc = desc_el.get_text(separator=" ", strip=True)
+        if not desc or desc.endswith("..."):
+            for sel in ["#syn-target", "div.description-summary", "div.summary-content", "div.post-content", "div.manga-excerpt", "p.summary"]:
+                el = soup.select_one(sel)
+                if el:
+                    t = el.get_text(separator=" ", strip=True)
+                    if len(t) > len(desc):
+                        desc = t
+        if not desc or desc.endswith("..."):
+            ld_desc = json_ld_data.get("description", "")
+            if len(ld_desc) > len(desc):
+                desc = ld_desc
+        if not desc:
             meta = soup.find("meta", {"name": "description"}) or soup.find("meta", {"property": "og:description"})
             if meta and meta.get("content"):
                 c = meta.get("content").strip()
                 if "read manga" not in c.lower() and "fastest and highest" not in c.lower():
-                    self.description = c
-                    
-        self.author = ""
-        author_links = []
+                    desc = c
+        self.description = re.sub(r"\s+", " ", desc).replace("Â", "").strip()
+
+        # 5. Extract Author & Artist
+        author = ""
+        artist = ""
+        if json_ld_data.get("author"):
+            a = json_ld_data["author"]
+            author = a.get("name", "") if isinstance(a, dict) else str(a)
+        if json_ld_data.get("illustrator"):
+            ill = json_ld_data["illustrator"]
+            artist = ill.get("name", "") if isinstance(ill, dict) else str(ill)
+
+        # Fallback from DOM info grid
+        for div in soup.find_all(["div", "span", "p"]):
+            txt = div.get_text(separator=" ", strip=True)
+            if "Author" in txt and not author:
+                m = re.search(r"Author\s+([A-Za-z0-9._\-\s]+?)(?:\s+(?:Artist|Status|Type|Rating|Chapters|Bookmarks)|$)", txt)
+                if m:
+                    author = m.group(1).strip()
+            if "Artist" in txt and not artist:
+                m = re.search(r"Artist\s+([A-Za-z0-9._\-\s]+?)(?:\s+(?:Author|Status|Type|Rating|Chapters|Bookmarks)|$)", txt)
+                if m:
+                    artist = m.group(1).strip()
+
+        self.author = author.strip()
+        self.artist = artist.strip()
+
+        # 6. Status & Type
+        status = ""
+        m_type = "Manhwa"
+        for div in soup.find_all(["div", "span", "p"]):
+            txt = div.get_text(separator=" ", strip=True)
+            if "Status" in txt and not status:
+                m = re.search(r"Status\s+([A-Za-z]+)", txt, re.IGNORECASE)
+                if m:
+                    status = m.group(1).capitalize()
+            if "Type" in txt and (m_type == "Manhwa" or not m_type):
+                m = re.search(r"Type\s+([A-Za-z]+)", txt, re.IGNORECASE)
+                if m:
+                    m_type = m.group(1).capitalize()
+        self.status = status or "Ongoing"
+        self.type = m_type or "Manhwa"
+
+        # 7. Rating
+        rating = ""
+        if json_ld_data.get("aggregateRating"):
+            rating = str(json_ld_data["aggregateRating"].get("ratingValue", ""))
+        if not rating:
+            m_r = re.search(r"([\d.]+)\s*Rating", soup.get_text(separator=" ", strip=True))
+            if m_r:
+                rating = m_r.group(1)
+        self.rating = rating
+
+        # 8. Genres / Tags
+        genres = []
+        if json_ld_data.get("genre"):
+            g = json_ld_data["genre"]
+            genres = g if isinstance(g, list) else [g]
         for a in soup.find_all("a", href=True):
             href = a["href"].lower()
-            if "/authors/" in href or "/author/" in href or "/artist/" in href or "/artists/" in href:
-                t = a.get_text(strip=True)
-                if t and t.lower() not in ["author", "artist", "authors", "artists"]:
-                    author_links.append(t)
-        if author_links:
-            self.author = ", ".join(list(dict.fromkeys(author_links)))
+            text = a.get_text(strip=True).title()
+            if not text or len(text) > 40:
+                continue
+            bad_parent = False
+            for p in a.parents:
+                if p.name in ["nav", "aside", "header", "footer"] or p.get("id") in ["sidebar", "menu"] or "sidebar" in p.get("class", []):
+                    bad_parent = True
+                    break
+            if bad_parent:
+                continue
+            if "genre" in href and text not in genres:
+                genres.append(text)
+            elif "tag" in href and text not in genres:
+                genres.append(text)
+        self.genres = genres
+        self.tags = genres
 
-        # Asura typically uses h1.entry-title or similar
-        title_tag = soup.select_one("h1.entry-title, h1")
-        title_text = title_tag.get_text(strip=True) if title_tag else ""
-        if not title_text or title_text.lower() == "unknown":
-            og_meta = soup.find("meta", {"property": "og:title"})
-            title_text = og_meta.get("content") if og_meta else (soup.title.get_text(strip=True) if soup.title else "")
-        title = re.sub(r"(?i)(read|online|raw|eng|free|manga|manhua|manhwa).*", "", title_text)
-        title = re.sub(r"[^\w\s-]", "", title).strip().title()
-        if not title or title.lower() == "unknown":
-            slug = self.url.rstrip("/").split("/")[-1]
-            slug = re.sub(r"-[0-9a-fA-F]{6,}$", "", slug)
-            title = slug.replace("-", " ").title()
-        
-        self.title = title
+        # 9. Cover Image URL (high-res from JSON-LD or DOM)
+        cover_url = ""
+        if json_ld_data.get("image"):
+            img = json_ld_data["image"]
+            cover_url = img.get("url", "") if isinstance(img, dict) else str(img)
+        if not cover_url:
+            cover_img = soup.select_one("img[src*='/asura-images/covers/']")
+            if cover_img:
+                cover_url = cover_img.get("src") or cover_img.get("data-src") or ""
+        self.cover_url = cover_url
 
         # If original URL was a single chapter, return only that chapter
         if is_chapter:
             m = re.search(r"/chapter/([\d.]+)", original_url.lower())
             num = m.group(1) if m else "1"
-            return title, [(num, original_url)]
-        
+            return clean_title, [(num, original_url)]
+
         chapters = []
-        # Target all links on the series page
         links = soup.find_all("a", href=True)
         for a in links:
             href = a["href"].lower()
-            # Match pattern like /comics/series-slug/chapter/1
-            # Or /chapter/1
             if "/chapter/" in href:
                 m = re.search(r"/chapter/([\d.]+)", href)
                 if m:
                     num_str = m.group(1)
-                    # Handle relative URLs
                     full_url = urljoin("https://asurascans.com", a["href"])
                     chapters.append((float(num_str), num_str, full_url))
-        
+
         if not chapters and not (hasattr(self, 'is_chapter_link') and self.is_chapter_link()):
             logger.warning(f"No chapters discovered for {self.url}. Structure might have changed.")
 
         seen_urls = set()
         seen_nums = set()
         final_chapters = []
-        
+
         # Sort by number oldest to newest
         chapters.sort(key=lambda x: x[0])
 
@@ -114,30 +225,7 @@ class AsuraScansScraper(BaseScraper):
                 seen_urls.add(link)
                 seen_nums.add(str_num)
 
-        if not hasattr(self, "tags"): self.tags = []
-        if not hasattr(self, "genres"): self.genres = []
-        for a in soup.find_all("a", href=True):
-            href = a["href"].lower()
-            text = a.get_text(strip=True).title()
-            if not text or len(text) > 40: continue
-            
-            bad_parent = False
-            for p in a.parents:
-                if p.name in ["nav", "aside", "header", "footer"]:
-                    bad_parent = True
-                    break
-                if p.get("id") in ["sidebar", "menu"] or "sidebar" in p.get("class", []):
-                    bad_parent = True
-                    break
-            
-            if bad_parent: continue
-            
-            if "genre" in href:
-                if text not in self.genres: self.genres.append(text)
-            elif "tag" in href:
-                if text not in self.tags: self.tags.append(text)
-
-        return title, final_chapters
+        return clean_title, final_chapters
 
     def process_chapter(self, ch_url, folder, ch_num, live=None, stats_callback=None) -> dict:
         soup = self.get_soup(ch_url)
