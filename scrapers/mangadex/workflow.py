@@ -274,8 +274,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             from rich.tree import Tree
             from rich.live import Live
             from rich.progress import Progress, TextColumn, TaskProgressColumn
-            from core.ui import MinimalPulseBar
+            from core.ui import MinimalPulseBar, set_active_live
 
+            console.show_cursor(False)
             for ch_num, link in to_process:
                 chapter_folder = folder / f"Chapter{ch_num}"
                 location_manager.create_directory(chapter_folder)
@@ -287,7 +288,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                     "missing":    0,
                     "done":       False,
                     "success":    False,
-                    "status":     "loading",
+                    "status":     "",
                 }
 
                 progress_bar = Progress(

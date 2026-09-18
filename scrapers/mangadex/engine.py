@@ -259,7 +259,7 @@ class BaseScraper:
         total_pages = len(img_urls)
         valid_pages = total_pages
         if stats_callback:
-            stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
+            stats_callback({"total": total_pages, "downloaded": 0, "missing": 0, "status": ""})
 
         downloaded_files = {}
 
@@ -284,15 +284,16 @@ class BaseScraper:
                     valid_pages -= 1
                 if stats_callback:
                     cur_missing = max(0, valid_pages - dl_count)
-                    stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": cur_missing})
+                    stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": cur_missing, "status": ""})
 
         if dl_count == 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
             return {"total": total_pages, "downloaded": 0, "missing": total_pages, "success": False}
 
         # Slicing & Final Renaming Pipeline inside temp buffer
+        missing = max(0, valid_pages - dl_count)
         if stats_callback:
-            stats_callback({"status": "baking"})
+            stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": missing, "status": "baking"})
         final_pages_dir = temp_dir / "final"
         final_pages_dir.mkdir(parents=True, exist_ok=True)
         
