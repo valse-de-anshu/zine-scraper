@@ -3,14 +3,16 @@ scrapers/hanime_red/tui.py
 --------------------------
 Hanime.red TUI — Hentai-category flow.
 
-Route logic (entirely user-driven, NOT URL-driven):
+Route logic:
+  Batch Mode             → Zero prompts. Link type decides (series -> Vacuum, episode -> Quick Grab), flags (--0, --N) respected.
   Single Episode         → Quick Grab → video only, flat folder, no metadata
-  Whole Franchise        → Vacuum     → all episodes in video/ subfolder
+  Whole Franchise        → Vacuum     → all episodes in video/ subfolder, metadata & cover saved
 
-The Vacuum / Quick Grab label is NEVER shown. Label is always "Hentai".
+The Vacuum / Quick Grab label is NEVER shown in wizard. Label is always "Hentai".
 Save Location prompt is NEVER shown — path is derived automatically from user choice.
 """
 
+import re
 import sys
 import time
 import logging
@@ -40,7 +42,7 @@ def handle_hanime_red_tui(
     """
     TUI flow for HanimeRed.
     Stage 1 — Load metadata
-    Stage 2 — Single / Franchise selector (always shown, drives everything)
+    Stage 2 — Single / Franchise selector (zero prompts if batch mode)
     Stage 3 — Kick off workflow (path auto-resolved from choice)
     """
     startup_clear()
@@ -76,20 +78,48 @@ def handle_hanime_red_tui(
     console.print(f"[menu]{'Episodes':<12}:[/menu] [info]{len(videos)}[/info]")
     console.print("")
 
-    # ── Stage 2: Always ask Single vs Franchise ──────────────────────────
+    # ── Stage 2: Single vs Franchise Resolution ──────────────────────────
+    is_serie_url = bool(re.search(r'/serie(?:s)?/', url))
     is_vacuum = False
     scraper.franchise_structure = "flat"
 
     if is_batch_mode:
-        scraper.is_playlist = True
-        is_vacuum = True
+        # Zero interactive prompts in batch mode! Link logic + flags decide.
+        if getattr(scraper, "_batch_quick_grab", False):
+            is_vacuum = False
+            scraper.is_playlist = False
+            if videos:
+                videos[:] = videos[:1]
+                metadata["Total Videos"] = 1
+        elif is_serie_url:
+            is_vacuum = True
+            scraper.is_playlist = True
+        else:
+            # Episode link in batch defaults to Quick grab (single episode)
+            is_vacuum = False
+            scraper.is_playlist = False
+            norm_url = url.rstrip("/")
+            filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
+            videos[:] = filtered if filtered else videos[:1]
+            metadata["Total Videos"] = len(videos)
+
+        chapter_limit = getattr(scraper, "_chapter_limit", None)
+        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+            if videos and len(videos) > chapter_limit:
+                videos[:] = videos[:chapter_limit]
+                metadata["Total Videos"] = len(videos)
+
     elif len(videos) == 1:
         scraper.is_playlist = False
         is_vacuum = False
     else:
-
-        if __import__("sys").stdin.isatty():
+        # Interactive mode
+        if sys.stdin.isatty():
+            # If user entered series page, default options are Whole Franchise or Single Episode
             choice = Selector([
+                ("Whole Franchise", "franchise"),
+                ("Single Episode", "single"),
+            ] if is_serie_url else [
                 ("Single Episode", "single"),
                 ("Whole Franchise", "franchise"),
             ], "Download", vertical=True).select()
@@ -115,10 +145,10 @@ def handle_hanime_red_tui(
             else:
                 return
         else:
-            scraper.is_playlist = True
-            is_vacuum = True
+            scraper.is_playlist = is_serie_url
+            is_vacuum = is_serie_url
 
-    # ── Stage 3: Resolve target path directly from user choice ─────────
+    # ── Stage 3: Resolve target path directly from choice ─────────────────
     if batch_path is not None:
         target_root = Path(batch_path)
     else:
@@ -153,14 +183,12 @@ def handle_hanime_red_tui(
         is_batch_mode=is_batch_mode,
     )
 
-    if not is_batch_mode:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
-
-        pass
+    if not is_batch_mode and sys.stdin.isatty():
         try:
-            input()
-        except EOFError:
+            console.input("\n[info]Download finished. Press Enter to return...[/info]")
+        except (EOFError, KeyboardInterrupt):
             pass
+
 
 def handle_tui(
     url: str,

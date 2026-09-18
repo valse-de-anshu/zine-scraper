@@ -33,9 +33,8 @@ def render_metadata_tree(
     root_tree.add(align_header("Existing", f"[success]{verified_count} videos[/success]"))
 
     if is_vacuum:
-        cover_path_jpg = creator_root / "cover.jpg"
-        cover_path_png = creator_root / "cover.png"
-        cover_status = "[success]●[/success]" if (cover_path_jpg.exists() or cover_path_png.exists()) else "[unselected]○[/unselected]"
+        has_cover = any(creator_root.glob("cover.*"))
+        cover_status = "[success]●[/success]" if has_cover else "[unselected]○[/unselected]"
         root_tree.add(align_header("Cover", cover_status))
 
     return root_tree

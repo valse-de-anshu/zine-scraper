@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from core.ui import (
-    console, align_header, MbpsColumn,
+    console, align_header, MbpsColumn, MinimalPulseBar,
     CustomDownloadColumn, CustomTimeRemainingColumn,
     set_active_live, get_theme_input_ansi, active_status,
 )
@@ -230,7 +230,16 @@ def run_workflow(
             "retry":   0,
         }
 
-
+        progress_bar = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            MinimalPulseBar(bar_width=35),
+            TaskProgressColumn(),
+            CustomDownloadColumn(),
+            MbpsColumn(),
+            CustomTimeRemainingColumn(),
+            transient=False,
+        )
+        task_id = progress_bar.add_task("Downloading", total=None)
 
         def render_video_tree() -> Tree:
             tree = Tree(f"[info]●[/info] [menu]Progress[/menu]", guide_style="unselected")
@@ -246,33 +255,26 @@ def run_workflow(
                 is_small_file = (total < 30 * 1024 * 1024) if total > 0 else (downloaded < 30 * 1024 * 1024)
                 
                 is_100_percent = (total > 0 and downloaded >= total)
-                is_90_percent = (total > 0 and downloaded >= total * 0.9)
 
                 if progress_data.get("baking") or is_100_percent:
                     blink_state = int(time.time() * 6) % 3
-                    if blink_state == 0:
-                        ball_style = "success"
-                    elif blink_state == 1:
-                        ball_style = "white"
-                    else:
-                        ball_style = "unselected"
-                    
+                    ball_style = "success" if blink_state == 0 else "white" if blink_state == 1 else "unselected"
                     status_text = "Almost done with baking..." if not is_small_file else "Baking metadata..."
                     res_branch.add(f"[{ball_style}]●[/{ball_style}] {status_text}")
-                elif is_90_percent:
-                    blink_state = int(time.time() * 6) % 3
-                    if blink_state == 0:
-                        ball_style = "success"
-                    elif blink_state == 1:
-                        ball_style = "white"
-                    else:
-                        ball_style = "unselected"
-                    
-                    res_branch.add(f"[{ball_style}]●[/{ball_style}] Downloading (Almost done)...")
+                elif total > 0:
+                    progress_bar.update(
+                        task_id,
+                        total       = total,
+                        completed   = downloaded,
+                        description = progress_data["status"],
+                        speed       = progress_data.get("speed", 0),
+                        eta         = progress_data.get("eta"),
+                    )
+                    res_branch.add(progress_bar)
                 else:
                     blink_state = int(time.time() * 3) % 2
                     ball_style = "warning" if blink_state == 0 else "unselected"
-                    res_branch.add(f"[{ball_style}]●[/{ball_style}] Downloading...")
+                    res_branch.add(f"[{ball_style}]●[/{ball_style}] {progress_data.get('status', 'Connecting...')}")
             else:
                 success   = progress_data.get("success", False)
                 res_color = "success" if success else "error"

@@ -1,3 +1,26 @@
+# Progress Report - September 18, 2026 (HanimeRed Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Progress Bar)
+
+- **HanimeRed Scraper & Engine Upgrades (`scrapers/hanime_red/`):**
+  - **High-Speed Direct Video Downloading (`engine.py`)**:
+    - Eliminated slow Playwright/Chromium headless extraction subprocess that previously caused 30-90s timeouts and freezes before every download.
+    - Video extraction is handled directly by yt-dlp's native `HanimeRedIE` plugin in seconds with aria2c multi-connection acceleration.
+  - **Rich Metadata & Full JSON-LD Extraction (`scraper.py`)**:
+    - Implemented deep JSON-LD parsing (`CollectionPage` and `VideoObject` schemas) on series and episode pages.
+    - Extracts complete metadata: Series Title, Alternative Title (`alternateName`), Studio (`productionCompany`), Release Date (`uploadDate`), Views (`WatchAction`), Likes (`LikeAction`), Tags/Genres (merged from schema and HTML links), and detailed episode synopsis/description.
+    - Discovers all sibling franchise episodes automatically from episode links or series catalog pages.
+  - **2-Step Magic Byte Verified Cover Art (`engine.py`, `scraper.py`, `progress.py`)**:
+    - Prioritized official high-resolution WebP posters (`/media/posters/...` and Tailwind aspect-[2/3] selectors).
+    - Integrated dual-layer verification via `core.cover_utils.download_verified_cover`: binary magic-byte inspection (`RIFF...WEBP`, `JPEG`, etc.) + PIL preview validation.
+    - Updated progress tree status check to recognize all valid image formats (`cover.*`).
+  - **Real-Time Interactive Download Progress Bar (`workflow.py`)**:
+    - Replaced the minimal indeterminate blinking dot with Rich's `Progress` bar featuring `MinimalPulseBar(bar_width=35)`, `TaskProgressColumn()`, `CustomDownloadColumn()`, `MbpsColumn()`, and `CustomTimeRemainingColumn()`.
+    - Gives real-time percentage indicators (e.g. `45.2%`), downloaded/total MBs, download speed, and time remaining.
+  - **Batch Mode Compliance & TUI Polish (`tui.py`)**:
+    - Enforced zero-prompt batch mode rules: `/serie/` links automatically vacuum the full series; episode links default to single-episode quick grab; `--0` and `--<N>` chapter flags are strictly honored without interactive prompts.
+    - Fixed duplicate return prompt (`input()`) in interactive mode.
+
+---
+
 # Progress Report - September 18, 2026 (Custom File Batch Mode & URL Input Flag Resolution)
 
 - **Custom File Batch Mode (`core/funnel.py`, `README.md`):**
