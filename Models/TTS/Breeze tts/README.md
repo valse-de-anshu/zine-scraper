@@ -63,9 +63,22 @@ Pipeline:
 |---|---|---|---|
 | **`breeze-tts-2-q8_0.gguf`** | ~3.3 GB | ~4.0 GB | **Recommended** (Flawless audio fidelity, zero spectral drift) |
 | **`breeze-tts-2-q4_k.gguf`** | ~2.4 GB | ~3.0 GB | Fast & Lightweight |
-| **`breeze-tts-2-f16.gguf`** | ~5.9 GB | ~7.0 GB | Reference unquantized quality |
+| **`breeze-tts-2-fp16.gguf`** | ~5.9 GB | ~7.0 GB | Reference unquantized quality |
 
-Weights are located by default at `/mnt/maiden/tts/breeze-tts-2-q8_0.gguf` or customizable in Settings.
+---
+
+## 📍 Where to Put Models & Binaries
+
+### Default In-Suite Locations:
+- **GGUF Weights**: Place `.gguf` files in `Models/TTS/` (e.g. `Models/TTS/breeze-tts-2-q8_0.gguf`).
+- **C++ Engine Binaries**: Clone and compile in `Models/TTS/Breeze-TTS-2.cpp/` (binary builds to `Models/TTS/Breeze-TTS-2.cpp/build/bin/breeze-cli`).
+
+### Storing on External Drives / Custom Locations:
+If you want to store large model weights on an **external SSD** (e.g., `/mnt/storage/ai/` or `~/models/`):
+1. Launch Zine and type **`settings`**.
+2. Select **`Breeze TTS 2 (GGUF / C++)`**.
+3. **Model GGUF Path**: Enter your custom file path (e.g., `/mnt/storage/tts/breeze-tts-2-q8_0.gguf`).
+4. **Binaries Directory**: Enter your custom build directory (e.g., `/opt/Breeze-TTS-2.cpp/build/bin` or `~/builds/breeze/bin`).
 
 ---
 

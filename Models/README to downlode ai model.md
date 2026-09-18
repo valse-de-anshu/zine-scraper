@@ -123,22 +123,55 @@ Once built, the binary will reside at `Models/TTS/Breeze-TTS-2.cpp/build/bin/bre
 
 ---
 
-## ⚙️ Configuration in Zine Scraper
+---
 
-1. Launch Zine Scraper:
-   - Linux / macOS: `./"run me"/run.sh`
-   - Windows: `run me\run.bat`
-2. Type **`settings`** and press **Enter**.
-3. Configure model options under the respective sub-menus:
-   - **Whisper AI Subtitles**:
-     - *Subtitles Model Path*: `Models/STT/faster-whisper-large-v3-turbo`
-     - *Hardware Target*: `6GB (INT8)` (Fastest/Safest), `8GB+ (FP16)`, or `CPU-Only`
-     - *Translation Mode*: `Both (Original + Target)`, `Target Only`, or `Original Only`
-   - **Breeze TTS 2 (GGUF / C++)**:
-     - *Model GGUF Path*: `Models/TTS/breeze-tts-2-q8_0.gguf`
-     - *Binaries Directory*: `Models/TTS/Breeze-TTS-2.cpp/build`
-     - *Execution Backend*: `Direct CLI (breeze-cli)` or `HTTP Server (breeze-server)`
-     - *Hardware Acceleration*: `Vulkan (GPU)` or `CPU`
+## 📍 Where to Store Models (Default vs External Drives)
+
+| Component | Default In-Suite Path | External / Custom Drive Example |
+|---|---|---|
+| **Voice-to-Text (STT)** | `Models/STT/faster-whisper-large-v3-turbo/` | `/mnt/storage/ai/faster-whisper-large-v3-turbo/` or `~/models/whisper/` |
+| **Breeze TTS Model** | `Models/TTS/breeze-tts-2-q8_0.gguf` | `/mnt/storage/tts/breeze-tts-2-q8_0.gguf` or `~/models/breeze-tts-2-q8_0.gguf` |
+| **Breeze C++ Engine** | `Models/TTS/Breeze-TTS-2.cpp/build/` | `/opt/Breeze-TTS-2.cpp/build/bin/` or `~/builds/breeze/bin/` |
+| **Qwen TTS Server** | `http://127.0.0.1:8188` (Local ComfyUI) | `http://192.168.1.100:8188` (Remote GPU Server) |
+
+---
+
+## ⚙️ How to Point Zine to Custom / External Model Locations
+
+If you store your models on an **external SSD**, secondary partition (e.g. `/mnt/storage/`), or custom home directory (`~/AI/`), you can easily point Zine Scraper to them using the interactive Settings TUI:
+
+### 1. Launch Settings
+At the main Zine prompt, type:
+```text
+❯ settings
+```
+
+### 2. Pointing to Custom Voice-to-Text (STT) Models
+1. Navigate to **`Whisper AI Subtitles`** $\rightarrow$ press **`Enter`**.
+2. Select **`AI Model Path`**.
+3. Type or paste your custom folder path:
+   - *Example (Absolute):* `/mnt/nvme/models/faster-whisper-large-v3-turbo`
+   - *Example (Home folder):* `~/AI/faster-whisper-large-v3-turbo`
+4. Press **`Enter`** to save.
+
+### 3. Pointing to Custom Breeze TTS Weights & Binaries
+1. Navigate to **`Breeze TTS 2 (GGUF / C++)`** $\rightarrow$ press **`Enter`**.
+2. **For the Neural Weights (`.gguf`)**:
+   - Select **`Model GGUF Path`**.
+   - Enter your file path (e.g. `/mnt/storage/tts/breeze-tts-2-q8_0.gguf` or `~/models/breeze-tts-2-q8_0.gguf`).
+3. **For the Compiled C++ Binaries (`breeze-cli`)**:
+   - Select **`Binaries Directory`**.
+   - Enter the directory containing `breeze-cli` (e.g. `/opt/Breeze-TTS-2.cpp/build/bin` or `~/builds/breeze/build`).
+4. Press **`Enter`** to save.
+
+### 4. Pointing to a Custom / Remote Qwen TTS Server
+1. Navigate to **`Qwen Audiobooks TTS`** $\rightarrow$ press **`Enter`**.
+2. Select **`Qwen TTS Server URL`**.
+3. Enter your ComfyUI server address (e.g. `http://192.168.1.50:8188` or `http://127.0.0.1:8188`).
+4. Press **`Enter`** to save.
+
+> [!TIP]
+> **Path Auto-Sanitization:** Zine automatically handles shell drag-and-drop quotes (`'/path/with spaces/'`), `~` user expansion, relative paths, and absolute paths!
 
 ---
 

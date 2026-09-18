@@ -37,13 +37,15 @@ To connect these models to your Zine Scraper setup, you must install the custom 
    ```
 4. **Restart ComfyUI**: Launch your server (e.g., `./start.sh` or `python main.py` on port `8188`).
 
-## 🔗 3. Flexible Network Connectivity
-By default, the Zine Scraper expects your ComfyUI server to be running on the same machine (`http://127.0.0.1:8188`). However, if you are running ComfyUI on a dedicated GPU server or a different PC on your network, you can easily change this:
+## 🔗 3. Flexible Network & Settings Configuration
 
-1. Launch the Scraper and type `settings`.
-2. Locate the **Qwen TTS Server URL** option.
-3. Update it to match your remote IP (e.g., `http://192.168.1.100:8188`).
-4. The Zine Scraper will dynamically re-route all audiobook chunking and generation payloads to your external GPU rig!
+By default, Zine Scraper connects to ComfyUI on localhost (`http://127.0.0.1:8188`). If your ComfyUI server is hosted on another machine, local LAN GPU rig, or custom port:
+
+1. Launch Zine Scraper and type **`settings`**.
+2. Select **`Qwen Audiobooks TTS`** $\rightarrow$ press **`Enter`**.
+3. Select **`Qwen TTS Server URL`**.
+4. Update it to match your custom IP (e.g. `http://192.168.1.100:8188` or `http://127.0.0.1:8188`).
+5. Zine Scraper will dynamically re-route all audiobook chunking and generation payloads to your external GPU rig!
 
 ---
 
