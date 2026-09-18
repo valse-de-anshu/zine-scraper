@@ -1102,7 +1102,6 @@ def run_breeze_tui():
             ("📖 Generate Audiobook (from .txt novel / chapter)", "audiobook"),
             ("🎤 Respeak Recording (Voice Conversion / Voice Changer)", "convert"),
             ("💾 Bake & Save Voice Profile (.breeze from Reference Audio)", "save_voice"),
-            ("📁 View Saved Voices", "list_voices"),
             ("⚙️  Configure Breeze TTS Settings", "settings"),
             ("↩️  Return to Main Menu", "exit"),
         ]
@@ -1123,27 +1122,6 @@ def run_breeze_tui():
 
         elif choice == "save_voice":
             run_save_voice_flow()
-
-        elif choice == "list_voices":
-            console.clear()
-            voices = list_saved_voices()
-            from rich.table import Table
-            vt = Table(title="[bold sexy_pink]Saved .breeze Voice Profiles[/bold sexy_pink]", border_style="sexy_pink")
-            vt.add_column("Voice ID", style="bold white")
-            vt.add_column("Size", style="cyan")
-            vt.add_column("Transcript Preview", style="unselected")
-
-            if not voices:
-                console.print("\n[unselected]No saved .breeze voices found in voices/ directory.[/unselected]")
-            else:
-                for v in voices:
-                    size_kb = f"{v['size_bytes'] / 1024:.1f} KB"
-                    preview = v["ref_text"][:60] + "..." if len(v["ref_text"]) > 60 else (v["ref_text"] or "(no transcript stored)")
-                    vt.add_row(v["name"], size_kb, preview)
-                console.print(vt)
-
-            console.print("\nPress Enter to return...")
-            input()
 
         elif choice == "settings":
             from core.settings_tui import breeze_tts_settings_tui
