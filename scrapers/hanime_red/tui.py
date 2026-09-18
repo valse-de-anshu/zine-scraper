@@ -130,10 +130,10 @@ def handle_hanime_red_tui(
                 if not filtered and len(videos) > 1 and sys.stdin.isatty():
                     ep_options = [(v.get("title", f"Episode {i+1}"), i) for i, v in enumerate(videos)]
                     selected_idx = Selector(ep_options, "Select Episode", vertical=True).select()
-                    if selected_idx is not None and selected_idx != "toggle":
+                    if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos):
                         videos[:] = [videos[selected_idx]]
                     else:
-                        videos[:] = videos[:1]
+                        return
                 else:
                     videos[:] = filtered if filtered else videos[:1]
                 metadata["Total Videos"] = len(videos)
