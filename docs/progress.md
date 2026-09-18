@@ -12,9 +12,8 @@
     - Prioritized official high-resolution WebP posters (`/media/posters/...` and Tailwind aspect-[2/3] selectors).
     - Integrated dual-layer verification via `core.cover_utils.download_verified_cover`: binary magic-byte inspection (`RIFF...WEBP`, `JPEG`, etc.) + PIL preview validation.
     - Updated progress tree status check to recognize all valid image formats (`cover.*`).
-  - **Real-Time Interactive Download Progress Bar (`workflow.py`)**:
-    - Replaced the minimal indeterminate blinking dot with Rich's `Progress` bar featuring `MinimalPulseBar(bar_width=35)`, `TaskProgressColumn()`, `CustomDownloadColumn()`, `MbpsColumn()`, and `CustomTimeRemainingColumn()`.
-    - Gives real-time percentage indicators (e.g. `45.2%`), downloaded/total MBs, download speed, and time remaining.
+  - **Minimal Blinking Progress Indicator (`workflow.py`)**:
+    - Retained the clean, minimal `● Downloading...` blinking state machine to maintain full compatibility with aria2c multi-chunk downloading without layout glitching or jumping ETAs.
   - **Batch Mode Compliance & TUI Polish (`tui.py`)**:
     - Enforced zero-prompt batch mode rules: `/serie/` links automatically vacuum the full series; episode links default to single-episode quick grab; `--0` and `--<N>` chapter flags are strictly honored without interactive prompts.
     - Fixed duplicate return prompt (`input()`) in interactive mode.
