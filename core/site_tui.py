@@ -663,20 +663,20 @@ SITE_CATEGORIES = [
     },
 ]
 
-# ── Category Encyclopedia Definitions (from scrapers/README.md) ────────────────
+# ── Category Encyclopedia Definitions (Dead Simple Human Language) ────────────
 CATEGORY_ENCYCLOPEDIA = {
-    "1": ("Anime", "📺", "SFW", "Episodic Japanese animation with multi-server HLS streaming, subtitle capture & sub/dub feeds."),
-    "2": ("Manga", "📖", "SFW", "Open community manga archiving & scanlations via official REST API v5 (B&W chapter pages)."),
-    "3": ("Manhwa", "🇰🇷", "SFW", "Dedicated Korean action/regression manhwa & Chinese cultivation manhua with long vertical strips."),
-    "4": ("Hybrid Comics", "📑", "SFW", "Multi-origin comic aggregators indexing Manga, Manhwa, Manhua & Western comics under one directory."),
-    "5": ("Novels", "📚", "SFW", "Light novels, web serials, translated wuxia/xianxia epics & serialized fiction web books."),
-    "6": ("Knowledge & Study", "🏛", "SFW", "Digital libraries, public domain classic literature, scanned manuscripts & open archives."),
-    "7": ("Music & Audio", "🎵", "SFW", "High-fidelity lossless audio, classical orchestra movements, discographies & synchronized lyrics."),
-    "8": ("Social Media", "🌐", "SFW", "Creator visual assets, multi-image posts, profiles, short video reels & visual mood boards."),
-    "9": ("Adult Anime (Hentai)", "🔞", "NSFW", "Adult anime streaming portals with Playwright bypass, HLS decryption & standardized subtitles."),
-    "0": ("Adult Video (Porn)", "🔞", "NSFW", "Mainstream adult video streaming portals, tube scene archives & creator model channels."),
-    "-": ("Adult Doujinshi", "🔞", "NSFW", "6-digit numeric ID doujinshi galleries, adult manga sets, translated CG packs & fan-comics."),
-    "=": ("Adult Webtoons", "🔞", "NSFW", "18+ Uncensored Korean adult manhwa, romance/drama webtoons & continuous vertical scroll strips.")
+    "1": ("Anime", "📺", "SFW", "You will find all Anime shows, movies, and episodes (Sub/Dub) here."),
+    "2": ("Manga", "📖", "SFW", "You will find Japanese Manga chapters and complete volumes here."),
+    "3": ("Manhwa", "🇰🇷", "SFW", "You will find Korean Manhwa and Chinese Manhua webtoons here."),
+    "4": ("Hybrid Comics", "📑", "SFW", "You will find all-in-one comic hubs with Manga, Manhwa & Western comics here."),
+    "5": ("Novels", "📚", "SFW", "You will find Light Novels, Web Serials, and fiction books here."),
+    "6": ("Knowledge & Study", "🏛", "SFW", "You will find classic books, library archives, and study papers here."),
+    "7": ("Music & Audio", "🎵", "SFW", "You will find high quality Music, songs, full albums, and audio tracks here."),
+    "8": ("Social Media", "🌐", "SFW", "You will find photos, video reels, and creator posts from social networks here."),
+    "9": ("Adult Anime (Hentai)", "🔞", "NSFW", "You will find 18+ Adult Anime and Hentai series here."),
+    "0": ("Adult Video (Porn)", "🔞", "NSFW", "You will find 18+ Adult videos, tube scenes, and model clips here."),
+    "-": ("Adult Doujinshi", "🔞", "NSFW", "You will find 18+ Doujinshi galleries, adult manga, and fan-comics here."),
+    "=": ("Adult Webtoons", "🔞", "NSFW", "You will find 18+ Uncensored Korean Adult Webtoons and romance comics here.")
 }
 
 # ── Dimensions ───────────────────────────────────────────────────────────────
@@ -838,7 +838,7 @@ class SiteDatabaseTUI:
         guide_table.add_column("Scope", no_wrap=True)
 
         badge_style = "bold green" if tag == "SFW" else "bold red"
-        badge_text = Text(f"  📖 [{cat_id}] Guide", style=badge_style)
+        badge_text = Text(f" 📖 [{cat_id}] Guide", style=badge_style)
 
         info_text = Text()
         info_text.append(f"[{cat_id}] {icon} {name}", style="bold sexy_pink on blue")
