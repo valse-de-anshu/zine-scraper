@@ -766,33 +766,31 @@ class SiteDatabaseTUI:
             expand=False,
             width=PANEL_W - 8
         )
-        cat_table.add_column("Badge", width=14, no_wrap=True)
+        cat_table.add_column("Badge", width=12, no_wrap=True)
         cat_table.add_column("Tabs", no_wrap=True)
 
         # ── SFW Categories Row ──
-        sfw_badge = Text("  🛡️ SFW  ", style="bold black on bright_cyan")
+        sfw_badge = Text("  🛡️ SFW", style="bold green")
         sfw_tabs = Text()
         for i in range(min(8, len(SITE_CATEGORIES))):
             cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
             if active:
-                sfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold black on sexy_pink")
-                sfw_tabs.append(" ")
+                sfw_tabs.append(f"[{cat['id']}] {cat['icon']} {cat['label']}  ", style="bold sexy_pink")
             else:
-                sfw_tabs.append(f"[{cat['id']}]", style="bold bright_cyan")
+                sfw_tabs.append(f"[{cat['id']}]", style="bold white")
                 sfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
 
         # ── NSFW Categories Row ──
-        nsfw_badge = Text("  🔞 NSFW  ", style="bold black on bright_magenta")
+        nsfw_badge = Text("  🔞 NSFW", style="bold red")
         nsfw_tabs = Text()
         for i in range(8, len(SITE_CATEGORIES)):
             cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
             if active:
-                nsfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold black on sexy_pink")
-                nsfw_tabs.append(" ")
+                nsfw_tabs.append(f"[{cat['id']}] {cat['icon']} {cat['label']}  ", style="bold sexy_pink")
             else:
-                nsfw_tabs.append(f"[{cat['id']}]", style="bold bright_magenta")
+                nsfw_tabs.append(f"[{cat['id']}]", style="bold white")
                 nsfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
 
         cat_table.add_row(sfw_badge, sfw_tabs, end_section=True)
