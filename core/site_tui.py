@@ -358,10 +358,10 @@ SITE_CATEGORIES = [
                 "alts": ["sukebei.nyaa.si", "nyaa.iss.one", "nyaa.iss.ink", "nyaa.land"],
                 "rating": "10/10",
                 "popularity": "Very High",
-                "status": "Active",
+                "status": "Info Only",
                 "content": "Anime / Manga / Media torrent tracker",
-                "tags": "SFW · Torrents · Index · P2P · Tracker",
-                "desc": "The largest and most trusted public BitTorrent tracker for anime, manga, literature, and Japanese media with massive community seeder activity."
+                "tags": "SFW · Torrents · Index · P2P · External Client",
+                "desc": "The largest public BitTorrent tracker for anime, manga, and media. Zine lists this for database reference — grab magnets/torrents here to download via your own torrent client (e.g. qBittorrent)."
             },
             {
                 "name": "TsukiHime",
@@ -369,10 +369,10 @@ SITE_CATEGORIES = [
                 "alts": [],
                 "rating": "8/10",
                 "popularity": "Medium",
-                "status": "Active",
+                "status": "Info Only",
                 "content": "Torrent / DDL / Usenet indexer",
-                "tags": "SFW · DDL · Torrent · NZB · Aggregator",
-                "desc": "Advanced media aggregator providing direct download (DDL) and Usenet (NZB) mirrors for torrents across multiple anime and manga releases."
+                "tags": "SFW · DDL · Torrent · NZB · External Client",
+                "desc": "Advanced media aggregator providing direct download and Usenet mirrors for anime releases. Listed for reference to download via your personal tools."
             },
             {
                 "name": "SeaDex",
@@ -380,10 +380,10 @@ SITE_CATEGORIES = [
                 "alts": [],
                 "rating": "9/10",
                 "popularity": "High",
-                "status": "Active",
+                "status": "Info Only",
                 "content": "Curated best anime release index",
                 "tags": "SFW · Index · Curated · Release Comparison",
-                "desc": "Authoritative release comparison index tracking the highest fidelity video encodes, official subs, and optimal audio releases for anime."
+                "desc": "Authoritative release comparison index tracking top-fidelity anime video encodes, official subs, and optimal audio. Use with your torrent client to archive the best release."
             },
         ]
     },
@@ -731,12 +731,12 @@ SITE_CATEGORIES = [
 
 # ── Category Encyclopedia Definitions (Dead Simple Human Language) ────────────
 CATEGORY_ENCYCLOPEDIA = {
-    "1": ("Anime", "📺", "SFW", "You will find all Anime shows, movies, and episodes (Sub/Dub) here."),
+    "1": ("Anime (Streaming)", "📺", "SFW", "Web streaming scrapers removed due to host shutdowns & CDN limits. Use [6] Torrents with your desktop client (like qBittorrent) for permanent anime archiving."),
     "2": ("Manga", "📖", "SFW", "You will find Japanese Manga chapters and complete volumes here."),
     "3": ("Manhwa", "🇰🇷", "SFW", "You will find Korean Manhwa and Chinese Manhua webtoons here."),
     "4": ("Hybrid Comics", "📑", "SFW", "You will find all-in-one comic hubs with Manga, Manhwa & Western comics here."),
     "5": ("Novels", "📚", "SFW", "You will find Light Novels, Web Serials, and fiction books here."),
-    "6": ("Torrents & DDL", "🧲", "SFW", "You will find torrent trackers and direct download indexers for Anime, Manga, and media here."),
+    "6": ("Torrents & DDL", "🧲", "SFW", "Direct downloading not supported — listed for info only! Grab magnets/torrents to download with your own client (like qBittorrent), since Zine is a media DB in itself."),
     "7": ("Knowledge & Study", "🏛", "SFW", "You will find classic books, library archives, and study papers here."),
     "8": ("Music & Media", "🎵", "SFW", "You will find high quality Music, songs, full albums, and audio tracks here."),
     "9": ("Adult Anime (Hentai)", "🔞", "NSFW", "You will find 18+ Adult Anime and Hentai series here."),
@@ -891,6 +891,9 @@ class SiteDatabaseTUI:
             cat_id, (cat["label"], cat.get("icon", "📁"), cat.get("tag", "SFW"), "Media catalog category.")
         )
 
+        badge_w = 16
+        scope_w = PANEL_W - 8 - badge_w - 5
+
         guide_table = Table(
             show_header=False,
             show_edge=True,
@@ -900,15 +903,14 @@ class SiteDatabaseTUI:
             expand=False,
             width=PANEL_W - 8
         )
-        guide_table.add_column("Badge", width=14, no_wrap=True)
-        guide_table.add_column("Scope", no_wrap=True)
+        guide_table.add_column("Badge", width=badge_w, min_width=badge_w, no_wrap=True, vertical="top")
+        guide_table.add_column("Scope", width=scope_w, no_wrap=False)
 
         badge_style = "bold green" if tag == "SFW" else "bold red"
         badge_text = Text(f" 📖 [{cat_id}] Guide", style=badge_style)
 
         info_text = Text()
-        info_text.append(f"[{cat_id}] {icon} {name}", style="bold sexy_pink on blue")
-        info_text.append(" ── ", style="unselected")
+        info_text.append(f"[{cat_id}] {icon} {name}\n", style="bold sexy_pink on blue")
         info_text.append(desc, style="white")
 
         guide_table.add_row(badge_text, info_text)

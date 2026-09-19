@@ -5,30 +5,6 @@ from pathlib import Path
 domain_manager = DomainManager(Path(__file__).parent.parent / "scrapers")
 
 SITE_MAP = {
-    # ── 1_SFW / ANIME ──
-    "anikai.to": "1_SFW.ANIME.anikai",
-    "anikoto.cz": "1_SFW.ANIME.anikoto",
-    "anikototv.to": "1_SFW.ANIME.anikoto",
-    "anikoto.me": "1_SFW.ANIME.anikoto",
-    "anikoto.net": "1_SFW.ANIME.anikoto",
-    "anikototv.se": "1_SFW.ANIME.anikoto",
-    "anikoto.online": "1_SFW.ANIME.anikoto",
-    "anineko.to": "1_SFW.ANIME.anineko",
-    "anitaku.online": "1_SFW.ANIME.anitaku",
-    "anitaku.to": "1_SFW.ANIME.anitaku",
-    "anitaku.me": "1_SFW.ANIME.anitaku",
-    "hianime.to": "1_SFW.ANIME.hianime",
-    "hianime.sx": "1_SFW.ANIME.hianime",
-    "hianime.mn": "1_SFW.ANIME.hianime",
-    "hianime.nz": "1_SFW.ANIME.hianime",
-    "hianime.ad": "1_SFW.ANIME.hianime",
-    "hianime.re": "1_SFW.ANIME.hianime",
-    "hianime.pm": "1_SFW.ANIME.hianime",
-    "miruro.to": "1_SFW.ANIME.miruro",
-    "miruro.ru": "1_SFW.ANIME.miruro",
-    "miruro.tv": "1_SFW.ANIME.miruro",
-    "miruro.bz": "1_SFW.ANIME.miruro",
-
     # ── 1_SFW / MANGA ──
     "mangadex.org": "1_SFW.MANGA.mangadex",
 

@@ -11,13 +11,7 @@ Zine Scraper organizes its 48+ scrapers and extraction engines into a strict, se
 ```text
 scrapers/
 ├── 1_SFW/
-│   ├── ANIME/              # Episodic anime streaming (Sub & Dub)
-│   │   ├── anikai/
-│   │   ├── anikoto/
-│   │   ├── anineko/
-│   │   ├── anitaku/
-│   │   ├── hianime/
-│   │   └── miruro/
+│   ├── ANIME/              # (Web streaming scrapers removed — transitioned to Torrents & Indexers)
 │   ├── MANGA/              # Open community manga archives & APIs
 │   │   └── mangadex/
 │   ├── MANHWA/             # Dedicated Korean Manhwa & Chinese Manhua scanlations
@@ -82,16 +76,8 @@ scrapers/
 ## 2. Master Site Directory & Encyclopedic Catalog
 
 ### 📺 1_SFW / ANIME
-Dedicated to Japanese animation with high-speed HLS multi-server stream extraction, subtitle track capture, and AniList/MyAnimeList metadata syncing.
-
-| Scraper | Primary & Alternate Domains | What It Provides | What It Is Most Famous For |
-|---|---|---|---|
-| **`hianime`** | `hianime.to`<br>`hianime.sx`, `hianime.mn`, `hianime.nz`, `hianime.ad`, `hianime.re`, `hianime.pm` | Multi-server HLS streams, multi-language Sub & Dub audio feeds. | Spiritual successor to Zoro.to; vast global catalog, highest server uptime, clean adaptive UI. |
-| **`anikoto`** | `anikoto.cz`<br>`anikototv.to`, `anikoto.me`, `anikoto.net`, `anikototv.se`, `anikoto.online` | Low-latency subbed & dubbed streams with auto domain rotations. | Rapid domain rotation and dependable mirror failover when primary aggregators face congestion. |
-| **`anineko`** | `anineko.to` | Minimalist, ad-light subbed episode streams with direct extraction. | Ultra-lightweight layout with fast, distraction-free playback and zero intrusive ad wrappers. |
-| **`anitaku`** | `anitaku.online`<br>`anitaku.to`, `anitaku.me` | Multi-resolution episode downloads from early 2000s to modern releases. | Formerly Gogoanime; legendary deep legacy anime archive spanning decades of vintage series. |
-| **`miruro`** | `miruro.to`<br>`miruro.ru`, `miruro.tv`, `miruro.bz` | Fast API stream extraction, automated AniList GraphQL metadata sync. | Modern minimalist UI that proxies high-speed CDN video feeds with zero layout clutter. |
-| **`anikai`** | `anikai.to` | High-definition anime episode streams with responsive player feeds. | Fast-loading newer platform with dependable subtitle synchronization and high bitrate encodes. |
+> [!NOTE]
+> **Web streaming anime scrapers have been retired.** Free streaming hosts suffer from constant domain takedowns, anti-bot Cloudflare challenges, and aggressive CDN throttling. Anime media indexing has transitioned to Section 6 (**Torrents & DDL** — Nyaa, SeaDex, TsukiHime) for high-fidelity archiving using external desktop clients like qBittorrent.
 
 ---
 
@@ -268,7 +254,7 @@ scrapers/<category>/<site>/
 ```
 
 ### Architectural Contract
-1. **Zero Cross-Scraper Dependencies**: A scraper inside `scrapers/1_SFW/ANIME/miruro` must never import directly from another site scraper. All shared functionality must reside in `core/` or `scrapers/3_SYSTEM/`.
+1. **Zero Cross-Scraper Dependencies**: A scraper inside `scrapers/1_SFW/MANGA/mangadex` must never import directly from another site scraper. All shared functionality must reside in `core/` or `scrapers/3_SYSTEM/`.
 2. **Relative Intra-Package Imports**: Inside any scraper folder, use relative imports (`from .engine import ...`, `from .verification import ...`) to preserve absolute relocation independence.
 3. **No Site Extraction in `core/`**: Core services (`core/paths.py`, `core/ui.py`, `core/storage.py`) provide infrastructure only. Site-specific HTML parsing, regexes, and headers belong strictly in `engine.py` and `scraper.py`.
 4. **Intermediate Files in `💩/`**: All temporary chunks, raw manifests, and buffer files must be written to `PathAuthority().get_temp_root()` (`/zine scraper/💩/`) and cleaned up immediately on completion or exit.
