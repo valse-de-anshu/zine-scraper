@@ -663,6 +663,22 @@ SITE_CATEGORIES = [
     },
 ]
 
+# ── Category Encyclopedia Definitions (from scrapers/README.md) ────────────────
+CATEGORY_ENCYCLOPEDIA = {
+    "1": ("Anime", "📺", "SFW", "Episodic Japanese animation with multi-server HLS streaming, subtitle capture & sub/dub feeds."),
+    "2": ("Manga", "📖", "SFW", "Open community manga archiving & scanlations via official REST API v5 (B&W chapter pages)."),
+    "3": ("Manhwa", "🇰🇷", "SFW", "Dedicated Korean action/regression manhwa & Chinese cultivation manhua with long vertical strips."),
+    "4": ("Hybrid Comics", "📑", "SFW", "Multi-origin comic aggregators indexing Manga, Manhwa, Manhua & Western comics under one directory."),
+    "5": ("Novels", "📚", "SFW", "Light novels, web serials, translated wuxia/xianxia epics & serialized fiction web books."),
+    "6": ("Knowledge & Study", "🏛", "SFW", "Digital libraries, public domain classic literature, scanned manuscripts & open archives."),
+    "7": ("Music & Audio", "🎵", "SFW", "High-fidelity lossless audio, classical orchestra movements, discographies & synchronized lyrics."),
+    "8": ("Social Media", "🌐", "SFW", "Creator visual assets, multi-image posts, profiles, short video reels & visual mood boards."),
+    "9": ("Adult Anime (Hentai)", "🔞", "NSFW", "Adult anime streaming portals with Playwright bypass, HLS decryption & standardized subtitles."),
+    "0": ("Adult Video (Porn)", "🔞", "NSFW", "Mainstream adult video streaming portals, tube scene archives & creator model channels."),
+    "-": ("Adult Doujinshi", "🔞", "NSFW", "6-digit numeric ID doujinshi galleries, adult manga sets, translated CG packs & fan-comics."),
+    "=": ("Adult Webtoons", "🔞", "NSFW", "18+ Uncensored Korean adult manhwa, romance/drama webtoons & continuous vertical scroll strips.")
+}
+
 # ── Dimensions ───────────────────────────────────────────────────────────────
 PANEL_W = 144   # Frame width
 COL_S   = 24    # Platforms column
@@ -800,6 +816,38 @@ class SiteDatabaseTUI:
 
         return cat_table
 
+    # ── category definition / scope guide box ────────────────────────────────
+
+    def _cat_info_box(self) -> Table:
+        cat = self._cat()
+        cat_id = cat["id"]
+        name, icon, tag, desc = CATEGORY_ENCYCLOPEDIA.get(
+            cat_id, (cat["label"], cat.get("icon", "📁"), cat.get("tag", "SFW"), "Media catalog category.")
+        )
+
+        guide_table = Table(
+            show_header=False,
+            show_edge=True,
+            box=box.ROUNDED,
+            border_style="unselected",
+            padding=(0, 1),
+            expand=False,
+            width=PANEL_W - 8
+        )
+        guide_table.add_column("Badge", width=14, no_wrap=True)
+        guide_table.add_column("Scope", no_wrap=True)
+
+        badge_style = "bold green" if tag == "SFW" else "bold red"
+        badge_text = Text(f"  📖 [{cat_id}] Guide", style=badge_style)
+
+        info_text = Text()
+        info_text.append(f"[{cat_id}] {icon} {name}", style="bold sexy_pink on blue")
+        info_text.append(" ── ", style="unselected")
+        info_text.append(desc, style="white")
+
+        guide_table.add_row(badge_text, info_text)
+        return guide_table
+
     # ── composite render ──────────────────────────────────────────────────────
 
     def render(self):
@@ -936,6 +984,7 @@ class SiteDatabaseTUI:
                 Text("    You can easily add or customize domain mirrors in: core/site_tui.py and site_config.json", style="dim italic", no_wrap=True),
                 Text(""),
                 self._cat_bar(),
+                self._cat_info_box(),
                 Text(""),
                 table,
             ),
