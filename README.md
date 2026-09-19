@@ -16,7 +16,7 @@
 <p align="center">
   🎵 <b>Music:</b> Full-quality audio with proper artist metadata, album art, and scrolling lyrics.<br>
   📖 <b>Manga, Manhua, Novels & Comics:</b> Complete series archiving with neatly organized chapters.<br>
-  🎬 <b>Anime & Videos(18+) :</b> Multi-season series, playlists, and 1080p/4K streams without ads or popups.<br>
+  🎬 <b>Adult Anime & Videos (18+):</b> Multi-season series, playlists, and 1080p/4K streams without ads or popups.<br>
   📚 <b>Books & Images:</b> Web serials, public domain classics, and AI-powered audiobooks.
 </p>
 
@@ -88,17 +88,39 @@ cd "run me" && chmod +x install.sh run.sh && ./install.sh
 
 ### 3. Launching Zine
 
-* **Linux / macOS:**
-  ```bash
-  cd "zine-scraper"
-  ./"run me"/run.sh
-  # (Or manually: source venv/bin/activate && python3 orchestrator.py)
-  ```
-* **Windows:**
-  ```cmd
-  cd "zine-scraper"
-  "run me\run.bat"
-  ```
+Launch Zine using either the global **`zine`** command (linked automatically during installation) or directly via **`python3 orchestrator.py`**:
+
+#### ⚡ Direct Headless CLI Execution (Fast & Scriptable)
+Pass URLs and flags directly from your terminal. Zine displays the official ASCII banner, parses inputs, resolves metadata, and downloads immediately without blocking prompts:
+
+```bash
+# Quick single chapter/episode grab (--0)
+zine "https://hanime.red/watch/episode-1" --0
+
+# Full series vacuum archiving (--a or --A)
+zine "https://hentaihaven.xxx/watch/sei-brunehilde-gakuen.../" --a
+
+# Sequential chapter continuation (--5)
+zine "https://asurascans.com/comics/series-title" --5
+
+# Custom batch file processing
+zine --batch "my_reading_list.txt"
+
+# Or directly with Python:
+python3 orchestrator.py "https://example.com/media/title" --0
+```
+
+#### 🖥️ Interactive TUI Mode
+Launch into the full-screen interactive interface with live keyboard navigation, settings configurator, and site catalog:
+
+```bash
+# Launch interactive menu:
+zine
+
+# Or directly with Python:
+python3 orchestrator.py
+```
+*(Windows users can also use `zine` in Command Prompt / PowerShell, or double-click `run me\run.bat`).*
 
 ---
 
@@ -135,6 +157,9 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 | **`subs`** | **AI Tools** | AI Subtitle Generator (`faster-whisper` local GPU transcription & translation) |
 | **`slice`** | **Tools** | Webtoon & Manhua Image Slicer (splits long vertical strips into standard pages) |
 | **`batch`** | **System** | Batch Downloader (auto-processes all queued links in `Batch URL.txt`) |
+| **`doctor`** | **System** | System Diagnostic Health Check (Python, FFmpeg, Aria2, Deno, Playwright, paths) |
+| **`clean`** | **System** | Purges temporary fragments, chunks, and cache buffers in `💩/` |
+| **`version`** | **System** | Display detailed version, runtime telemetry, and dependency status |
 | **`settings`** | **System** | Interactive Settings Configurator (download paths, 80+ themes, network delays) |
 | **`site`** | **System** | Interactive Supported Sites Database & Catalog viewer |
 | **`help`** | **System** | In-app documentation and quick guide browser |
@@ -142,7 +167,7 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 > [!TIP]
 > **💡 Pro-Tip on TUI Performance & Smooth Riding:**
-> Sometimes after a very long session or heavy continuous usage (large batch downloads, multi-chapter TTS synthesis), the terminal interface may become slightly sluggish. Simply exit (`exit` or `q`) and reopen Zine (`./run.sh` or `zine`) for a fresh, buttery-smooth ride!
+> Sometimes after a very long session or heavy continuous usage (large batch downloads, multi-chapter TTS synthesis), the terminal interface may become slightly sluggish. Simply exit (`exit` or `q`) and reopen Zine (`zine` or `python3 orchestrator.py`) for a fresh, buttery-smooth ride!
 
 ---
 
@@ -198,19 +223,138 @@ You can append smart flags directly to URLs at the main prompt or inside `Batch 
 
 ---
 
+### ⚡ Industry-Grade Developer CLI & Diagnostics
+
+Zine Scraper is built for professional developers, terminal power-users, and scriptable headless automation. It features a complete suite of standard POSIX-compliant flags and subcommands that execute with sub-second responsiveness (< 0.1s):
+
+#### 📖 Master Help Manual (`zine --help` or `zine -h`)
+Displays a comprehensive, color-coded manual covering CLI syntax, download control flags, built-in power tools, and copy-paste examples:
+```bash
+zine --help
+# or:
+python3 orchestrator.py -h
+```
+
+#### 🩺 System Diagnostic Health Check (`zine doctor`)
+Performs a live validation of all external binaries, runtime engines, write permissions, and credential files:
+```bash
+zine doctor
+```
+```text
+╭─────────────────────────────┬──────────────────┬─────────────────────────────╮
+│ Diagnostic Check            │ Status           │ Remedy / Notes              │
+├─────────────────────────────┼──────────────────┼─────────────────────────────┤
+│ Python Version (>= 3.10)    │ ✔ PASS           │ Detected Python 3.14.7      │
+│ FFmpeg Audio/Video Engine   │ ✔ PASS           │ /usr/bin/ffmpeg             │
+│ Aria2 Multi-Connection Tool │ ✔ PASS           │ /usr/bin/aria2c             │
+│ AtomicParsley (M4A/MP4 tags)│ ✔ PASS           │ /usr/bin/atomicparsley      │
+│ Deno Runtime (JS Decryption)│ ✔ PASS           │ ~/.deno/bin/deno            │
+│ Downloads Storage Access    │ ✔ PASS           │ ~/Downloads/Zine            │
+│ Session Logs Storage Access │ ✔ PASS           │ ~/Logs/💩                   │
+│ Credentials (secrets.json)  │ ✔ FOUND          │ Auto-scaffolds on API usage │
+╰─────────────────────────────┴──────────────────┴─────────────────────────────╯
+✦ All critical subsystem diagnostics completed.
+```
+
+#### ℹ️ Runtime & Dependency Telemetry (`zine --version` or `zine -v`)
+Displays exact version info, Python interpreter path, kernel architecture, binary locations, and active storage roots:
+```bash
+zine --version
+```
+
+#### 🌐 Non-Interactive Supported Sites Directory (`zine sites`)
+Prints a clean terminal catalog of all 48+ supported platforms, engines, and domains grouped by category without launching the interactive TUI:
+```bash
+zine sites
+```
+
+#### 🧹 Instant Cache Purge (`zine clean`)
+Purges all orphaned video segments, fragments (`.part`, `.ytdl`, `.ts`), and slice buffers in `💩/`:
+```bash
+zine clean
+```
+
+#### ⚡ Headless Media Downloads & Batch Flags
+Pass URLs and flags directly from your terminal. Zine executes immediately without blocking prompts:
+```bash
+# Quick single chapter/episode grab (--0)
+zine "https://hanime.red/watch/episode-1" --0
+
+# Full series vacuum archiving (--a or --A)
+zine "https://hentaihaven.xxx/watch/series-slug/" --a
+
+# Sequential chapter continuation (--5)
+zine "https://asurascans.com/comics/series-slug" --5
+
+# Headless custom batch queue processing
+zine --batch "my_reading_list.txt"
+```
+* **Visual Telemetry**: CLI launches display the signature Zine banner, echo parsed CLI flags, and show live single-line progress spinners (`⠋`, `⠙`, `⠸`) without screen jitter or ANSI code leaks.
+* **Notification Debounce**: Desktop notifications are debounced through `butler/notify.py` to dispatch strictly once on final completion or critical failure, preventing spam during large headless batches.
+
+---
+
+### 📂 Zero-Clutter Isolated Directory Hierarchy
+
+All downloaded media is cleanly partitioned to eliminate loose root file pollution and redundant nested subfolders:
+
+* **Batch & Vacuum Path (`~/Downloads/Zine/Batch/<Media Title>/`)**:
+  ```text
+  ~/Downloads/Zine/Batch/Sei Brunehilde Gakuen Shoujo Kishidan To Junpaku No Panty/
+  ├── cover.jpg                   # Full-resolution cover artwork
+  ├── metadata.json               # Extracted platform & series metadata
+  ├── Episode 1.mp4               # Merged high-definition video + audio
+  └── subtitle/                   # Cleanly isolated subtitles
+      └── Episode 1.en.srt
+  ```
+  *(Comic/Manhwa chapters download into clean subdirectories like `Chapter 01/`, `Chapter 02/` with zero redundant sub-nesting).*
+* **Quick Grab Path (`~/Downloads/Zine/Quick grab/`)**:
+  Single one-off downloads are routed directly into `Quick grab/` without generating series scaffolding.
+* **Intermediate Cache (`/zine scraper/💩/`)**:
+  Temporary video chunks (`.part`, `.ytdl`, `.ts`) and image slices reside in the gitignored temp buffer during assembly and are atomically purged upon completion.
+
+---
+
+### 📋 Industrial Session & Fault-Tolerant Error Logger (`Logs/💩/`)
+
+Zine features an enterprise-grade dual-tier logging and debugging pipeline located in `Logs/💩/`:
+
+```text
+Logs/
+└── 💩/
+    ├── session_2026-09-19_17-28-24.log   # Detailed execution trace for every run
+    ├── latest_session.log                 # Symlink / pointer to the most recent run
+    ├── error_2026-09-19_17-08-27.log     # Forensic error dumps on failure
+    └── latest_error.log                   # Instant pointer to the last error
+```
+
+* **Silent & Clean Terminal Output**:
+  Terminal output never gets wrecked by unformatted raw Python stack traces. The screen remains clean with live status updates.
+* **1-Second Root-Cause Diagnosis**:
+  If an upstream platform fails (e.g. Cloudflare challenge, 404, or expired CDN domain like Porkbun auctions), Zine instantly catches it, prints an elegant failure card in terminal, and writes the full contextual traceback with request headers directly to `Logs/💩/latest_error.log`:
+  ```text
+  ╭─ 🔴 Download Incomplete / Failed ──────────────────────────────────────────╮
+  │                                                                            │
+  │  Error   : Upstream CDN domain expired or returned HTTP 403                │
+  │  Details : Logs/💩/latest_error.log                                        │
+  │                                                                            │
+  ╰────────────────────────────────────────────────────────────────────────────╯
+  ```
+* **Instant Inspection Command**:
+  ```bash
+  cat Logs/💩/latest_error.log
+  ```
+
+---
+
 ## 🌐 Supported Platforms
 
 Zine natively supports 48+ platforms across 12 structured categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
 
-### 📺 1. Anime (`1_SFW/ANIME`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **HiAnime** | `hianime.to` | `hianime.sx`, `hianime.mn`, `hianime.nz`, `hianime.ad`, `hianime.re`, `hianime.pm` | Multi-server HLS streams, Sub & Dub multi-audio |
-| **Anikoto** | `anikoto.cz` | `anikototv.to`, `anikoto.me`, `anikoto.net`, `anikototv.se`, `anikoto.online` | Low-latency streaming, auto domain rotation |
-| **Anineko** | `anineko.to` | — | Minimalist, ad-light subbed episode streams |
-| **Anitaku** | `anitaku.online` | `anitaku.to`, `anitaku.me` | Legacy anime archive, multi-quality resolutions |
-| **Miruro** | `miruro.to` | `miruro.ru`, `miruro.tv`, `miruro.bz` | Fast API stream extraction, AniList GraphQL sync |
-| **Anikai** | `anikai.to` | — | Fast high-definition streams with full episode catalogs |
+### 📺 1. Anime, Torrents & Direct Indexers
+> [!NOTE]
+> **Web streaming anime scrapers have been retired in favor of high-fidelity Torrents & DDL indexers.**
+> Unofficial free streaming sites suffer from relentless takedowns, anti-bot Cloudflare challenges, and aggressive CDN throttling. Zine maintains an encyclopedic database of premier anime indexers (Nyaa, SeaDex, TsukiHime, AnimeTosho) accessible via the in-app `site` command. Direct downloading is not handled by Zine for torrents; users are advised to use an external desktop client such as [qBittorrent](https://www.qbittorrent.org/). Adult anime (Hentai) streaming remains fully supported via native scrapers in Section 8 below.
 
 ### 📖 2. Manga (`1_SFW/MANGA`)
 | Platform | Primary Domain | Alternate Domains | Capabilities |
@@ -357,12 +501,13 @@ Zine natively supports 48+ platforms across 12 structured categories (80+ suppor
 ### Directory Layout
 ```text
 zine-scraper/
-├── orchestrator.py          ← Main entry point — launches the suite
+├── orchestrator.py          ← Main entry point — launches CLI and TUI
 ├── core/
-│   ├── funnel.py            ← Command router & input sanitization
+│   ├── funnel.py            ← Universal CLI/batch ingestion funnel & path routing
+│   ├── logger.py            ← Dual-tier session & contextual error logging engine
 │   ├── site_map.py          ← Centralized site-to-category domain mapper
-│   ├── domain_manager.py    ← Dynamic site_config.json loader
-│   ├── ui.py                ← Rich TUI primitives, revolt listener & raw cbreak TTY loop
+│   ├── domain_manager.py    ← Dynamic site_config.json discovery loader
+│   ├── ui.py                ← Rich TUI primitives, banners, failure cards & cbreak TTY loop
 │   ├── bake_engine.py       ← Audio Metadata & Cover Art Baking Engine
 │   ├── lyrics_engine.py     ← Multi-tier Synced Lyrics Search & Batch Sync
 │   ├── subtitle_engine.py   ← Faster-Whisper GPU Subtitle Generator
@@ -373,9 +518,8 @@ zine-scraper/
 │   ├── paths.py             ← Filesystem authority & path routing (Vacuum vs Quick Grab)
 │   ├── storage.py           ← Atomic disk I/O layer
 │   └── history.py           ← Download registry & duplicate protection
-├── scrapers/                ← 48+ categorized site scraper packages (80+ domains)
+├── scrapers/                ← Categorized site scraper packages (strict site isolation)
 │   ├── 1_SFW/
-│   │   ├── ANIME/           ← anikai, anikoto, anineko, anitaku, hianime, miruro
 │   │   ├── MANGA/           ← mangadex
 │   │   ├── MANHWA/          ← asurascans, projectsuki, manhuaplus
 │   │   ├── HYBRID_COMICS/   ← kunmanga, topmanhua, weebcentral, fanfox, mangak
@@ -389,6 +533,11 @@ zine-scraper/
 │   │   ├── Doujinshi/       ← asmhentai, nhentai
 │   │   └── ADULT_Webtoons/  ← manhwaus, omegascans, hentai20, manga18fx, hentai18, oppai_stream_toon
 │   └── 3_SYSTEM/            ← hls_extractor.py, playwright_extractor.py, ytdlp/
+├── Logs/                    ← Operational logging, download registry & debug forensics
+│   ├── 💩/                  ← Timestamped session traces & latest_error.log dumps
+│   ├── Batch History.json   ← Checkpointed history of completed batch jobs
+│   ├── Download History.json← Permanent media index preventing duplicate grabs
+│   └── URL History.txt      ← In-app command history and URL suggestions
 ├── Models/                  ← Unified storage hub for offline AI models & engines
 │   ├── STT/                 ← Speech-to-Text models (faster-whisper)
 │   └── TTS/                 ← Text-to-Speech models & engines (Breeze-TTS-2 / Qwen)
@@ -400,24 +549,14 @@ zine-scraper/
 ```
 
 ### Key Engineering Principles
+* **Dual-Tier Forensic Logging**: Every run records clean telemetry to `Logs/💩/latest_session.log`. When upstream CDNs or servers fail, full stack traces and request contexts are captured to `Logs/💩/latest_error.log` while the terminal displays a concise status card.
+* **Scriptable Headless CLI**: Direct URL invocation bypasses interactive selector prompts when flags (`--0`, `--a`, `--<N>`, `--batch`) are passed, enabling seamless automation via terminal or scripts.
+* **Isolated Media Packaging**: Downloads are strictly organized in `~/Downloads/Zine/Batch/<Media Title>/` with cover art, metadata, and subtitle folders without polluting root directories or creating nested `/video/` subfolders.
 * **Single-Session cbreak Event Processing**: Replaced per-keystroke `tty.setraw()` invocations with a single persistent `tty.setcbreak()` session, eliminating stdin blocking locks and 30Hz loop latency.
 * **Zero ANSI Sequence Leaks**: Multi-byte escape sequences (`\x1b[A`, `\x1b[B`, `\x1b[C`, `\x1b[D`) are cleanly buffered so arrow keys, `Backspace`, `Home`, and `End` never print control artifacts into the terminal.
 * **Universal Rich Markup Sanitization**: All pasted inputs and exception messages are passed through `rich.markup.escape()` to prevent syntax crashes from square brackets or URL tags.
 * **Intermediate Temp Buffer (`💩/`)**: All video fragments, image chunks, and tag buffers remain safely inside the centralized temp directory until validation is verified.
 * **Site-Level Isolation**: Scrapers never share cross-dependencies, keeping each extraction platform fully self-contained.
-
----
-
-## ✉️ Creator Note & Contribution
-
-> [!NOTE]
-> ### 📌 A Message From The Creator (Anshu / Valse)
->
-> *"I am a 17-year-old developer, and I dedicated 3 full months of my life to building, refining, and perfecting Zine Scraper Suite. As I am currently preparing for my competitive exams, this project was my first and last passionate project for now. I will start releasing bangers again after I achieve my dream college! Till then enjoy, use Zine, and share your experience with everyone!"*
->
-> * **Join our Discord Community**: [https://discord.gg/suJD5xtFj](https://discord.gg/suJD5xtFj)
-> * **Email Me Directly**: [valsedeanshu@gmail.com](mailto:valsedeanshu@gmail.com)
-> * **Contribute**: Check out [CONTRIBUTING.md](CONTRIBUTING.md) to add features or new scrapers!
 
 ---
 

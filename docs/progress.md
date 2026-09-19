@@ -1,3 +1,50 @@
+# Progress Report - September 19, 2026 (CLI Overhaul, Unified Session Logging, Batch Folder Isolation & Comprehensive Hentai Platform Verification)
+
+- **Unified Per-Session & Error Logging Engine (`core/logger.py`, `orchestrator.py`):**
+  - Implemented session-level logging writing to `Logs/💩/session_YYYY-MM-DD_HH-MM-SS.log` with symlink/pointer to `latest_session.log`.
+  - Implemented dedicated error reporting writing to `Logs/💩/error_YYYY-MM-DD_HH-MM-SS.log` and `latest_error.log` upon failure.
+  - Formatted error reports with full execution context, timestamps, Python environment info, and clean stack traces (ANSI color stripped).
+
+- **Industry-Grade CLI Suite & Developer Diagnostics (`core/cli_help.py`, `orchestrator.py`, `core/funnel.py`):**
+  - Implemented `print_cli_help()`: Master CLI manual covering all smart flags (`--0`, `--a`/`--A`, `--<N>`, `--batch`), subcommands, and real-world copy-paste examples.
+  - Implemented `print_cli_version()`: Detailed runtime and system telemetry displaying Zine version, Python executable, OS kernel architecture, and installed binary status (`ffmpeg`, `aria2c`, `atomicparsley`, `deno`, `playwright`).
+  - Implemented `run_cli_doctor()`: Diagnostic health-check evaluating Python versions, external binaries, write permissions across download/batch/log roots, and credential presence.
+  - Implemented `print_cli_sites()`: Non-interactive terminal catalog listing all supported scrapers, categories, and domains without forcing an interactive TUI.
+  - Implemented `run_cli_clean()`: One-command purge for temporary intermediate buffers and video fragments in `💩/`.
+  - Added fast-path argument interception in `orchestrator.py` and `core/funnel.py` so standard developer flags (`-h`, `--help`, `-v`, `--version`, `doctor`, `sites`, `clean`) respond instantly (<0.1s) and exit cleanly with code 0 without creating empty log sessions.
+
+- **Standardized Batch / CLI Folder Isolation & Deep Subfolder Elimination (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*/workflow.py`, `scrapers/2_NSFW_ADULT/ADULT_PORN/pornhub/workflow.py`, `scrapers/1_SFW/NOVELS/*/workflow.py`):**
+  - **Identified Problem**: In adult video scrapers, single-episode quick grabs dumped loose `.mp4` video files, `subtitle/` folders, and `.zine/` tracker caches directly into `~/Downloads/Zine/Batch/`. Additionally, vacuum modes created an unnecessary nested `video/` subfolder.
+  - **Resolution**: Standardized `creator_root = resolve_folder_collision(target_root, clean_series, platform_id)` and `sub_folder = creator_root`. All downloaded video files, subtitles (`subtitle/`), metadata (`metadata.json`, `cover.jpg/png`), and trackers (`.zine/`) are cleanly self-contained within `~/Downloads/Zine/Batch/<Media Title>/` without loose root pollution or deep nested subfolders.
+  - Fixed single-chapter novel downloads to save into `~/Downloads/Zine/Batch/<Book Title>/novel chapter/`.
+
+- **Enhanced CLI & TUI Visuals (`core/funnel.py`, `core/ui.py`, `core/site_tui.py`):**
+  - Zine banner renders on all CLI launches alongside formatted CLI input parameters.
+  - Added failure indicator box `╭─ 🔴 Download Incomplete / Failed ──╮` with `🔴 [failed]` red ball styling for failed scrapes.
+  - Updated `[6] Torrents & DDL` in site catalog to clarify direct downloading is not supported by Zine (informational/reference catalog only; recommend external client like qBittorrent). Fixed badge widths and text wrapping to prevent truncated site descriptions.
+  - Debounced notification dispatch via `butler/notify.py` to prevent duplicate notifications during headless CLI operations.
+
+- **Complete Live Verification Across All Adult / Hentai Scrapers (`test the scrapper/`):**
+  - Verified and confirmed live download behavior, folder hierarchy, metadata, and logging across all adult platforms:
+    - **HanimeRed** (`hanime.red`): ✅ PASS. Single episode and series video streams + English subtitles saved to `Batch/<Title>/`.
+    - **HentaiHaven** (`hentaihaven.xxx` / `hentaihaven.red`): ✅ PASS. Dead CDN on expired mirror cleanly caught and reported in `latest_error.log` with `🔴 [failed]` failure box; `hentaihaven.red` verified downloading HLS chunks into `Batch/<Title>/`.
+    - **HentaiHavenCo** (`hentaihaven.co`): ✅ PASS. Playwright Turnstile solver bypasses nhplayer challenge, sniffs stream, and downloads via aria2c into `Batch/<Title>/`.
+    - **HStream** (`hstream.moe`): ✅ PASS. High-res 4K/2160p stream extraction downloading via yt-dlp/aria2c to `Batch/<Title>/`.
+    - **OppaiStream Video** (`oppai.stream`): ✅ PASS. 1080p stream extraction downloading via aria2c to `Batch/<Title>/`.
+    - **OppaiStream Toon** (`read.oppai.stream`): ✅ PASS. Downloaded and stitched all 54 pages to `Batch/<Title>/Chapter60/`.
+    - **HentaiMama** (`hentaimama.io`): ✅ PASS. Direct stream download via aria2c to `Batch/<Title>/`.
+    - **OHentai** (`ohentai.org`): ✅ PASS. Classic OVA stream extraction from BunnyCDN via aria2c to `Batch/<Title>/`.
+    - **HentaiCity** (`hentaicity.com`): ✅ PASS. Multi-resolution HLS extraction via `hls_extractor.py` to `Batch/<Title>/`.
+    - **NHentai** (`nhentai.net`): ✅ PASS. Fixed missing `session` property on `BaseScraper`; downloaded and assembled all 44 pages to `Batch/<Title>/Chapter1/`.
+    - **AsmHentai** (`asmhentai.com`): ✅ PASS. Downloaded all 20 pages to `Batch/<Title>/Chapter1/`.
+    - **OmegaScans** (`omegascans.org`): ✅ PASS. Downloaded and stitched all 95 pages to `Batch/<Title>/Chapter10/`.
+    - **Hentai18** (`hentai18.net`): ✅ PASS. Downloaded and stitched all 29 pages to `Batch/<Title>/Chapter9/`.
+    - **Hentai20** (`hentai20.io`): ✅ PASS. Downloaded and stitched all 16 pages to `Batch/<Title>/Chapter17/`.
+    - **ManhwaUs** (`manhwaus.net`): ✅ PASS. Downloaded and stitched all 22 pages to `Batch/<Title>/Chapter23/`.
+    - **Manga18fx** (`manga18fx.com`): ✅ PASS. Downloaded and stitched all 55 pages to `Batch/<Title>/Chapter55/`.
+
+---
+
 # Progress Report - September 19, 2026 (Fix: Anime Stream Recovery, CLI Flag Non-Blocking Execution & Alternative Platform Recommendation Engine)
 
 - **Anime & HLS Stream Download Overhaul (`scrapers/3_SYSTEM/hls_extractor.py`, `scrapers/3_SYSTEM/playwright_extractor.py`):**
