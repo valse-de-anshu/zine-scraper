@@ -233,11 +233,14 @@ class MiruroScraper:
                     
             if result and result.get("url"):
                 logger.info(f"[Miruro] Stream resolved: {result['url'][:60]}...")
+                if result.get("cookies"):
+                    self.engine.headers["Cookie"] = result["cookies"]
                 return {
                     "m3u8_url": result["url"],
                     "referer": f"https://{current_domain}/",
                     "subtitles": result.get("subtitles", []),
-                    "qualities": result.get("qualities_urls", [])
+                    "qualities": result.get("qualities_urls", []),
+                    "cookies": result.get("cookies", "")
                 }
             else:
                 logger.error(f"[Miruro] Failed to extract stream URL. Playwright stdout: {process.stdout.strip()}")

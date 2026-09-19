@@ -170,11 +170,37 @@ async def extract_stream(url):
                         continue
 
             logger.info(f"[Playwright] Waiting for video stream URL to resolve...")
-            # Poll for up to 8 seconds for the m3u8 to appear
-            for _ in range(16):
+            # Poll for up to 6 seconds for the m3u8 to appear
+            for _ in range(12):
                 if stream_url:
                     break
                 await page.wait_for_timeout(500)
+
+            # If no stream found yet, attempt multi-server switching
+            if not stream_url:
+                logger.info("[Playwright] Primary stream not detected. Checking for alternative server providers on page...")
+                server_selectors = [
+                    '[class*="server-item"]', '[class*="server"] button',
+                    '[data-server-id]', '[data-server]', '.servers-list li',
+                    '.dropdown-item', '[class*="provider"]', 'button:has-text("Server")',
+                    'button:has-text("Sub")', 'button:has-text("Dub")', 'button:has-text("Vidstreaming")',
+                    'button:has-text("MegaCloud")', 'button:has-text("Streamwish")'
+                ]
+                for sel in server_selectors:
+                    if stream_url:
+                        break
+                    try:
+                        elements = await page.query_selector_all(sel)
+                        for elem in elements[:4]:
+                            if stream_url:
+                                break
+                            try:
+                                await elem.click(timeout=800, force=True)
+                                await page.wait_for_timeout(1200)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
             
             if stream_url:
                 logger.info(f"[Playwright] Video stream resolved successfully. Waiting for subtitle tracks to fire...")
@@ -187,21 +213,24 @@ async def extract_stream(url):
                 logger.warning(f"[Playwright] Stream URL failed to resolve in time.")
         except KeyboardInterrupt:
             logger.warning(f"[Playwright] KeyboardInterrupt during page loading/waiting.")
-            return {"url": None, "title": "Cancelled", "subtitles": [], "qualities_urls": []}
+            return {"url": None, "title": "Cancelled", "subtitles": [], "qualities_urls": [], "cookies": ""}
         except Exception as e:
             logger.error(f"[Playwright] Exception during wait/extraction: {e}", exc_info=True)
             
         try:
             title = await page.title()
             html = await page.content()
+            cookies_list = await context.cookies()
+            cookie_header = "; ".join([f"{c['name']}={c['value']}" for c in cookies_list if 'name' in c and 'value' in c])
         except Exception as e:
-            logger.warning(f"[Playwright] Failed to capture page content/title: {e}")
+            logger.warning(f"[Playwright] Failed to capture page content/title/cookies: {e}")
             title = "Unknown"
             html = ""
+            cookie_header = ""
 
         logger.info(f"[Playwright] Finished execution. Resolved URL: {stream_url is not None}, Subtitles captured: {len(subtitles)}")
         await browser.close()
-        return {"url": stream_url, "title": title, "subtitles": subtitles, "qualities_urls": qualities_urls, "html": html}
+        return {"url": stream_url, "title": title, "subtitles": subtitles, "qualities_urls": qualities_urls, "cookies": cookie_header, "html": html}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

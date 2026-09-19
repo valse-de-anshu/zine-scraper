@@ -13,8 +13,8 @@ from Crypto.Cipher import AES
 def download_hls(playlist_url, target_path_str, headers):
     tmp_path = Path(target_path_str)
     
-    # Strip user-agent and accept so curl_cffi's perfect impersonation isn't broken
-    clean_headers = {k: v for k, v in headers.items() if k.lower() in ("referer", "origin", "user-agent")}
+    # Preserve referer, origin, user-agent and session cookies for CDN chunk authorization
+    clean_headers = {k: v for k, v in headers.items() if k.lower() in ("referer", "origin", "user-agent", "cookie")}
 
     r = requests.get(playlist_url, headers=clean_headers, impersonate="chrome124", timeout=15)
     if r.status_code != 200:
