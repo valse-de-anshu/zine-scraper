@@ -345,35 +345,13 @@ SITE_CATEGORIES = [
             },
         ]
     },
-    # ── 1_SFW / KNOWLEDGE_STUDY ──
+    # ── 1_SFW / TORRENTS_DDL ──
     {
         "id": "6",
-        "icon": "🏛",
-        "label": "Study",
+        "icon": "🧲",
+        "label": "Torrents",
         "tag": "SFW",
         "sites": [
-            {
-                "name": "Project Gutenberg",
-                "primary": "gutenberg.org",
-                "alts": [],
-                "rating": "10/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Public domain ebooks & classics",
-                "tags": "SFW · Books · Ebooks · Public Domain · Classics",
-                "desc": "The oldest digital library in human history, founded in 1971 by Michael S. Hart. Offers over 70,000 completely free eBooks of timeless world literature, philosophy, and history."
-            },
-            {
-                "name": "Internet Archive",
-                "primary": "archive.org",
-                "alts": [],
-                "rating": "9/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Books / scans / manuscripts / archives",
-                "tags": "SFW · Archive · Books · Preservation · Non-Profit",
-                "desc": "The world's largest non-profit digital library. Preserves 835+ billion web pages, 44 million books and texts, 15 million audio recordings, and 10 million films for universal permanent access."
-            },
             {
                 "name": "Nyaa",
                 "primary": "nyaa.si",
@@ -381,7 +359,7 @@ SITE_CATEGORIES = [
                 "rating": "10/10",
                 "popularity": "Very High",
                 "status": "Active",
-                "content": "Anime / Manga / Music torrent index",
+                "content": "Anime / Manga / Media torrent tracker",
                 "tags": "SFW · Torrents · Index · P2P · Tracker",
                 "desc": "The largest and most trusted public BitTorrent tracker for anime, manga, literature, and Japanese media with massive community seeder activity."
             },
@@ -409,9 +387,40 @@ SITE_CATEGORIES = [
             },
         ]
     },
-    # ── 1_SFW / MUSIC ──
+    # ── 1_SFW / KNOWLEDGE_STUDY ──
     {
         "id": "7",
+        "icon": "🏛",
+        "label": "Study",
+        "tag": "SFW",
+        "sites": [
+            {
+                "name": "Project Gutenberg",
+                "primary": "gutenberg.org",
+                "alts": [],
+                "rating": "10/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Public domain ebooks & classics",
+                "tags": "SFW · Books · Ebooks · Public Domain · Classics",
+                "desc": "The oldest digital library in human history, founded in 1971 by Michael S. Hart. Offers over 70,000 completely free eBooks of timeless world literature, philosophy, and history."
+            },
+            {
+                "name": "Internet Archive",
+                "primary": "archive.org",
+                "alts": [],
+                "rating": "9/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Books / scans / manuscripts / archives",
+                "tags": "SFW · Archive · Books · Preservation · Non-Profit",
+                "desc": "The world's largest non-profit digital library. Preserves 835+ billion web pages, 44 million books and texts, 15 million audio recordings, and 10 million films for universal permanent access."
+            },
+        ]
+    },
+    # ── 1_SFW / MUSIC_MEDIA ──
+    {
+        "id": "8",
         "icon": "🎵",
         "label": "Music",
         "tag": "SFW",
@@ -449,15 +458,6 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Music · Video · Global · High-Res",
                 "desc": "Google's global music streaming network. Integrates official studio releases with rare live recordings, concert bootlegs, and user covers across every genre."
             },
-        ]
-    },
-    # ── 1_SFW / SOCIAL_MEDIA ──
-    {
-        "id": "8",
-        "icon": "🌐",
-        "label": "Social",
-        "tag": "SFW",
-        "sites": [
             {
                 "name": "YouTube",
                 "primary": "youtube.com",
@@ -479,17 +479,6 @@ SITE_CATEGORIES = [
                 "content": "Photos / reels / stories",
                 "tags": "SFW · Social · Photos · Reels · Video",
                 "desc": "Meta's flagship platform for photo, carousel, reel, and story sharing. The global center for visual creator content, photography, and digital art portfolios."
-            },
-            {
-                "name": "Facebook",
-                "primary": "facebook.com",
-                "alts": ["fb.watch"],
-                "rating": "8/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Profile media / photos / video reels",
-                "tags": "SFW · Social · Profiles · Photos · Reels · Live",
-                "desc": "Meta's core social network. Zine provides dedicated modules for extracting full-resolution profile pictures, photo albums, and public video reels."
             },
             {
                 "name": "Pinterest",
@@ -747,9 +736,9 @@ CATEGORY_ENCYCLOPEDIA = {
     "3": ("Manhwa", "🇰🇷", "SFW", "You will find Korean Manhwa and Chinese Manhua webtoons here."),
     "4": ("Hybrid Comics", "📑", "SFW", "You will find all-in-one comic hubs with Manga, Manhwa & Western comics here."),
     "5": ("Novels", "📚", "SFW", "You will find Light Novels, Web Serials, and fiction books here."),
-    "6": ("Knowledge & Study", "🏛", "SFW", "You will find classic books, library archives, and study papers here."),
-    "7": ("Music & Audio", "🎵", "SFW", "You will find high quality Music, songs, full albums, and audio tracks here."),
-    "8": ("Social Media", "🌐", "SFW", "You will find photos, video reels, and creator posts from social networks here."),
+    "6": ("Torrents & DDL", "🧲", "SFW", "You will find torrent trackers and direct download indexers for Anime, Manga, and media here."),
+    "7": ("Knowledge & Study", "🏛", "SFW", "You will find classic books, library archives, and study papers here."),
+    "8": ("Music & Media", "🎵", "SFW", "You will find high quality Music, songs, full albums, and audio tracks here."),
     "9": ("Adult Anime (Hentai)", "🔞", "NSFW", "You will find 18+ Adult Anime and Hentai series here."),
     "0": ("Adult Video (Porn)", "🔞", "NSFW", "You will find 18+ Adult videos, tube scenes, and model clips here."),
     "-": ("Adult Doujinshi", "🔞", "NSFW", "You will find 18+ Doujinshi galleries, adult manga, and fan-comics here."),
@@ -859,7 +848,7 @@ class SiteDatabaseTUI:
             expand=False,
             width=PANEL_W - 8
         )
-        cat_table.add_column("Badge", width=12, no_wrap=True)
+        cat_table.add_column("Badge", width=14, no_wrap=True)
         cat_table.add_column("Tabs", no_wrap=True)
 
         # ── SFW Categories Row ──
