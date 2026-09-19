@@ -22,12 +22,31 @@ Open your terminal, navigate to this `zine scraper/run me` folder, and run:
 6. Downloads Playwright browser binaries.
 
 ### Step 2: Run
-Whenever you want to start the scraper, simply run from **any** terminal directory:
+
+You can run Zine in **Headless CLI Mode** or **Interactive TUI Mode** using either the global `zine` command or `python3 orchestrator.py`:
+
+#### ⚡ CLI Mode (Direct URL & Batch Flags)
+Run from any terminal window:
 ```bash
-zine
+# Using global command:
+zine "https://hanime.red/watch/episode-1" --0
+zine "https://hentaihaven.xxx/watch/series-slug/" --a
+zine "https://asurascans.com/comics/series-slug" --5
+zine --batch "my_reading_list.txt"
+
+# Or directly with Python:
+python3 orchestrator.py "https://example.com/media" --0
 ```
-*(Or execute `./run.sh` inside `run me/`)*
-*(This automatically boots the scraper using the isolated `venv` so it doesn't conflict with your global Python!)*
+
+#### 🖥️ Interactive TUI Mode
+```bash
+# Launch interactive menu:
+zine
+
+# Or with Python:
+python3 orchestrator.py
+```
+*(The `zine` command automatically routes execution through the isolated `venv` so it never conflicts with your global Python!)*
 
 ---
 
@@ -46,12 +65,19 @@ install.bat
 5. Links `zine` to your command line PATH (`%USERPROFILE%\bin\zine.cmd`).
 
 ### Step 2: Run
-Whenever you want to start the scraper, simply type in Command Prompt / PowerShell / Windows Terminal:
-```text
+Type directly into Command Prompt, PowerShell, or Windows Terminal:
+
+```cmd
+:: Headless CLI Mode:
+zine "https://hanime.red/watch/episode-1" --0
+zine "https://hentaihaven.xxx/watch/series-slug/" --a
+python3 orchestrator.py "https://example.com/media" --0
+
+:: Interactive TUI Mode:
 zine
+:: (or python3 orchestrator.py)
 ```
-*(Or double-click `run.bat` inside `run me/`)*
-*(This automatically boots the scraper using the isolated `venv` so it doesn't conflict with your global Python!)*
+*(Double-clicking `run.bat` inside `run me/` is also supported for interactive sessions!)*
 
 ---
 

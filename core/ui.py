@@ -1903,18 +1903,16 @@ def clean_exit_revolt(title: Optional[str] = None):
     trigger_revolt_exit(title=title)
 
 
-def print_alternative_anime_sources(anime_title: str, current_site: str = "Miruro"):
-    """Renders a clean Rich tree informing the user that the host stream is dead and lists verified alternative anime platforms in Zine."""
+def print_alternative_anime_sources(anime_title: str, current_site: str = "Anime"):
+    """Renders a clean Rich tree informing the user that web streaming is deprecated and points to permanent torrent indexers."""
     from rich.tree import Tree
     clean_t = str(anime_title or "this anime").strip()
-    tree = Tree(f"[warning]⚠ Stream unavailable or missing pieces on {current_site}[/warning]")
-    tree.add(f"[unselected]Host CDN returned missing or unplayable media chunks for '{clean_t}'.[/unselected]")
-    alt_branch = tree.add("[menu]Alternative anime sources supported in Zine Scraper:[/menu]")
-    alt_branch.add("[site]HiAnime[/site]   : [sexy_pink]https://hianime.to[/sexy_pink] [unselected](Multi-server HLS, Sub & Dub)[/unselected]")
-    alt_branch.add("[site]Anikoto[/site]   : [sexy_pink]https://anikoto.cz[/sexy_pink] [unselected](Low-latency mirror streams)[/unselected]")
-    alt_branch.add("[site]Anitaku[/site]   : [sexy_pink]https://anitaku.online[/sexy_pink] [unselected](Deep legacy & modern anime catalog)[/unselected]")
-    alt_branch.add("[site]AniNeko[/site]   : [sexy_pink]https://anineko.to[/sexy_pink] [unselected](Direct minimalist player)[/unselected]")
-    alt_branch.add("[site]AniKai[/site]    : [sexy_pink]https://anikai.to[/sexy_pink] [unselected](High-bitrate HD streams)[/unselected]")
+    tree = Tree(f"[warning]⚠ Web streaming is deprecated / unavailable for '{clean_t}'[/warning]")
+    tree.add("[unselected]Web streaming sites suffer from frequent domain takedowns and CDN throttling.[/unselected]")
+    alt_branch = tree.add("[menu]Recommended torrent indexers (download via qBittorrent):[/menu]")
+    alt_branch.add("[site]Nyaa[/site]        : [sexy_pink]https://nyaa.si[/sexy_pink] [unselected](Premier anime torrent tracker)[/unselected]")
+    alt_branch.add("[site]SeaDex[/site]      : [sexy_pink]https://releases.moe[/sexy_pink] [unselected](Curated best releases database)[/unselected]")
+    alt_branch.add("[site]TsukiHime[/site]    : [sexy_pink]https://tsukihime.org[/sexy_pink] [unselected](Torrent, DDL & NZB aggregator)[/unselected]")
     console.print("")
     console.print(tree)
     console.print("")
@@ -1937,3 +1935,59 @@ def print_alternative_adult_anime_sources(anime_title: str, current_site: str = 
     console.print("")
     console.print(tree)
     console.print("")
+
+
+def render_failure_box(
+    title: str,
+    failed_items: Optional[List[str]] = None,
+    reason: Optional[str] = None,
+    width: int = 86
+):
+    """
+    Renders a minimal, high-visibility failure notification box with red ball marker:
+    🔴 [failed]
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.markup import escape
+    from rich import box
+
+    body = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), expand=True)
+    body.add_column("Key", style="bold red", width=10, no_wrap=True)
+    body.add_column("Val", style="white")
+
+    body.add_row("Status", f"🔴 [bold red]{escape('[failed]')}[/bold red]")
+    body.add_row("Target", f"[title]{escape(str(title))}[/title]")
+
+    if reason:
+        body.add_row("Reason", f"[warning]{escape(str(reason))}[/warning]")
+
+    if failed_items:
+        items_preview = ", ".join(str(x) for x in failed_items[:6])
+        if len(failed_items) > 6:
+            items_preview += f" ... (+{len(failed_items) - 6} more)"
+        body.add_row("Failed", f"[sexy_pink]{items_preview}[/sexy_pink] ({len(failed_items)} item(s))")
+
+    body.add_row("Logs", "[unselected]Check Logs/💩/latest_session.log or latest_error.log[/unselected]")
+
+    return Panel(
+        body,
+        title="[bold red]🔴 Download Incomplete / Failed[/bold red]",
+        title_align="left",
+        border_style="red",
+        box=box.ROUNDED,
+        width=min(width, console.width or 86),
+        padding=(0, 1)
+    )
+
+
+def print_failure_box(
+    title: str,
+    failed_items: Optional[List[str]] = None,
+    reason: Optional[str] = None
+):
+    """Prints the minimal 🔴 [failed] box directly to the console."""
+    console.print("")
+    console.print(render_failure_box(title, failed_items=failed_items, reason=reason))
+    console.print("")
+

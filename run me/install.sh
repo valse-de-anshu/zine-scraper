@@ -80,18 +80,18 @@ echo "[+] Linking 'zine' command to PATH..."
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
 
-cat << 'EOF' > "$BIN_DIR/zine"
+cat << EOF > "$BIN_DIR/zine"
 #!/usr/bin/env bash
-ZINE_ROOT="$(dirname "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")")/.config/zine scraper"
-if [ ! -d "$ZINE_ROOT" ]; then
-    ZINE_ROOT="$HOME/.config/zine scraper"
+ZINE_ROOT="$ROOT_DIR"
+if [ ! -d "\$ZINE_ROOT" ]; then
+    ZINE_ROOT="\$HOME/.config/zine scraper"
 fi
-if [ -f "$ZINE_ROOT/run me/run.sh" ]; then
-    exec "$ZINE_ROOT/run me/run.sh" "$@"
-elif [ -f "$ZINE_ROOT/orchestrator.py" ]; then
-    exec "$ZINE_ROOT/venv/bin/python" "$ZINE_ROOT/orchestrator.py" "$@"
+if [ -f "\$ZINE_ROOT/run me/run.sh" ]; then
+    exec "\$ZINE_ROOT/run me/run.sh" "\$@"
+elif [ -f "\$ZINE_ROOT/orchestrator.py" ]; then
+    exec "\$ZINE_ROOT/venv/bin/python" "\$ZINE_ROOT/orchestrator.py" "\$@"
 else
-    echo "[-] Error: Zine Scraper directory not found at $ZINE_ROOT" >&2
+    echo "[-] Error: Zine Scraper directory not found at \$ZINE_ROOT" >&2
     exit 1
 fi
 EOF

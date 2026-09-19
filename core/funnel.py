@@ -224,9 +224,12 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
     if not scraper:
         logging.error(f"Unsupported URL: {url}")
-        console.print(f"[warning]Unsupported URL or command: {safe_url}[/warning]")
+        from core.logger import record_error_log
+        from core.ui import print_failure_box
+        record_error_log("Unsupported URL or command", context={"url": url})
+        print_failure_box(safe_url, reason="Domain or URL format is not supported by any active scraper in Zine.")
         if not is_batch:
-            if sys.stdin.isatty():
+            if sys.stdin.isatty() and not getattr(scraper, "_is_cli", False):
                 try:
                     sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
                     sys.stdout.flush()
@@ -301,12 +304,14 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         def check_has_downloaded() -> bool:
             if download_count > 0:
                 return True
-            dc = getattr(scraper, "downloaded_count", None)
-            if isinstance(dc, (int, float)) and dc > 0:
-                return True
-            sc = getattr(scraper, "success_count", None)
-            if isinstance(sc, (int, float)) and sc > 0:
-                return True
+            for attr in ("downloaded_count", "success_count"):
+                val = getattr(scraper, attr, None)
+                if isinstance(val, (int, float)) and val > 0:
+                    return True
+            for attr in ("verified_nums", "verified_ids"):
+                val = getattr(scraper, attr, None)
+                if isinstance(val, list) and len(val) > 0:
+                    return True
             return False
 
         def fire_notification():
@@ -317,14 +322,18 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             has_downloaded = check_has_downloaded()
             try:
                 from butler.notify import send_os_notification
+                from core.logger import record_error_log
+                from core.ui import print_failure_box
                 if has_downloaded:
                     send_os_notification("Zine Scraper", f"Finished downloading: {t}", is_success=True)
                     notification_fired = True
-                elif last_error:
-                    send_os_notification("Zine Scraper Error", f"Download failed: {last_error}", is_success=False)
-                    notification_fired = True
                 elif already_up_to_date:
                     send_os_notification("Zine Scraper", f"Already up to date: {t}", is_success=True)
+                    notification_fired = True
+                elif last_error:
+                    send_os_notification("Zine Scraper Error", f"Download failed: {last_error}", is_success=False)
+                    print_failure_box(str(t), reason=str(last_error))
+                    record_error_log(last_error, context={"url": url, "scraper": site_folder})
                     notification_fired = True
             except Exception as e:
                 logging.error(f"Notification failed: {e}")
@@ -411,7 +420,10 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         return True
     except Exception as e:
         logging.error(f"Failed to load/execute TUI for {site_folder}: {e}", exc_info=True)
-        
+        from core.logger import record_error_log
+        from core.ui import print_failure_box
+        record_error_log(e, context={"url": url, "site_folder": site_folder, "batch_path": str(batch_path) if batch_path else None})
+        print_failure_box(getattr(scraper, "title", None) or url, reason=str(e))
         try:
             from butler.notify import send_os_notification
             send_os_notification("Zine Scraper Error", f"Scraping failed: {e}", is_success=False)
@@ -892,17 +904,46 @@ def main():
         pass  # never block launch due to library scaffold errors
 
     cli_args = sys.argv[1:]
+    if cli_args:
+        raw_arg = cli_args[0].strip()
+        first_arg = raw_arg.lower()
+        if first_arg in ["--help", "-h", "-?", "help", "?", "--h"]:
+            from core.cli_help import print_cli_help
+            print_cli_help()
+            sys.exit(0)
+        elif first_arg in ["--version", "-v", "-v", "version", "ver", "--ver", "--verson"]:
+            from core.cli_help import print_cli_version
+            print_cli_version()
+            sys.exit(0)
+        elif first_arg in ["--doctor", "-doctor", "doctor", "check"]:
+            from core.cli_help import run_cli_doctor
+            run_cli_doctor()
+            sys.exit(0)
+        elif first_arg in ["--sites", "-sites", "sites", "list"]:
+            from core.cli_help import print_cli_sites
+            print_cli_sites()
+            sys.exit(0)
+        elif first_arg in ["--clean", "-clean", "clean"]:
+            from core.cli_help import run_cli_clean
+            run_cli_clean()
+            sys.exit(0)
+        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith("--batch"):
+            from core.cli_help import handle_unknown_flag
+            handle_unknown_flag(raw_arg)
+            sys.exit(2)
+
     first_run = True
     while True:
         history.reload()
         startup_clear()
-        if not sys.stdin.isatty() or 'unittest' in sys.modules:
-            print_banner()
+        print_banner()
 
         try:
             if first_run and cli_args:
                 first_run = False
                 url = " ".join(cli_args)
+                console.print(f"[menu]CLI Input[/menu]      : [site]{escape(url)}[/site]")
+                console.print("")
             else:
                 prompt = MainPrompt(paths, config)
                 url = prompt.get_input()
@@ -941,10 +982,26 @@ def main():
 
             elif url_lower in ["settings", "/settings"]:
                 launch_settings_tui()
-            elif url_lower in ["help", "/help"]:
+            elif url_lower in ["help", "/help", "--help", "-h"]:
                 show_help_tui()
             elif url_lower in ["site", "/site", "sites"]:
                 show_site_tui()
+            elif url_lower in ["doctor", "/doctor", "--doctor"]:
+                from core.cli_help import run_cli_doctor
+                startup_clear()
+                run_cli_doctor()
+                console.print("[dim]Press Enter to return to main menu...[/dim]")
+                input()
+            elif url_lower in ["clean", "/clean", "--clean"]:
+                from core.cli_help import run_cli_clean
+                run_cli_clean()
+                time.sleep(1.5)
+            elif url_lower in ["version", "--version", "-v"]:
+                from core.cli_help import print_cli_version
+                startup_clear()
+                print_cli_version()
+                console.print("\n[dim]Press Enter to return to main menu...[/dim]")
+                input()
             elif url_lower in ["slice", "/slice", "slicer"]:
                 from core.image_slicer import run_image_slicer_tui
                 run_image_slicer_tui()
@@ -1014,10 +1071,12 @@ def main():
                             flags.append(f"--{val}")
                 clean_url = re.sub(r"\s*--(\d+|[aA])\b", "", url_input).strip()
 
+                from core.paths import PathAuthority, get_default_batch_path
+                default_batch = get_default_batch_path()
+
                 if batch_all:
-                    from core.paths import PathAuthority, get_default_batch_path
                     from core.history import BatchHistoryManager
-                    batch_path = get_default_batch_path()
+                    batch_path = default_batch
                     batch_mgr = BatchHistoryManager(PathAuthority(), storage)
                     canonical_url = HistoryLayer.normalize_url(clean_url)
                     batch_mgr.record_start(raw_input=url_input, url=canonical_url, flags=flags, mode="Vacuum")
@@ -1037,10 +1096,21 @@ def main():
                     else:
                         batch_mgr.record_finish(canonical_url, status="failed")
                 else:
-                    is_auto_batch = bool(batch_quick_grab or chapter_limit is not None)
-                    route_url(clean_url, history, storage, is_batch=is_auto_batch, batch_quick_grab=batch_quick_grab, batch_all=False, flags=flags, chapter_limit=chapter_limit)
+                    is_auto_batch = bool(batch_quick_grab or chapter_limit is not None or cli_args)
+                    target_batch_path = default_batch if (is_auto_batch or cli_args) else None
+                    route_url(
+                        clean_url,
+                        history,
+                        storage,
+                        batch_path=target_batch_path,
+                        is_batch=is_auto_batch,
+                        batch_quick_grab=batch_quick_grab,
+                        batch_all=False,
+                        flags=flags,
+                        chapter_limit=chapter_limit
+                    )
 
-                if cli_args and not sys.stdin.isatty():
+                if cli_args:
                     break
         except KeyboardInterrupt:
             clean_exit(forceful=True)
