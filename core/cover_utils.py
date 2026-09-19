@@ -58,8 +58,8 @@ def extract_cover_url(soup: BeautifulSoup, url: str) -> Optional[str]:
 
 def detect_image_format_from_bytes(header_bytes: bytes) -> Optional[str]:
     """
-    Sniffs real image format by inspecting the first 16+ binary magic bytes.
-    Returns format string ("JPEG", "PNG", "WEBP", "GIF", "AVIF") or None.
+    Sniffs real image format by inspecting the first 32+ binary magic bytes.
+    Returns format string ("JPEG", "PNG", "WEBP", "GIF", "AVIF", "BMP", "TIFF", "ICO", "HEIC") or None.
     """
     if not header_bytes:
         return None
@@ -71,9 +71,112 @@ def detect_image_format_from_bytes(header_bytes: bytes) -> Optional[str]:
         return "WEBP"
     if header_bytes.startswith(b"GIF8"):
         return "GIF"
-    if b"ftyp" in header_bytes[:16] and (b"avif" in header_bytes[:16] or b"avis" in header_bytes[:16]):
+    if b"ftyp" in header_bytes[:16] and (b"avif" in header_bytes[:16] or b"avis" in header_bytes[:16] or b"mif1" in header_bytes[:16]):
         return "AVIF"
+    if b"ftyp" in header_bytes[:16] and any(h in header_bytes[:16] for h in (b"heic", b"heix", b"hevc", b"heim", b"heis")):
+        return "HEIC"
+    if header_bytes.startswith(b"BM"):
+        return "BMP"
+    if header_bytes.startswith(b"II*\x00") or header_bytes.startswith(b"MM\x00*"):
+        return "TIFF"
+    if header_bytes.startswith(b"\x00\x00\x01\x00"):
+        return "ICO"
     return None
+
+
+def ensure_compatible_image_for_ffmpeg(cover_path: Optional[Union[Path, str]]) -> Tuple[Optional[Path], Optional[Path]]:
+    """
+    Ensures any picture format (JPEG, PNG, WEBP, AVIF, BMP, TIFF, GIF, ICO, HEIC, etc.)
+    is converted to a standard format (JPEG or PNG) compatible with FFmpeg attached_pic
+    and media container streams (.mp4, .mkv, .mp3, .flac, .m4a).
+
+    Returns:
+        (effective_path, temp_path_to_cleanup)
+        - effective_path: The Path to use in the FFmpeg command (or None if cover_path was invalid/missing).
+        - temp_path_to_cleanup: Path to unlink after FFmpeg finishes (None if no temp file created).
+    """
+    if not cover_path:
+        return None, None
+    src = Path(cover_path)
+    if not src.exists() or not src.is_file():
+        return None, None
+
+    ext = src.suffix.lower()
+    if ext in (".jpg", ".jpeg", ".png"):
+        return src, None
+
+    converted = src.parent / f".tmp_cover_{src.stem}.jpg"
+    try:
+        with Image.open(src) as img:
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                bg.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                bg.save(converted, "JPEG", quality=95, optimize=True)
+            else:
+                img.convert("RGB").save(converted, "JPEG", quality=95, optimize=True)
+        return converted, converted
+    except Exception as e:
+        logging.debug(f"Pillow cover conversion error for {src}: {e}")
+        # Fallback to FFmpeg conversion
+        try:
+            import subprocess
+            ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
+            subprocess.run(
+                [ffmpeg_bin, "-y", "-i", str(src), "-loglevel", "error", str(converted)],
+                check=True,
+                capture_output=True
+            )
+            if converted.exists() and converted.stat().st_size > 0:
+                return converted, converted
+        except Exception:
+            pass
+        return src, None
+
+
+def ensure_compatible_image_bytes_for_tagging(cover_path: Optional[Union[Path, str]]) -> Tuple[Optional[bytes], str]:
+    """
+    Reads and converts any image file (WebP, AVIF, BMP, TIFF, GIF, ICO, etc.) into clean
+    JPEG or PNG bytes with correct MIME type ("image/jpeg" or "image/png") for embedding
+    into FLAC / Vorbis / ID3 / MP4 tags.
+
+    Returns:
+        (image_bytes, mime_type)
+    """
+    if not cover_path:
+        return None, ""
+    src = Path(cover_path)
+    if not src.exists() or not src.is_file():
+        return None, ""
+
+    try:
+        raw_bytes = src.read_bytes()
+        if len(raw_bytes) < 100:
+            return None, ""
+
+        # If already standard PNG or JPEG, return directly
+        if raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            return raw_bytes, "image/png"
+        if raw_bytes.startswith(b"\xff\xd8\xff"):
+            return raw_bytes, "image/jpeg"
+
+        # Convert other formats (WEBP, AVIF, BMP, TIFF, etc.) to JPEG in-memory
+        import io
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            out_buf = io.BytesIO()
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                bg.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                bg.save(out_buf, format="JPEG", quality=95, optimize=True)
+            else:
+                img.convert("RGB").save(out_buf, format="JPEG", quality=95, optimize=True)
+            return out_buf.getvalue(), "image/jpeg"
+    except Exception as e:
+        logging.debug(f"Cover tagging byte conversion failed for {src}: {e}")
+        try:
+            raw_bytes = src.read_bytes()
+            return raw_bytes, "image/jpeg"
+        except Exception:
+            return None, ""
 
 
 def save_verified_cover(
@@ -94,7 +197,7 @@ def save_verified_cover(
     # Read binary bytes
     if isinstance(source_data, (Path, str)):
         src_path = Path(source_data)
-        if not src_path.exists() or src_path.stat().st_size < 500:
+        if not src_path.exists() or src_path.stat().st_size < 100:
             return None
         try:
             raw_bytes = src_path.read_bytes()
@@ -102,7 +205,7 @@ def save_verified_cover(
             return None
     elif isinstance(source_data, bytes):
         raw_bytes = source_data
-        if len(raw_bytes) < 500:
+        if len(raw_bytes) < 100:
             return None
     else:
         return None

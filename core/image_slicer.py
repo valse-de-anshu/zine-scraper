@@ -25,7 +25,10 @@ from core.config import ConfigLayer
 Image.MAX_IMAGE_PIXELS = None
 
 DEFAULT_CHUNK_HEIGHT = 2000
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif",
+    ".avif", ".gif", ".jfif", ".pjpeg", ".pjp", ".ico", ".heic", ".heif"
+}
 
 
 def natural_sort_key(s: str) -> List[Any]:

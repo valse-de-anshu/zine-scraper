@@ -220,9 +220,12 @@ def bake_metadata_and_cover(
     ext = audio_path.suffix.lower()
     tmp_path = audio_path.with_suffix(f".bake_tmp{ext}")
 
+    from core.cover_utils import ensure_compatible_image_for_ffmpeg
+    effective_cover, temp_to_clean = ensure_compatible_image_for_ffmpeg(cover_path)
+
     cmd = [ffmpeg_bin, "-y", "-i", str(audio_path)]
-    if cover_path and cover_path.exists():
-        cmd.extend(["-i", str(cover_path)])
+    if effective_cover and effective_cover.exists():
+        cmd.extend(["-i", str(effective_cover)])
         cmd.extend(["-map", "0:a", "-map", "1:0"])
         cmd.extend(["-disposition:v:0", "attached_pic"])
         cmd.extend(["-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"])
@@ -254,6 +257,12 @@ def bake_metadata_and_cover(
         if tmp_path.exists():
             tmp_path.unlink()
         return False
+    finally:
+        if temp_to_clean and temp_to_clean.exists():
+            try:
+                temp_to_clean.unlink()
+            except Exception:
+                pass
 
 
 def _scan_recent_audio_files() -> List[Path]:

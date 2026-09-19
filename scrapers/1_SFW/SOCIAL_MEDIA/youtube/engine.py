@@ -853,36 +853,16 @@ class YoutubeEngine(VideoEngine):
         album: Optional[str] = None
     ) -> bool:
         """Uses ffmpeg to bake the custom cover and metadata into the media file."""
-        converted_cover = None
+        from core.cover_utils import ensure_compatible_image_for_ffmpeg
+        effective_cover, temp_to_clean = ensure_compatible_image_for_ffmpeg(cover_path)
         try:
             import shutil
             ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
             
-            # MP4/MKV containers only support JPEG/PNG as attached_pic.
-            # Convert incompatible formats (webp, avif, bmp, tiff, etc.) to JPEG first.
-            effective_cover = cover_path
-            if cover_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
-                converted_cover = cover_path.parent / f".tmp_cover_{cover_path.stem}.jpg"
-                try:
-                    from PIL import Image
-                    with Image.open(cover_path) as img:
-                        img.convert("RGB").save(converted_cover, "JPEG", quality=95)
-                    effective_cover = converted_cover
-                except Exception:
-                    # Fallback: use ffmpeg itself to convert the cover
-                    try:
-                        subprocess.run(
-                            [ffmpeg_bin, "-y", "-i", str(cover_path), "-loglevel", "error", str(converted_cover)],
-                            check=True
-                        )
-                        effective_cover = converted_cover
-                    except Exception:
-                        effective_cover = cover_path  # Last resort: try original anyway
-            
             cmd = [
                 ffmpeg_bin, "-y",
                 "-i", str(media_path),
-                "-i", str(effective_cover),
+                "-i", str(effective_cover or cover_path),
                 "-map", "0:a" if is_audio else "0",
                 "-map", "1:0" if is_audio else "1",
                 "-c", "copy",
@@ -909,8 +889,8 @@ class YoutubeEngine(VideoEngine):
             logger.error(f"FFmpeg failed to apply cover: {e}")
             return False
         finally:
-            if converted_cover and converted_cover.exists():
+            if temp_to_clean and temp_to_clean.exists():
                 try:
-                    converted_cover.unlink()
+                    temp_to_clean.unlink()
                 except Exception:
                     pass

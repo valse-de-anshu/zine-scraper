@@ -474,17 +474,19 @@ class VideoEngine:
     def _apply_custom_metadata(self, media_path: Path, cover_path: Path, is_audio: bool, title: str = None, artist: str = None, album: str = None):
         """Uses ffmpeg to bake the custom cover AND forced metadata (Title, Artist, Album) into the media file."""
         import subprocess
+        from core.cover_utils import ensure_compatible_image_for_ffmpeg
+        effective_cover, temp_to_clean = ensure_compatible_image_for_ffmpeg(cover_path)
         try:
             tmp_path = media_path.with_suffix(".meta.tmp" + media_path.suffix)
             
             import shutil
             ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
             cmd = [ffmpeg_bin, "-y", "-i", str(media_path)]
-            if cover_path and cover_path.exists():
-                cmd.extend(["-i", str(cover_path)])
+            if effective_cover and effective_cover.exists():
+                cmd.extend(["-i", str(effective_cover)])
             
             # Map streams
-            if cover_path and cover_path.exists():
+            if effective_cover and effective_cover.exists():
                 if is_audio:
                     cmd.extend(["-map", "0:a", "-map", "1:0"])
                 else:
@@ -503,7 +505,7 @@ class VideoEngine:
                 cmd.extend(["-metadata", f"album={album}"])
 
             # Cover disposition
-            if cover_path and cover_path.exists():
+            if effective_cover and effective_cover.exists():
                 if is_audio:
                     cmd.extend(["-disposition:v", "attached_pic"])
                 else:
@@ -526,6 +528,12 @@ class VideoEngine:
         except Exception as e:
             logger.error(f"FFmpeg metadata/cover application failed: {e}")
             return False
+        finally:
+            if temp_to_clean and temp_to_clean.exists():
+                try:
+                    temp_to_clean.unlink()
+                except Exception:
+                    pass
 
     def save_metadata(self, root_dir: Path, info: Dict[str, Any], source: str, cover_url: Optional[str] = None):
         """Saves metadata.json inside .zine/ folder and cover.jpg in root content folder."""

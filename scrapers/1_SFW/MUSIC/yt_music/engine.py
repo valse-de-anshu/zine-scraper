@@ -401,12 +401,13 @@ class YoutubeMusicEngine:
 
             # Embed front album cover art
             if custom_thumb and Path(custom_thumb).exists():
-                thumb_data = Path(custom_thumb).read_bytes()
-                if len(thumb_data) > 1024:
+                from core.cover_utils import ensure_compatible_image_bytes_for_tagging
+                thumb_data, mime = ensure_compatible_image_bytes_for_tagging(custom_thumb)
+                if thumb_data and len(thumb_data) > 100:
                     audio.clear_pictures()
                     pic = Picture()
                     pic.type = 3  # Cover (front)
-                    pic.mime = "image/png" if thumb_data.startswith(b"\x89PNG") else "image/jpeg"
+                    pic.mime = mime or "image/jpeg"
                     pic.data = thumb_data
                     audio.add_picture(pic)
 
