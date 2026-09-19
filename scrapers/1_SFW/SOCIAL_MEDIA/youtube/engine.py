@@ -654,10 +654,10 @@ class YoutubeEngine(VideoEngine):
         ext = audio_format.lower() if (is_music and audio_format) else "flac" if is_music else "mp4"
         
         if fixed_title:
-            clean_title = "".join([c for c in fixed_title if c.isalnum() or c in " .-_()"]).strip()
+            clean_title = "".join([c for c in fixed_title if c.isalnum() or c in " .-_()"]).strip().rstrip(".")
             # If song or quick grab, ensure no accidental leading index number
             if is_music or ("Quick grab" in str(videos_dir)):
-                clean_title = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_title).strip() or clean_title
+                clean_title = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_title).strip().rstrip(".") or clean_title
         else:
             clean_title = "downloaded_video"
 
@@ -853,13 +853,36 @@ class YoutubeEngine(VideoEngine):
         album: Optional[str] = None
     ) -> bool:
         """Uses ffmpeg to bake the custom cover and metadata into the media file."""
+        converted_cover = None
         try:
             import shutil
             ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
+            
+            # MP4/MKV containers only support JPEG/PNG as attached_pic.
+            # Convert incompatible formats (webp, avif, bmp, tiff, etc.) to JPEG first.
+            effective_cover = cover_path
+            if cover_path.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                converted_cover = cover_path.parent / f".tmp_cover_{cover_path.stem}.jpg"
+                try:
+                    from PIL import Image
+                    with Image.open(cover_path) as img:
+                        img.convert("RGB").save(converted_cover, "JPEG", quality=95)
+                    effective_cover = converted_cover
+                except Exception:
+                    # Fallback: use ffmpeg itself to convert the cover
+                    try:
+                        subprocess.run(
+                            [ffmpeg_bin, "-y", "-i", str(cover_path), "-loglevel", "error", str(converted_cover)],
+                            check=True
+                        )
+                        effective_cover = converted_cover
+                    except Exception:
+                        effective_cover = cover_path  # Last resort: try original anyway
+            
             cmd = [
                 ffmpeg_bin, "-y",
                 "-i", str(media_path),
-                "-i", str(cover_path),
+                "-i", str(effective_cover),
                 "-map", "0:a" if is_audio else "0",
                 "-map", "1:0" if is_audio else "1",
                 "-c", "copy",
@@ -885,3 +908,9 @@ class YoutubeEngine(VideoEngine):
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg failed to apply cover: {e}")
             return False
+        finally:
+            if converted_cover and converted_cover.exists():
+                try:
+                    converted_cover.unlink()
+                except Exception:
+                    pass
