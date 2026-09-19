@@ -776,7 +776,8 @@ class SiteDatabaseTUI:
             cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
             if active:
-                sfw_tabs.append(f"[{cat['id']}] {cat['icon']} {cat['label']}  ", style="bold sexy_pink")
+                sfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold sexy_pink on blue")
+                sfw_tabs.append(" ")
             else:
                 sfw_tabs.append(f"[{cat['id']}]", style="bold white")
                 sfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
@@ -788,7 +789,8 @@ class SiteDatabaseTUI:
             cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
             if active:
-                nsfw_tabs.append(f"[{cat['id']}] {cat['icon']} {cat['label']}  ", style="bold sexy_pink")
+                nsfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold sexy_pink on blue")
+                nsfw_tabs.append(" ")
             else:
                 nsfw_tabs.append(f"[{cat['id']}]", style="bold white")
                 nsfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
