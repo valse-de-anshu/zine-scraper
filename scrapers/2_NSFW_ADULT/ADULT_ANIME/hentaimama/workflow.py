@@ -191,6 +191,9 @@ def run_workflow(
     console.print(" ")
     console.print(" ")
 
+    success_count = 0
+    skipped_count = 0
+
     for idx, video in enumerate(videos, 1):
         vid_id    = str(video.get("id") or idx)
         vid_title = video.get("title") or f"Video {idx}"
@@ -227,6 +230,7 @@ def run_workflow(
             hist_log = f"  [unselected]●[/unselected] [unselected]File exists: {display_name}[/unselected]"
             console.print(hist_log)
             completed_history.append(hist_log)
+            skipped_count += 1
             continue
 
         # ── Progress data ────────────────────────────────────────────────
@@ -382,6 +386,7 @@ def run_workflow(
                 if success:
                     tracker.mark_downloaded(scraper.url, vid_id, title=title)
                     progress_data["success"] = True
+                    success_count += 1
                     try:
                         sub_candidates = engine.extract_subtitles_candidates(vid_url)
                         for sub_info in sub_candidates:
@@ -426,4 +431,11 @@ def run_workflow(
         if ui.check_revolt(title=title):
             return
 
-    console.print(f"\n[success]✦[/success] Done\n")
+    # ── Summary ───────────────────────────────────────────────────────
+    total = len(videos)
+    attempted = total - skipped_count
+    if success_count > 0 or (skipped_count == total):
+        console.print(f"\n[success]✦[/success] Finalized: {success_count} new, {skipped_count} existing / {total} total\n")
+    else:
+        console.print(f"\n[error]✘[/error] Failed: {success_count}/{attempted} downloaded\n")
+        ui.print_alternative_adult_anime_sources(title, current_site="HentaiMama")

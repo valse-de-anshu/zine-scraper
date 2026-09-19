@@ -135,11 +135,20 @@ def download_hls(playlist_url, target_path_str, headers):
             }), flush=True)
             return True
 
-        for attempt in range(10):
+        for attempt in range(3):
             try:
-                resp = requests.get(url, headers=clean_headers, impersonate="chrome124", timeout=60)
+                resp = requests.get(url, headers=clean_headers, impersonate="chrome124", timeout=15)
+                if resp.status_code in (404, 410):
+                    # Fatal: segment does not exist on CDN server (dead piece)
+                    failed_segments[0] += 1
+                    if failed_segments[0] > max(5, int(total_segments * 0.08)):
+                        print(json.dumps({"error": "Dead media segments on server (HTTP 404/410). Piece missing on CDN."}), flush=True)
+                        import shutil
+                        shutil.rmtree(parts_dir, ignore_errors=True)
+                        sys.exit(1)
+                    return False
                 if resp.status_code in (429, 503, 502, 504):
-                    time.sleep(5.0 * (attempt + 1))
+                    time.sleep(1.0 * (attempt + 1))
                     continue
                 resp.raise_for_status()
                 content = resp.content
@@ -185,14 +194,14 @@ def download_hls(playlist_url, target_path_str, headers):
                 }), flush=True)
                 return True
             except Exception as e:
-                if attempt == 9:
+                if attempt == 2:
                     failed_segments[0] += 1
-                    if failed_segments[0] > max(20, int(total_segments * 0.15)):
+                    if failed_segments[0] > max(10, int(total_segments * 0.10)):
                         import shutil
                         shutil.rmtree(parts_dir, ignore_errors=True)
                         sys.exit(1)
                     return False
-                time.sleep(2.0 * (attempt + 1))
+                time.sleep(0.5 * (attempt + 1))
         return False
 
     import shutil
@@ -210,7 +219,7 @@ def download_hls(playlist_url, target_path_str, headers):
         if aria_input.stat().st_size > 0:
             import shutil
             aria_bin = shutil.which("aria2c") or "aria2c"
-            cmd = [aria_bin, "-i", str(aria_input), "-d", str(parts_dir), "-j", "64", "-x", "2", "-s", "2", "--optimize-concurrent-downloads=true", "--file-allocation=none", "--allow-overwrite=true", "--auto-file-renaming=false", "--connect-timeout=5", "--timeout=10", "--max-tries=3"]
+            cmd = [aria_bin, "-i", str(aria_input), "-d", str(parts_dir), "-j", "64", "-x", "2", "-s", "2", "--optimize-concurrent-downloads=true", "--file-allocation=none", "--allow-overwrite=true", "--auto-file-renaming=false", "--connect-timeout=5", "--timeout=8", "--max-tries=2", "--retry-wait=1"]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             def process_enc_file(i):
@@ -245,7 +254,7 @@ def download_hls(playlist_url, target_path_str, headers):
                 for _ in dec_executor.map(process_enc_file, range(total_segments)):
                     pass
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=16) as executor:
         futures = [executor.submit(download_segment, url, i) for i, url in enumerate(segment_uris)]
         for future in futures:
             future.result()

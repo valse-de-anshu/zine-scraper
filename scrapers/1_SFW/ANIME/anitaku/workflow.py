@@ -618,6 +618,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                       f"{success_count} new, {skipped_count} existing / {total} total\n")
     else:
         console.print(f"\n[error]✘[/error] Failed: {success_count}/{attempted} downloaded\n")
+        ui.print_alternative_anime_sources(title, current_site="Anitaku")
 
     if not is_batch:
         console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None

@@ -23,11 +23,6 @@ from core.import_tui import CategoryImportTUI
 from core.anime_categories import CATEGORIES
 from butler.part_cleaner import clean_part_files
 from core.video_engine import handle_internet_loss
-try:
-    import importlib
-    fallback_cross_scraper = importlib.import_module("scrapers.1_SFW.ANIME.anikoto.cross_scraper").fallback_cross_scraper
-except Exception:
-    fallback_cross_scraper = None
 from core.cache import save_url_to_file
 from core.paths import resolve_folder_collision, PathAuthority
 
@@ -414,13 +409,15 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         threads = [threading.Thread(target=_worker, args=(i, d), daemon=True)
                    for i, d in enumerate(ALL_MIRURO_DOMAINS)]
         for t in threads: t.start()
-        for t in threads: t.join(timeout=6)
+        for t in threads: t.join(timeout=4)
         ranked = sorted([r for r in results if r], key=lambda x: x[0])
         with _rank_lock:
             _domain_rank.clear()
-            _domain_rank.extend([d for _, d in ranked if _ < float("inf")])
-            # Dead ones go last as last-resort
-            _domain_rank.extend([d for _, d in ranked if _ == float("inf")])
+            alive = [d for lat, d in ranked if lat < float("inf")]
+            if alive:
+                _domain_rank.extend(alive[:2])
+            else:
+                _domain_rank.extend([d for _, d in ranked][:2])
         logger.info(f"[Miruro] Domain rank: {_domain_rank}")
 
     # Fire the rank probe in background — it runs while the TUI is loading
@@ -450,7 +447,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         _rank_thread.join(timeout=1)
         
         with _rank_lock:
-            base = list(_domain_rank) if _domain_rank else list(ALL_MIRURO_DOMAINS)
+            base = list(_domain_rank) if _domain_rank else list(ALL_MIRURO_DOMAINS[:2])
         
         # If we confirmed a working domain during this session, always use it first
         if working_domain[0]:
@@ -459,10 +456,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             base.insert(0, working_domain[0])
         
         # Ensure the URL's original domain is somewhere in the list
-        if orig not in base:
+        if orig and orig not in base:
             base.insert(0, orig)
         
-        return base
+        return base[:2]
 
     for idx, video in enumerate(videos, 1):
         if not isinstance(video, dict):
@@ -672,10 +669,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                         domain_success = True
                         continue
 
-                    for attempt in range(1, 4):
+                    for attempt in range(1, 3):
                         if attempt > 1:
                             progress_data["retry"] = attempt - 1
-                            time.sleep(2)
+                            time.sleep(1)
                         try:
                             success = scraper.engine.download_video(
                                 vid_url, folder, stats_callback,
@@ -718,32 +715,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                                 break
                                 
             if not domain_success:
-                # [WEB CROSS-SCRAPER FALLBACK]
-                ep_match = re.search(r'ep(?:isode)?\s*-?\s*(\d+)', vid_title, re.IGNORECASE)
-                if not ep_match:
-                    ep_match = re.search(r'ep-(\d+)', vid_url)
-                ep_num = int(ep_match.group(1)) if ep_match else idx
-                
-                console.print(f"\n[warning]❖ Core Reroute Engine Engaged[/warning]")
-                console.print(f"[sexy_pink]╰─ Automatically shifting source to Anikoto...[/sexy_pink]\n")
-                
-                web_success = False
-                if fallback_cross_scraper:
-                    web_success = fallback_cross_scraper(
-                    failed_title=metadata.get("Channel/Series", vid_title),
-                    failed_episode=ep_num,
-                    folder=folder,
-                    stats_callback=stats_callback,
-                    progress_data=progress_data
-                )
-                
-                if web_success:
-                    tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
-                    progress_data["success"] = True
-                    success_count += 1
-                else:
-                    progress_data["status"] = "All alternative domains & Web Fallback failed"
-                    progress_data["success"] = False
+                progress_data["status"] = "Dead stream / Missing CDN segments"
+                progress_data["success"] = False
 
             live_active[0] = False
             progress_data["done"] = True
@@ -774,6 +747,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                       f"{success_count} new, {skipped_count} existing / {total} total\n")
     else:
         console.print(f"\n[error]✘[/error] Failed: {success_count}/{attempted} downloaded\n")
+        ui.print_alternative_anime_sources(title, current_site="Miruro")
 
     if not is_batch:
         console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None

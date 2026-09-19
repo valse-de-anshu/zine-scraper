@@ -616,6 +616,7 @@ def run_workflow(
         )
     else:
         console.print(f"\n[error]✘[/error] Failed: {success_count}/{attempted} downloaded\n")
+        ui.print_alternative_anime_sources(title, current_site="AniNeko")
 
     if not is_batch:
         console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None

@@ -891,6 +891,8 @@ def main():
     except Exception:
         pass  # never block launch due to library scaffold errors
 
+    cli_args = sys.argv[1:]
+    first_run = True
     while True:
         history.reload()
         startup_clear()
@@ -898,8 +900,12 @@ def main():
             print_banner()
 
         try:
-            prompt = MainPrompt(paths, config)
-            url = prompt.get_input()
+            if first_run and cli_args:
+                first_run = False
+                url = " ".join(cli_args)
+            else:
+                prompt = MainPrompt(paths, config)
+                url = prompt.get_input()
             
             if not url:
                 continue
@@ -1031,8 +1037,11 @@ def main():
                     else:
                         batch_mgr.record_finish(canonical_url, status="failed")
                 else:
-                    route_url(clean_url, history, storage, batch_quick_grab=batch_quick_grab, batch_all=False, flags=flags, chapter_limit=chapter_limit)
-                
+                    is_auto_batch = bool(batch_quick_grab or chapter_limit is not None)
+                    route_url(clean_url, history, storage, is_batch=is_auto_batch, batch_quick_grab=batch_quick_grab, batch_all=False, flags=flags, chapter_limit=chapter_limit)
+
+                if cli_args and not sys.stdin.isatty():
+                    break
         except KeyboardInterrupt:
             clean_exit(forceful=True)
 

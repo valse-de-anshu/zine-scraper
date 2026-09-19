@@ -145,41 +145,41 @@ async def extract_stream(url):
         try:
             logger.info(f"[Playwright] Navigating browser to: {url}")
             try:
-                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                await page.goto(url, timeout=18000, wait_until="domcontentloaded")
                 logger.info(f"[Playwright] Page navigation loaded. Current URL: {page.url}")
             except Exception as e:
                 logger.warning(f"[Playwright] page.goto warning/timeout (continuing anyway): {e}")
-            # Wait for React hydration — 1.5s is enough for miruro.bz
-            await page.wait_for_timeout(1500)
+            # Wait for React hydration — 1.0s is enough for miruro.bz
+            await page.wait_for_timeout(1000)
 
             # Click the video element directly — this is what triggers the player
             # on miruro.bz without needing a specific button selector
             try:
                 logger.info(f"[Playwright] Attempting to click direct 'video' element...")
-                await page.click('video', timeout=2000, force=True)
+                await page.click('video', timeout=1500, force=True)
                 logger.info(f"[Playwright] Successfully clicked direct 'video' element.")
             except Exception:
                 logger.info(f"[Playwright] Direct video click failed, attempting play buttons...")
                 # Fallback: try common play button selectors
                 for sel in ['button[aria-label="Play"]', '.jw-icon-display', '[class*="play"]', '.vjs-big-play-button', '.plyr__control--overlaid', '#play-button']:
                     try:
-                        await page.click(sel, timeout=800, force=True)
+                        await page.click(sel, timeout=600, force=True)
                         logger.info(f"[Playwright] Clicked play button selector: {sel}")
                         break
                     except Exception:
                         continue
 
             logger.info(f"[Playwright] Waiting for video stream URL to resolve...")
-            # Poll for up to 12 seconds for the m3u8 to appear (was 30s)
-            for _ in range(24):
+            # Poll for up to 8 seconds for the m3u8 to appear
+            for _ in range(16):
                 if stream_url:
                     break
                 await page.wait_for_timeout(500)
             
             if stream_url:
                 logger.info(f"[Playwright] Video stream resolved successfully. Waiting for subtitle tracks to fire...")
-                # Once stream is found, wait up to 10s for subtitle tracks to fire dynamically
-                for _ in range(20):
+                # Once stream is found, wait up to 2.5s for subtitle tracks to fire dynamically
+                for _ in range(5):
                     if subtitles:
                         break
                     await page.wait_for_timeout(500)

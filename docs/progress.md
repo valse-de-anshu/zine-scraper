@@ -1,3 +1,20 @@
+# Progress Report - September 19, 2026 (Fix: Anime Stream Recovery, CLI Flag Non-Blocking Execution & Alternative Platform Recommendation Engine)
+
+- **Anime & HLS Stream Download Overhaul (`scrapers/3_SYSTEM/hls_extractor.py`, `scrapers/3_SYSTEM/playwright_extractor.py`):**
+  - **Fail-Fast on Dead Stream Pieces (HTTP 404/410)**: Updated `hls_extractor.py` to immediately detect dead CDN segments and missing server chunks. Eliminates multi-minute / multi-hour stuck retry loops by capping segment retries to 3 with exponential backoff and exiting cleanly when segments are unplayable on the host server.
+  - **High-Concurrency Downloading**: Scaled custom HLS segment downloader thread pool from 3 to 16 concurrent workers with `curl_cffi` browser impersonation (`chrome124`).
+  - **Playwright Stream Sniffer Optimization**: Streamlined page timeouts, poll intervals, and subtitle discovery in `playwright_extractor.py` and `miruro/scraper.py`.
+
+- **Cross-Platform Alternative Anime Recommendation System (`core/ui.py`, `scrapers/1_SFW/ANIME/*/workflow.py`, `scrapers/2_NSFW_ADULT/ADULT_ANIME/*/workflow.py`):**
+  - **Architectural Cleanup**: Removed brittle cross-scraper dependencies (`scrapers.1_SFW.ANIME.anikoto.cross_scraper.fallback_cross_scraper`) from `miruro/workflow.py` to uphold AGENTS.md scraper isolation.
+  - **Clean Source Recommendation Engine**: Implemented `print_alternative_anime_sources` and `print_alternative_adult_anime_sources` in `core/ui.py`. When an anime stream is dead or CDN segments are missing, the scraper fails fast, finishes gracefully, and displays a Rich UI tree recommending alternative supported platforms (HiAnime, Anikoto, Anitaku, AniNeko, AniKai for SFW anime; Hanime, HentaiHaven, HentaiMama, HStream, Oppai Stream for adult anime).
+
+- **CLI Flag Headless Batch Execution (`core/funnel.py`):**
+  - Enabled direct CLI command execution (`python3 orchestrator.py "<URL>" --0 / --<N> / --a`) to process without hanging on interactive TUI prompts.
+  - Added non-blocking automated flag evaluation (`is_auto_batch = bool(batch_quick_grab or chapter_limit is not None)`) ensuring flags bypass interactive single vs whole series selectors.
+
+---
+
 # Progress Report - September 19, 2026 (Fix: Hentai 1-Episode Franchise Prompt & Standardized Subtitle /video/subtitle/.srt Storage)
 
 - **Hentai 1-Episode Interactive Prompt Fix (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*/tui.py`):**

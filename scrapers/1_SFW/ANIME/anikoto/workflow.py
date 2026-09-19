@@ -553,10 +553,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                     progress_data["status"] = ""
                     live.update(render_video_tree())
 
-                    for attempt in range(1, 4):
+                    for attempt in range(1, 3):
                         if attempt > 1:
                             progress_data["retry"] = attempt - 1
-                            time.sleep(2)
+                            time.sleep(1)
                         try:
                             success = scraper.engine.download_video(
                                 vid_url, folder, stats_callback,
@@ -616,9 +616,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                       f"{success_count} new, {skipped_count} existing / {total} total\n")
     else:
         console.print(f"\n[error]✘[/error] Failed: {success_count}/{attempted} downloaded\n")
-        console.print("[warning]💡 Note: If all resolution attempts failed, it is highly likely that the third-party[/warning]")
-        console.print("[warning]   embedded streaming links (such as MegaPlay or Vidcloud) are dead or expired on the host site.[/warning]")
-        console.print("[warning]   Please open the URL in your browser and check if the players show error pages.[/warning]\n")
+        ui.print_alternative_anime_sources(title, current_site="Anikoto")
 
     if not is_batch:
         console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None

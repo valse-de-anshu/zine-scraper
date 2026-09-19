@@ -1901,3 +1901,39 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
 def clean_exit_revolt(title: Optional[str] = None):
     """Used to exit after the Revolt limit is reached. Delegates cleanly to trigger_revolt_exit."""
     trigger_revolt_exit(title=title)
+
+
+def print_alternative_anime_sources(anime_title: str, current_site: str = "Miruro"):
+    """Renders a clean Rich tree informing the user that the host stream is dead and lists verified alternative anime platforms in Zine."""
+    from rich.tree import Tree
+    clean_t = str(anime_title or "this anime").strip()
+    tree = Tree(f"[warning]⚠ Stream unavailable or missing pieces on {current_site}[/warning]")
+    tree.add(f"[unselected]Host CDN returned missing or unplayable media chunks for '{clean_t}'.[/unselected]")
+    alt_branch = tree.add("[menu]Alternative anime sources supported in Zine Scraper:[/menu]")
+    alt_branch.add("[site]HiAnime[/site]   : [sexy_pink]https://hianime.to[/sexy_pink] [unselected](Multi-server HLS, Sub & Dub)[/unselected]")
+    alt_branch.add("[site]Anikoto[/site]   : [sexy_pink]https://anikoto.cz[/sexy_pink] [unselected](Low-latency mirror streams)[/unselected]")
+    alt_branch.add("[site]Anitaku[/site]   : [sexy_pink]https://anitaku.online[/sexy_pink] [unselected](Deep legacy & modern anime catalog)[/unselected]")
+    alt_branch.add("[site]AniNeko[/site]   : [sexy_pink]https://anineko.to[/sexy_pink] [unselected](Direct minimalist player)[/unselected]")
+    alt_branch.add("[site]AniKai[/site]    : [sexy_pink]https://anikai.to[/sexy_pink] [unselected](High-bitrate HD streams)[/unselected]")
+    console.print("")
+    console.print(tree)
+    console.print("")
+
+
+def print_alternative_adult_anime_sources(anime_title: str, current_site: str = "Hentai"):
+    """Renders a clean Rich tree informing the user that the host stream is dead and lists verified alternative adult anime platforms in Zine."""
+    from rich.tree import Tree
+    clean_t = str(anime_title or "this title").strip()
+    tree = Tree(f"[warning]⚠ Stream unavailable or missing pieces on {current_site}[/warning]")
+    tree.add(f"[unselected]Host CDN returned missing or unplayable media chunks for '{clean_t}'.[/unselected]")
+    alt_branch = tree.add("[menu]Alternative adult anime sources supported in Zine Scraper:[/menu]")
+    alt_branch.add("[site]Hanime[/site]       : [sexy_pink]https://hanime1.me[/sexy_pink] / [sexy_pink]https://hanime.red[/sexy_pink]")
+    alt_branch.add("[site]HentaiHaven[/site]  : [sexy_pink]https://hentaihaven.xxx[/sexy_pink] / [sexy_pink]https://hentaihaven.red[/sexy_pink]")
+    alt_branch.add("[site]HStream[/site]      : [sexy_pink]https://hstream.moe[/sexy_pink]")
+    alt_branch.add("[site]OHentai[/site]      : [sexy_pink]https://ohentai.org[/sexy_pink]")
+    alt_branch.add("[site]OppaiStream[/site]  : [sexy_pink]https://oppai.stream[/sexy_pink]")
+    alt_branch.add("[site]HentaiCity[/site]   : [sexy_pink]https://www.hentaicity.com[/sexy_pink]")
+    alt_branch.add("[site]HentaiMama[/site]   : [sexy_pink]https://hentaimama.io[/sexy_pink]")
+    console.print("")
+    console.print(tree)
+    console.print("")

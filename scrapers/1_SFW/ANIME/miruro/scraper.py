@@ -218,7 +218,7 @@ class MiruroScraper:
         try:
             extractor_script = get_system_script("playwright_extractor.py")
             cmd = [str(self.venv_python), str(extractor_script), watch_url]
-            process = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+            process = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
             
             if process.returncode != 0:
                 logger.error(f"[Miruro] Playwright extractor failed with exit code {process.returncode}")
