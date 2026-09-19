@@ -710,9 +710,6 @@ class MainPrompt:
         table.add_column("main", width=88)
         
         group_content = []
-        from core.ui import get_banner_renderable
-        group_content.append(get_banner_renderable())
-        group_content.append(Text(""))
         
         prompt_text = Text(no_wrap=True)
         prompt_text.append("Paste URL:\n", style="menu")
