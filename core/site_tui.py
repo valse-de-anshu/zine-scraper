@@ -756,24 +756,49 @@ class SiteDatabaseTUI:
 
     # ── category bar ─────────────────────────────────────────────────────────
 
-    def _cat_bar(self) -> Group:
-        sfw_line = Text(no_wrap=True)
-        sfw_line.append("SFW  │ ", style="bold green")
+    def _cat_bar(self) -> Table:
+        cat_table = Table(
+            show_header=False,
+            show_edge=True,
+            box=box.ROUNDED,
+            border_style="unselected",
+            padding=(0, 1),
+            expand=False,
+            width=PANEL_W - 8
+        )
+        cat_table.add_column("Badge", width=14, no_wrap=True)
+        cat_table.add_column("Tabs", no_wrap=True)
+
+        # ── SFW Categories Row ──
+        sfw_badge = Text("  🛡️ SFW  ", style="bold black on bright_cyan")
+        sfw_tabs = Text()
         for i in range(min(8, len(SITE_CATEGORIES))):
             cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
-            style = "bold sexy_pink" if active else "unselected"
-            sfw_line.append(f"[{cat['id']}] {cat['icon']} {cat['label']}  ", style=style)
+            if active:
+                sfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold black on sexy_pink")
+                sfw_tabs.append(" ")
+            else:
+                sfw_tabs.append(f"[{cat['id']}]", style="bold bright_cyan")
+                sfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
 
-        nsfw_line = Text(no_wrap=True)
-        nsfw_line.append("NSFW │ ", style="bold red")
+        # ── NSFW Categories Row ──
+        nsfw_badge = Text("  🔞 NSFW  ", style="bold black on bright_magenta")
+        nsfw_tabs = Text()
         for i in range(8, len(SITE_CATEGORIES)):
             cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
-            style = "bold error" if active else "unselected"
-            nsfw_line.append(f"[{cat['id']}] {cat['icon']} {cat['label']}  ", style=style)
+            if active:
+                nsfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold black on sexy_pink")
+                nsfw_tabs.append(" ")
+            else:
+                nsfw_tabs.append(f"[{cat['id']}]", style="bold bright_magenta")
+                nsfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
 
-        return Group(sfw_line, nsfw_line)
+        cat_table.add_row(sfw_badge, sfw_tabs, end_section=True)
+        cat_table.add_row(nsfw_badge, nsfw_tabs)
+
+        return cat_table
 
     # ── composite render ──────────────────────────────────────────────────────
 
