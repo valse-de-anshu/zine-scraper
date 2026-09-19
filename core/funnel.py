@@ -696,7 +696,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["bake", "batch", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts"]
+        commands = ["bake", "batch", "breeze", "clean", "doctor", "exit", "help", "lyrs", "qwen", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -765,6 +765,21 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
+            tip_text.append("breeze", style="warning")
+            tip_text.append(" to launch Breeze TTS 2 (voice cloning).\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("clean", style="warning")
+            tip_text.append(" to purge temp files & cache.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("doctor", style="warning")
+            tip_text.append(" to run system diagnostics.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
             tip_text.append("exit", style="warning")
             tip_text.append(" to quit.\n", style="info")
             
@@ -777,6 +792,11 @@ class MainPrompt:
             tip_text.append("Type ", style="info")
             tip_text.append("lyrs", style="warning")
             tip_text.append(" to search & download synced lyrics (.lrc).\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("qwen", style="warning")
+            tip_text.append(" to launch Qwen3 TTS (ComfyUI).\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -807,6 +827,11 @@ class MainPrompt:
             tip_text.append("Type ", style="info")
             tip_text.append("tts", style="warning")
             tip_text.append(" to generate Audiobooks.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("version", style="warning")
+            tip_text.append(" to show version & environment info.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Paste any supported URL to archive.\n", style="info")
