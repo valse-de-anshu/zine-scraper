@@ -254,7 +254,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             except Exception:
                 pass
                 
-            if track_cover_path and track_cover_path != cover_path:
+            if track_cover_path and track_cover_path != custom_thumb_path:
                 try:
                     track_cover_path.unlink()
                 except Exception:
