@@ -75,56 +75,25 @@ def run_workflow(
 
     ext = "mp4"
 
-    if is_vacuum:
-        # Vacuum: create creator subfolder using SAFE folder name (no HTML entities, no illegal chars)
-        creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
-        creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root / "video"
-        sub_folder.mkdir(parents=True, exist_ok=True)
-        subtitle_folder = sub_folder / "subtitle"
-        subtitle_folder.mkdir(parents=True, exist_ok=True)
+    clean_series = folder_name or series_name or title
+    creator_root = resolve_folder_collision(target_root, clean_series, platform_id)
+    creator_root.mkdir(parents=True, exist_ok=True)
+    sub_folder = creator_root
+    subtitle_folder = sub_folder / "subtitle"
+    subtitle_folder.mkdir(parents=True, exist_ok=True)
 
-        # Migrate any legacy files or subtitles to proper destinations
-        try:
-            import shutil
-            for legacy_file in creator_root.glob(f"*.{ext}"):
-                dest_file = sub_folder / legacy_file.name
-                if not dest_file.exists():
-                    shutil.move(str(legacy_file), str(dest_file))
-            # Clean up and migrate legacy peer subtitles folder if it exists
-            for old_name in ["subtitles", "subtitle"]:
-                old_dir = creator_root / old_name
-                if old_dir.exists() and old_dir != subtitle_folder:
-                    for sub in list(old_dir.glob("*.srt")) + list(old_dir.glob("*.vtt")):
-                        dest_sub = subtitle_folder / f"{sub.stem}.srt"
-                        if sub.suffix.lower() == ".vtt":
-                            try:
-                                from core.video_engine import vtt_to_srt
-                                text = sub.read_text(encoding="utf-8-sig", errors="replace")
-                                dest_sub.write_text(vtt_to_srt(text) or text, encoding="utf-8")
-                                sub.unlink(missing_ok=True)
-                            except Exception:
-                                pass
-                        elif not dest_sub.exists():
-                            shutil.move(str(sub), str(dest_sub))
-                        else:
-                            sub.unlink(missing_ok=True)
-                    try:
-                        old_dir.rmdir()
-                    except Exception:
-                        pass
-            from core.video_engine import migrate_and_clean_subtitles
-            migrate_and_clean_subtitles(sub_folder, subtitle_folder)
-            migrate_and_clean_subtitles(creator_root, subtitle_folder)
-        except Exception:
-            pass
-    else:
-        # Quick grab: dump directly into target_root, no creator subfolder
-        creator_root = target_root
-        sub_folder = target_root
-        sub_folder.mkdir(parents=True, exist_ok=True)
-        subtitle_folder = sub_folder / "subtitle"
-        subtitle_folder.mkdir(parents=True, exist_ok=True)
+    # Migrate any legacy files or subtitles to proper destinations
+    try:
+        import shutil
+        for legacy_file in creator_root.glob(f"*.{ext}"):
+            dest_file = sub_folder / legacy_file.name
+            if not dest_file.exists():
+                shutil.move(str(legacy_file), str(dest_file))
+        from core.video_engine import migrate_and_clean_subtitles
+        migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+        migrate_and_clean_subtitles(creator_root, subtitle_folder)
+    except Exception:
+        pass
 
     is_quick_grab = not is_vacuum
 
@@ -220,12 +189,6 @@ def run_workflow(
             continue
 
         # Resolve target file path (collision-free title → id)
-        # ── Step 1 + 2 check: already done? ─────────────────────────────
-        if is_vacuum:
-            sub_folder = creator_root / "video"
-        else:
-            sub_folder = target_root
-                
         target_vid_title = vid_title
         if not is_vacuum and series_name and series_name != "Unknown" and not vid_title.lower().startswith(series_name.lower()):
             target_vid_title = f"{series_name} - {vid_title}"

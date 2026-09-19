@@ -70,18 +70,9 @@ def run_workflow(
     folder_name = getattr(scraper, '_folder_name', None) or title
     platform_id = str(info.get("id") or info.get("uploader_id") or scraper.url)
 
-    if is_vacuum:
-        # Vacuum: create creator subfolder, then a Videos/ subfolder inside it
-        creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
-        creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root / "Videos"
-        sub_folder.mkdir(parents=True, exist_ok=True)
-    else:
-        # Quick grab: dump directly into target_root, no creator subfolder
-        creator_root = target_root
-        sub_folder = target_root
-        sub_folder.mkdir(parents=True, exist_ok=True)
-
+    creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
+    creator_root.mkdir(parents=True, exist_ok=True)
+    sub_folder = creator_root
     is_quick_grab = not is_vacuum
 
     if not videos:

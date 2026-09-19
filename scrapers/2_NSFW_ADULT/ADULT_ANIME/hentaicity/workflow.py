@@ -61,34 +61,21 @@ def run_workflow(
     ext = "mp4" if content_type == "video" else "jpg"
 
     # ── Paths ─────────────────────────────────────────────────────────────
-    if is_vacuum:
-        clean = re.sub(r'[<>:"/\\|?*]', "", series_title).strip() or "Series"
-        creator_root = target_root / clean
-        creator_root.mkdir(parents=True, exist_ok=True)
-        if content_type == "video":
-            sub_folder = creator_root / "video"
-            sub_folder.mkdir(parents=True, exist_ok=True)
-            subtitle_folder = sub_folder / "subtitle"
-            subtitle_folder.mkdir(parents=True, exist_ok=True)
-            # Migrate any legacy files sitting directly in creator_root to video/
-            try:
-                import shutil
-                for legacy_file in creator_root.glob(f"*.{ext}"):
-                    dest_file = sub_folder / legacy_file.name
-                    if not dest_file.exists():
-                        shutil.move(str(legacy_file), str(dest_file))
-                from core.video_engine import migrate_and_clean_subtitles
-                migrate_and_clean_subtitles(sub_folder, subtitle_folder)
-                migrate_and_clean_subtitles(creator_root, subtitle_folder)
-            except Exception:
-                pass
-        else:
-            sub_folder = creator_root
-    else:
-        target_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = target_root
-        subtitle_folder = sub_folder / "subtitle"
-        subtitle_folder.mkdir(parents=True, exist_ok=True)
+    clean = re.sub(r'[<>:"/\\|?*]', "", series_title).strip() or "Series"
+    creator_root = target_root / clean
+    creator_root.mkdir(parents=True, exist_ok=True)
+    sub_folder = creator_root
+    subtitle_folder = sub_folder / "subtitle"
+    subtitle_folder.mkdir(parents=True, exist_ok=True)
+
+    if content_type == "video":
+        # Migrate any legacy files sitting directly in creator_root to sub_folder
+        try:
+            from core.video_engine import migrate_and_clean_subtitles
+            migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+            migrate_and_clean_subtitles(creator_root, subtitle_folder)
+        except Exception:
+            pass
 
     # ── Metadata tree ─────────────────────────────────────────────────────
     root_tree = Tree(f"[site]◆[/site] [title]{series_title}[/title]", guide_style="unselected")

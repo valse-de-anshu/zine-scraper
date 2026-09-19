@@ -88,6 +88,11 @@ class BaseScraper:
             cls._tls.session = s
         return cls._tls.session
 
+    @property
+    def session(self):
+        return self.get_session(self.domain)
+
+
     def get_soup(self, url: str) -> BeautifulSoup:
         session = self.get_session(self.domain)
         for attempt in range(5):

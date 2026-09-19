@@ -75,38 +75,29 @@ def run_workflow(
 
     ext = "mp4"
 
-    if is_vacuum:
-        # Vacuum: create creator subfolder using SAFE folder name (no HTML entities, no illegal chars)
-        creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
-        creator_root.mkdir(parents=True, exist_ok=True)
-        sub_folder = creator_root / "video"
-        sub_folder.mkdir(parents=True, exist_ok=True)
-        subtitle_folder = sub_folder / "subtitle"
-        subtitle_folder.mkdir(parents=True, exist_ok=True)
+    clean_series = folder_name or series_name or title
+    creator_root = resolve_folder_collision(target_root, clean_series, platform_id)
+    creator_root.mkdir(parents=True, exist_ok=True)
+    sub_folder = creator_root
+    subtitle_folder = sub_folder / "subtitle"
+    subtitle_folder.mkdir(parents=True, exist_ok=True)
 
-        # Migrate any legacy files sitting directly in creator_root to video/
-        try:
-            import shutil
-            for legacy_file in creator_root.glob(f"*.{ext}"):
-                dest_file = sub_folder / legacy_file.name
-                if not dest_file.exists():
-                    shutil.move(str(legacy_file), str(dest_file))
-        except Exception:
-            pass
+    # Migrate any legacy files sitting directly in creator_root to video/
+    try:
+        import shutil
+        for legacy_file in creator_root.glob(f"*.{ext}"):
+            dest_file = sub_folder / legacy_file.name
+            if not dest_file.exists():
+                shutil.move(str(legacy_file), str(dest_file))
+    except Exception:
+        pass
 
-        try:
-            from core.video_engine import migrate_and_clean_subtitles
-            migrate_and_clean_subtitles(sub_folder, subtitle_folder)
-            migrate_and_clean_subtitles(creator_root, subtitle_folder)
-        except Exception:
-            pass
-    else:
-        # Quick grab: dump directly into target_root, no creator subfolder
-        creator_root = target_root
-        sub_folder = target_root
-        sub_folder.mkdir(parents=True, exist_ok=True)
-        subtitle_folder = sub_folder / "subtitle"
-        subtitle_folder.mkdir(parents=True, exist_ok=True)
+    try:
+        from core.video_engine import migrate_and_clean_subtitles
+        migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+        migrate_and_clean_subtitles(creator_root, subtitle_folder)
+    except Exception:
+        pass
 
     is_quick_grab = not is_vacuum
 
@@ -201,11 +192,6 @@ def run_workflow(
         import re
         clean_title = "".join(c for c in vid_title if c.isalnum() or c in " .-_()'")
         clean_title = re.sub(r'[<>:"/\\|?*]', '', clean_title).strip() or vid_id
-
-        if getattr(scraper, "is_playlist", False) or is_vacuum:
-            sub_folder = creator_root / "video"
-        else:
-            sub_folder = target_root
 
         target_vid_title = vid_title
         series_name = metadata.get("Channel/Series", "")
