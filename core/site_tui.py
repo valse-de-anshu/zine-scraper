@@ -109,6 +109,50 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Anime · Streaming · Sub · Dub · Fast",
                 "desc": "Modern responsive anime streaming platform providing fast high-definition streams with full episode catalogs and low latency buffering."
             },
+            {
+                "name": "KickAssAnime",
+                "primary": "kaa.lt",
+                "alts": ["kaa.to", "kickassanime.cx", "kaa.rs", "kaa.mx", "kickassanime.mx", "kickassanimes.ru", "kaas.ro", "kaas.to", "watchanime.io", "kickass-anime.ro", "kickass-anime.ru"],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Anime streaming (Soft-sub / Sub / Dub)",
+                "tags": "SFW · Anime · Streaming · Soft-sub · Multi-Domain",
+                "desc": "High video bitrate anime portal featuring multi-language soft subtitles, high-speed playback, and a vast mirror network."
+            },
+            {
+                "name": "AnimeX",
+                "primary": "animex.one",
+                "alts": ["aniwave.at", "anistream.one"],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Anime streaming (Sub / Dub / Sync)",
+                "tags": "SFW · Anime · Streaming · Multi-Source · AniList Sync",
+                "desc": "Modern anime portal formerly known as Otakuu. Supports AniList/MyAnimeList dual sync, multi-source stream aggregation, and clean player UI."
+            },
+            {
+                "name": "Anime Nexus",
+                "primary": "anime.nexus",
+                "alts": ["animenexus.tv"],
+                "rating": "8/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Anime streaming (Soft-sub / 4K Upscale)",
+                "tags": "SFW · Anime · Streaming · 4K Upscale · Soft-sub",
+                "desc": "Created by the team behind AnimeFever. Features 4K AI-upscaled streams, multi-language soft subtitles, and custom player options."
+            },
+            {
+                "name": "HiAnimes",
+                "primary": "hianimes.se",
+                "alts": ["hianime.at", "zokoanime.video"],
+                "rating": "7/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Anime streaming & video index",
+                "tags": "SFW · Anime · Streaming · Mirror · API",
+                "desc": "Self-hosted anime streaming alternative powered by the ZokoAnime engine with direct episode indexing and high-capacity video streams."
+            },
         ]
     },
     # ── 1_SFW / MANGA ──
@@ -329,6 +373,39 @@ SITE_CATEGORIES = [
                 "content": "Books / scans / manuscripts / archives",
                 "tags": "SFW · Archive · Books · Preservation · Non-Profit",
                 "desc": "The world's largest non-profit digital library. Preserves 835+ billion web pages, 44 million books and texts, 15 million audio recordings, and 10 million films for universal permanent access."
+            },
+            {
+                "name": "Nyaa",
+                "primary": "nyaa.si",
+                "alts": ["sukebei.nyaa.si", "nyaa.iss.one", "nyaa.iss.ink", "nyaa.land"],
+                "rating": "10/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Anime / Manga / Music torrent index",
+                "tags": "SFW · Torrents · Index · P2P · Tracker",
+                "desc": "The largest and most trusted public BitTorrent tracker for anime, manga, literature, and Japanese media with massive community seeder activity."
+            },
+            {
+                "name": "TsukiHime",
+                "primary": "tsukihime.org",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Torrent / DDL / Usenet indexer",
+                "tags": "SFW · DDL · Torrent · NZB · Aggregator",
+                "desc": "Advanced media aggregator providing direct download (DDL) and Usenet (NZB) mirrors for torrents across multiple anime and manga releases."
+            },
+            {
+                "name": "SeaDex",
+                "primary": "releases.moe",
+                "alts": [],
+                "rating": "9/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Curated best anime release index",
+                "tags": "SFW · Index · Curated · Release Comparison",
+                "desc": "Authoritative release comparison index tracking the highest fidelity video encodes, official subs, and optimal audio releases for anime."
             },
         ]
     },
