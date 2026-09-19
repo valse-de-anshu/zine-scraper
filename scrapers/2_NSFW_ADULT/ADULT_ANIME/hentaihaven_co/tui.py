@@ -81,9 +81,25 @@ def handle_hentaihaven_tui(
     scraper.franchise_structure = "flat"
 
     if is_batch_mode:
-        # In batch mode: download all flat, no prompt
-        scraper.is_playlist = True
-        is_vacuum = True
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            scraper.is_playlist = True
+            is_vacuum = True
+        elif getattr(scraper, "_batch_quick_grab", False):
+            scraper.is_playlist = False
+            is_vacuum = False
+            norm_url = url.rstrip("/")
+            filtered = [v for v in videos if v.get("url", "").rstrip("/") == norm_url]
+            videos[:] = filtered if filtered else videos[:1]
+            metadata["Total Videos"] = len(videos)
+        else:
+            scraper.is_playlist = True
+            is_vacuum = True
+
+        chapter_limit = getattr(scraper, "_chapter_limit", None)
+        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+            if videos and len(videos) > chapter_limit:
+                videos[:] = videos[:chapter_limit]
+                metadata["Total Videos"] = len(videos)
     else:
         if sys.stdin.isatty():
             choice = Selector([
@@ -115,12 +131,21 @@ def handle_hentaihaven_tui(
             elif choice == "franchise":
                 scraper.is_playlist = True
                 is_vacuum = True
+                chapter_limit = getattr(scraper, "_chapter_limit", None)
+                if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                    if videos and len(videos) > chapter_limit:
+                        videos[:] = videos[:chapter_limit]
+                        metadata["Total Videos"] = len(videos)
             else:
                 return
         else:
-            # Headless/piped: download all
             scraper.is_playlist = True
             is_vacuum = True
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos[:] = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
 
     # ── Stage 3: Resolve target path directly from user choice ─────────
     if batch_path is not None:

@@ -808,11 +808,11 @@ class Selector:
                         return ""
                     ch = ch_bytes.decode('utf-8', errors='ignore')
                     if ch == '\x1b':
-                        r2, _, _ = _sel.select([fd], [], [], 0.05)
+                        r2, _, _ = _sel.select([fd], [], [], 0.1)
                         if r2:
                             ch2 = os.read(fd, 1).decode('utf-8', errors='ignore')
                             if ch2 in ('[', 'O'):
-                                r3, _, _ = _sel.select([fd], [], [], 0.05)
+                                r3, _, _ = _sel.select([fd], [], [], 0.1)
                                 if r3:
                                     ch3 = os.read(fd, 1).decode('utf-8', errors='ignore')
                                     return ch2 + ch3
@@ -855,7 +855,7 @@ class Selector:
                     ch_bytes = os.read(fd, 1)
                     ch = ch_bytes.decode('utf-8', errors='ignore')
                     if ch == '\x1b':
-                        r2, _, _ = _sel.select([fd], [], [], 0.05)
+                        r2, _, _ = _sel.select([fd], [], [], 0.1)
                         if r2:
                             ch2 = os.read(fd, 1).decode('utf-8', errors='ignore')
                             if ch2 == 'O': ch2 = '['

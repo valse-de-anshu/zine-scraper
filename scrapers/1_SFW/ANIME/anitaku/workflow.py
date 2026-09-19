@@ -220,10 +220,18 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             if len(videos) > 1:
                 # If they pasted a category URL, ask them which episode to download
                 _draw_header("Anime")
-                options = [(v.get("title", f"Episode {i+1}"), v) for i, v in enumerate(videos)]
-                selected_vid = Selector(options, title="Select Episode", vertical=True).select()
-                if selected_vid:
-                    videos = [selected_vid]
+                norm_url = url.rstrip("/")
+                default_idx = 0
+                for i, v in enumerate(videos):
+                    if v.get("url", "").rstrip("/") == norm_url:
+                        default_idx = i
+                        break
+                options = [(v.get("title", f"Episode {i+1}"), i) for i, v in enumerate(videos)]
+                selected_idx = Selector(options, title="Select Episode", vertical=True, default_index=default_idx).select()
+                if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos):
+                    videos = [videos[selected_idx]]
+                else:
+                    return
                 
             metadata["Total Videos"] = len(videos)
             scraper.is_playlist = False
@@ -231,6 +239,11 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         elif choice == "whole":
             scraper.is_playlist = True
             is_single_episode = False
+            chapter_limit = getattr(scraper, "_chapter_limit", None)
+            if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+                if videos and len(videos) > chapter_limit:
+                    videos = videos[:chapter_limit]
+                    metadata["Total Videos"] = len(videos)
         else:
             return
     else:
@@ -243,7 +256,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
                 ep_match = re.search(r'(?:[?&]ep=|/ep-|-episode-)(\d+)', url)
                 if ep_match:
                     ep_num = ep_match.group(1)
-                    ep_pattern = re.compile(r'(?:[?&]ep=|/ep-|/episode-|-episode-)' + re.escape(ep_num) + r'(?:[?&#/]|\Z)')
+                    ep_pattern = re.compile(r'(?:[?&]ep=|/ep-|-episode-)' + re.escape(ep_num) + r'(?:[?&#/]|\Z)')
                     target_videos = [v for v in videos if ep_pattern.search(v.get("url", "")) or str(v.get("id", "")).endswith(f"_ep{ep_num}") or str(v.get("id", "")) == ep_num]
                 if target_videos:
                     videos = target_videos
@@ -255,6 +268,12 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         else:
             scraper.is_playlist = True
             is_single_episode = False
+
+        chapter_limit = getattr(scraper, "_chapter_limit", None)
+        if chapter_limit and isinstance(chapter_limit, int) and chapter_limit > 0:
+            if videos and len(videos) > chapter_limit:
+                videos = videos[:chapter_limit]
+                metadata["Total Videos"] = len(videos)
 
     # ── Determine save folder ─────────────────────────────────────────
     library_root = _get_library_root()
@@ -360,6 +379,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     skipped_count = 0   # existing files — not a failure
 
     for idx, video in enumerate(videos, 1):
+        if not isinstance(video, dict):
+            continue
         vid_id    = video.get("id")
         vid_title = video.get("title")
         vid_url   = video.get("url")

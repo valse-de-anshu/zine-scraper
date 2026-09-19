@@ -2313,3 +2313,23 @@ The scraper architecture is split into 3 distinct stages:
 ## 3. Documentation & Verification
 - Updated `README.md` and `scrapers/README.md` with the new categorized tree and updated platform tables.
 - Executed empirical verification confirming 100% test pass rate across all 47 scrapers, dynamic imports, and URL routing.
+
+***
+
+# Progress Report - September 2026 (Anime TUI Episode Selection & Batch Flag Harmonization)
+
+## 1. Episode Selection Fix & Type Safety Across All Anime Scrapers
+- **Root Cause**:
+  - In `scrapers/1_SFW/ANIME/miruro/workflow.py` (and counterparts `anikai`, `anikoto`, `anineko`, `anitaku`, `hianime`), selecting "Download single episode" prompted the user with `selected_vid = Selector(options, title="Select Episode", vertical=True).select()`.
+  - When the user pressed `ESC` (or `=` or if escape sequence reading timed out), `Selector.select()` returned a string (`"ESC"` or `"="`). Because the code used `if selected_vid: videos = [selected_vid]`, the string was treated as truthy and assigned to `videos = ["ESC"]`.
+  - At the download loop, `video.get("id")` failed with `AttributeError: 'str' object has no attribute 'get'`.
+- **Resolution**:
+  - Updated all 6 SFW anime scrapers (`miruro`, `anikai`, `anikoto`, `anineko`, `anitaku`, `hianime`) to use index-based `ep_options = [(title, i) ...]` with `default_index=default_idx` resolving matching episode from URL.
+  - Added strict type checking: `if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos): videos = [videos[selected_idx]] else: return`.
+  - Added defensive check in download loops: `if not isinstance(video, dict): continue`.
+  - In `core/ui.py`, increased `_get_key` escape sequence read timeout from 50ms to 100ms to eliminate false `ESC` detections from terminal arrow keys under load.
+
+## 2. Batch Flags & Chapter Limit Harmonization Across Anime & Adult Anime
+- Added missing `_chapter_limit` (`--<N>`), `_batch_quick_grab` (`--0`), and `_force_vacuum` (`--a` / `--A`) support across all 6 SFW anime scrapers and adult anime scrapers `hentaimama` and `hentaihaven_co`.
+- In both interactive whole-franchise mode and batch mode, active chapter limits automatically restrict downloaded episodes systematically.
+
