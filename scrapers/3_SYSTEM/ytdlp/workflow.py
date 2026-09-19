@@ -55,6 +55,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         location_manager.create_directory(folder)
         
     cover_exists = any(folder.glob("cover.*"))
+    cover_path = next(folder.glob("cover.*"), folder / "cover.jpg")
     
     ext_str = "flac" if is_music else "mp4"
     verified_ids = verify_videos(folder, videos, ext_str, tracker, scraper.url)
