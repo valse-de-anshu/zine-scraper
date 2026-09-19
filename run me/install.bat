@@ -41,14 +41,14 @@ echo [+] Linking 'zine' command to Windows PATH...
 if not exist "%USERPROFILE%\bin" mkdir "%USERPROFILE%\bin"
 (
 echo @echo off
-echo set "ZINE_ROOT=%%APPDATA%%\zine scraper"
-echo if not exist "%%ZINE_ROOT%%" set "ZINE_ROOT=%CD%"
+echo set "ZINE_ROOT=%CD%"
+echo if not exist "%%ZINE_ROOT%%" set "ZINE_ROOT=%%APPDATA%%\zine scraper"
 echo if exist "%%ZINE_ROOT%%\run me\run.bat" ^(
 echo     call "%%ZINE_ROOT%%\run me\run.bat" %%*
 echo ^) else if exist "%%ZINE_ROOT%%\orchestrator.py" ^(
 echo     "%%ZINE_ROOT%%\venv\Scripts\python.exe" "%%ZINE_ROOT%%\orchestrator.py" %%*
 echo ^) else ^(
-echo     echo [-] Error: Zine Scraper directory not found.
+echo     echo [-] Error: Zine Scraper directory not found at %%ZINE_ROOT%%.
 echo ^)
 ) > "%USERPROFILE%\bin\zine.cmd"
 
