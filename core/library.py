@@ -149,7 +149,8 @@ def get_vacuum_path(root: Path, site: str, creator: Optional[str] = None) -> Pat
     return Path(root) / "Vacuum" / site
 
 def get_batch_path(root: Path) -> Path:
-    return Path(root) / "Batch"
+    """Redirected to Vacuum — Batch folder no longer used."""
+    return Path(root) / "Vacuum"
 
 def get_temp_path(root: Path, sub: str = "downloads") -> Path:
     from core.paths import PathAuthority

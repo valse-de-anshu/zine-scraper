@@ -193,7 +193,9 @@ class PathAuthority:
         return base
 
     def get_batch_root(self) -> Path:
-        return self._downloads_root / "Batch"
+        """Redirected to Vacuum — Batch folder no longer used."""
+        return self._downloads_root / "Vacuum"
+
 
     def get_library_temp_root(self) -> Path:
         """Temp dir inside the library (auto-cleaned on startup)."""
@@ -292,7 +294,7 @@ def get_category_for_scraper(site_folder: str, is_music: bool = False, is_video:
     return "toon"
 
 def get_default_batch_path() -> Path:
-    """Returns the default batch download directory (<library_root>/Batch)."""
+    """Returns the default vacuum download directory (was Batch/, now Vacuum/)."""
     paths = PathAuthority()
     library_root = paths.get_downloads_root()
     config_file = paths.get_config_file()
@@ -308,7 +310,7 @@ def get_default_batch_path() -> Path:
                         library_root = candidate
         except Exception:
             pass
-    return library_root / "Batch"
+    return library_root / "Vacuum"
 
 def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optional[Path] = None) -> Path:
     """
@@ -367,7 +369,7 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
         else:
             is_vacuum = False
             
-    container_name = "Batch" if is_batch else ("Vacuum" if is_vacuum else "Quick grab")
+    container_name = "Vacuum" if (is_batch or is_vacuum) else "Quick grab"
     container_root = library_root / container_name
     
     site_folder = get_site_folder(url) or "generic"

@@ -1799,64 +1799,11 @@ def clear_lines(num_lines: int):
     sys.stdout.flush()
 
 def get_batch_save_path(store_layer) -> Optional[Path]:
-    """Helper to get batch mode save location (Default or Custom)."""
+    """Returns the Vacuum folder (was Batch/ — redirected)."""
     from core.paths import PathAuthority
-    import json
-    import time
     paths = PathAuthority()
-    library_root = paths.get_downloads_root()
-    
-    # Read download_base from settings.json directly to avoid circular imports
-    config_file = paths.get_config_file()
-    if config_file.exists():
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                custom_base = data.get("download_base")
-                if custom_base:
-                    library_root = Path(custom_base)
-        except Exception:
-            pass
-            
-    default_batch = library_root / "Batch"
-    
-    while True:
-        if not sys.stdin.isatty():
-            loc_choice = "DEFAULT"
-        else:
-            loc_choice = Selector([
-                ("Use Default Batch Location (Batch)", "DEFAULT"),
-                ("Select Custom Location", "CUSTOM"),
-                ("Back", "BACK")
-            ], "Save Location").select()
-        if loc_choice == "BACK":
-            return None
-        
-        if loc_choice == "DEFAULT":
-            return default_batch
-        elif loc_choice == "CUSTOM":
-            while True:
-                console.print("\n[menu]Enter Folder Path (Empty to cancel): [/menu]", end="")
-                sys.stdout.write(get_theme_input_ansi())
-                sys.stdout.flush()
-                custom_path_str = input().strip()
-                sys.stdout.write("\033[0m")
-                sys.stdout.flush()
-                if not custom_path_str:
-                    clear_lines(2)
-                    break
-                
-                is_valid, err_msg = store_layer.validate_directory(Path(custom_path_str))
-                if not is_valid:
-                    console.print(f"\n[error]Invalid directory.[/error]")
-                    console.print(f"[warning]Reason:\n{err_msg}[/warning]")
-                    time.sleep(2)
-                    clear_lines(6)
-                    continue
-                
-                clear_lines(2)
-                return Path(custom_path_str)
-            continue
+    return paths.get_downloads_root() / "Vacuum"
+
 
 def get_video_save_path(title: str, store_layer) -> Optional[Path]:
     """Helper to get non-YouTube video/music save location (Default or Custom)."""
@@ -2081,7 +2028,7 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
     startup_clear()
     print_banner()
     if is_batch:
-        console.print("[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+        console.print("[menu]Menu[/menu]         : [site]Vacuum Mode[/site]")
     console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
     console.print(f"[menu]Title[/menu]        : [title]{title}[/title]")
     console.print("")

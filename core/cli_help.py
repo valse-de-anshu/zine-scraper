@@ -55,9 +55,9 @@ def print_cli_help():
     opt_table.add_column("Description", style="white")
 
     opt_table.add_row("--0", "Quick Grab mode: downloads single chapter/episode directly into 'Quick grab/' without series folder.")
-    opt_table.add_row("-a, --a, --A, --all", "Vacuum mode: downloads entire franchise/series with full metadata, cover art & directory hierarchy into 'Batch/'.")
+    opt_table.add_row("-a, --a, --A, --all", "Vacuum mode: downloads entire franchise/series with full metadata, cover art & directory hierarchy into 'Vacuum/'.")
     opt_table.add_row("-<N>, --<N>", "Sequential limit: continues from last read chapter in history and grabs exactly N chapters (e.g. --5, --10).")
-    opt_table.add_row("--batch [FILE]", "Batch queue mode: processes URLs from specified text file (defaults to 'Batch URL.txt').")
+    opt_table.add_row("--vacuum [FILE]\n--batch [FILE]", "Vacuum queue mode: processes URLs from specified text file headlessly into Vacuum/ (defaults to URL History.txt).")
     opt_table.add_row("-h, --help", "Display this comprehensive CLI manual and exit.")
     opt_table.add_row("-v, --version", "Print version, system environment, and tool dependency status.")
     opt_table.add_row("sites, --sites", "List all supported categories, platforms, and primary domains.")
@@ -87,16 +87,17 @@ def print_cli_help():
     ex_text = Text()
     ex_text.append("  # Quick Grab a single video or chapter without series vacuuming:\n", style="dim white")
     ex_text.append("  zine \"https://hanime.red/watch/episode-1\" --0\n\n", style="bold cyan")
-    ex_text.append("  # Vacuum an entire franchise into ~/Downloads/Zine/Batch/<Title>/:\n", style="dim white")
+    ex_text.append("  # Vacuum an entire franchise into ~/Downloads/Zine/Vacuum/<Title>/:\n", style="dim white")
     ex_text.append("  zine \"https://hentaihaven.xxx/watch/series-slug/\" --a\n\n", style="bold cyan")
     ex_text.append("  # Download the next 5 unread manhwa chapters sequentially:\n", style="dim white")
     ex_text.append("  zine \"https://asurascans.com/comics/series-slug\" --5\n\n", style="bold cyan")
     ex_text.append("  # Run a custom queue file with per-line flags in headless mode:\n", style="dim white")
-    ex_text.append("  zine --batch \"my_reading_queue.txt\"\n\n", style="bold cyan")
+    ex_text.append("  zine --vacuum \"my_reading_queue.txt\"\n\n", style="bold cyan")
     ex_text.append("  # Verify all system binaries and permissions:\n", style="dim white")
     ex_text.append("  zine doctor\n", style="bold cyan")
 
     console.print(Panel(ex_text, title="[bold white]PRACTICAL CLI EXAMPLES[/bold white]", title_align="left", box=ROUNDED, border_style="green"))
+
 
 
 def print_cli_version():
@@ -131,7 +132,7 @@ def print_cli_version():
     from core.paths import PathAuthority
     pa = PathAuthority()
     table.add_row("Downloads Root", str(pa.get_downloads_root()))
-    table.add_row("Batch Directory", str(pa.get_batch_root()))
+    table.add_row("Vacuum Directory", str(pa.get_vacuum_root()))
     table.add_row("Quick Grab Directory", str(pa.get_quick_grab_root()))
     table.add_row("Logs Directory", str(pa.get_logs_root() / "💩"))
 
@@ -227,7 +228,7 @@ def run_cli_doctor():
     from core.paths import PathAuthority
     pa = PathAuthority()
     dl_root = pa.get_downloads_root()
-    batch_dir = pa.get_batch_root()
+    vacuum_dir = pa.get_vacuum_root()
     logs_dir = pa.get_logs_root() / "💩"
 
     def test_writable(p: Path):

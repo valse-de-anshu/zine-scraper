@@ -12,12 +12,11 @@
       - `handle_batch` kept as a backward-compat alias.
     - **`vacuum` command** now triggers the queue runner in the interactive prompt (plus `batch` kept as alias).
     - **`--vacuum` CLI flag** recognized alongside `--batch` in orchestrator/funnel fast-path.
-    - **`Batch/` folder** removed from `core/library.py` scaffold (`Quick grab/` and `Vacuum/` remain).
-    - **`BatchHistoryManager` calls** removed from `route_url()` success/truncate paths — everything flows into `Download History.json`.
-    - **`init_mode`** label changed from `"Batch"` to `"Vacuum"` in `route_url()`.
-    - **Session type** `"Batch"` → `"Vacuum"` in `core/journal.py`.
-    - **Quick Guide tip** updated from `batch` to `vacuum`.
-    - **Autocomplete** updated to suggest `vacuum` instead of `batch`.
+    - **`Batch/` folder eliminated completely**:
+      - `container_name` in `core/paths.py` routes headless queue runs directly into `Vacuum/`.
+      - `get_default_batch_path()`, `get_batch_root()`, and `get_batch_save_path()` all redirect transparently to `Vacuum/`.
+      - Scraper workflows updated to render `[site]Vacuum Mode[/site]`.
+      - `core/cli_help.py` manuals and doctor storage checks updated to reflect `Vacuum/`.
 
 ---
 

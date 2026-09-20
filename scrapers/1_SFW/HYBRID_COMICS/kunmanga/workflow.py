@@ -117,7 +117,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     startup_clear()
     print_banner()
     if is_batch:
-        console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+        console.print(f"[menu]Menu[/menu]         : [site]Vacuum Mode[/site]")
     console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
     cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
     console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
@@ -133,7 +133,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         startup_clear()
         print_banner()
         if is_batch:
-            console.print("[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+            console.print("[menu]Menu[/menu]         : [site]Vacuum Mode[/site]")
         console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
         cat_display = f"{target_path.parts[-2]} ⬩➤ {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
         console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
