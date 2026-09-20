@@ -260,8 +260,9 @@ class PornHubEngine(VideoEngine):
         # ── Calculate views and likes ──────────────────────────────────
         total_v = sum(int(e["views"]) for e in all_entries if e.get("views"))
         total_l = sum(int(e["like"]) for e in all_entries if e.get("like"))
-        views_str = f"{total_v:,}" if total_v > 0 else ""
-        likes_str = f"{total_l:,}" if total_l > 0 else ""
+        views_str = str(info.get("views") or (f"{total_v:,}" if total_v > 0 else ""))
+        likes_str = str(info.get("likes") or info.get("like") or (f"{total_l:,}" if total_l > 0 else ""))
+        rated_str = str(info.get("rated") or info.get("rank") or likes_str)
 
         clean_model = _decode(model_name)
         meta_dict = {
@@ -273,7 +274,7 @@ class PornHubEngine(VideoEngine):
             "views": views_str,
             "like": likes_str,
             "likes": likes_str,
-            "rated": likes_str,
+            "rated": rated_str,
             "most_viewed": most_viewed,
             "top_rated": top_rated,
         }

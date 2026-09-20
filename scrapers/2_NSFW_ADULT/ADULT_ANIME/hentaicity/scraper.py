@@ -271,14 +271,13 @@ class HentaicityScraper(UnifiedBaseScraper):
             summary = re.split(r'\n\s*Episode 1\b', desc_raw, 1)[0].strip()
             if summary.startswith(real_series):
                 summary = re.sub(r'^' + re.escape(real_series) + r'\n*', '', summary).strip()
-        else:
-            # Fallback
-            for d in soup.find_all('div'):
-                if not d.find('div') and len(d.text.strip()) > 100:
-                    t = d.text.strip()
-                    if "website contains age-restricted" not in t and "Video Categories" not in t:
-                        summary = re.sub(r'^(?:[^\n]+)\n+', '', t).strip()
-                        break
+        if not summary:
+            # Fallback for pages with separate description container
+            for d in soup.find_all('div', class_=re.compile(r'(?:desc|summary|plot|story|synopsis)', re.I)):
+                t = d.text.strip()
+                if t and len(t) > 20 and "age-restricted" not in t and "parental controls" not in t:
+                    summary = t
+                    break
 
         return title, thumbnail, full_imgs, studio, tags_str, summary, upload_date
 

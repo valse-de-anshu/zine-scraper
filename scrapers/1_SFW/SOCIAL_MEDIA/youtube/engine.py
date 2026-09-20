@@ -515,6 +515,50 @@ class YoutubeEngine(VideoEngine):
                 except Exception: pass
         
         entries = info.get('entries') or []
+
+        # Concurrently enrich top candidates with real like counts from watch HTML
+        from concurrent.futures import ThreadPoolExecutor
+
+        valid_entries = [e for e in entries if isinstance(e, dict)]
+        top_candidates = sorted(
+            valid_entries,
+            key=lambda x: int(x.get("view_count") or 0),
+            reverse=True
+        )[:15]
+
+        def _fetch_yt_like(e: Dict[str, Any]):
+            if e.get("like_count"):
+                return
+            vid_url = e.get("webpage_url") or e.get("url")
+            if not vid_url and e.get("id"):
+                vid_url = f"https://www.youtube.com/watch?v={e['id']}"
+            if not vid_url:
+                return
+            try:
+                r = requests.get(vid_url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }, timeout=5)
+                if r.status_code == 200:
+                    m = re.search(r'"accessibilityText":\s*"([\d,.]+[KMBkmb]?)\s+likes?"', r.text, re.I)
+                    if not m:
+                        m = re.search(r'"(?:defaultText|simpleText|content)":\s*"([\d,.]+[KMBkmb]?)\s+likes?"', r.text, re.I)
+                    if m:
+                        raw = m.group(1).replace(',', '')
+                        mult = 1
+                        if raw.upper().endswith('K'):
+                            mult = 1000
+                            raw = raw[:-1]
+                        elif raw.upper().endswith('M'):
+                            mult = 1000000
+                            raw = raw[:-1]
+                        e["like_count"] = int(float(raw) * mult)
+            except Exception:
+                pass
+
+        if top_candidates:
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                list(pool.map(_fetch_yt_like, top_candidates))
+
         formatted_entries = []
         for e in entries:
             if not isinstance(e, dict):
@@ -528,7 +572,7 @@ class YoutubeEngine(VideoEngine):
                 "like": l_cnt,
                 "likes": l_cnt,
                 "rated": l_cnt,
-                "url": str(e.get("webpage_url") or e.get("url") or "")
+                "url": str(e.get("webpage_url") or e.get("url") or (f"https://www.youtube.com/watch?v={e.get('id')}" if e.get('id') else ""))
             })
 
         most_viewed = sorted(
@@ -549,13 +593,16 @@ class YoutubeEngine(VideoEngine):
         channel_title = info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
         channel_id = info.get('uploader_id') or info.get('channel_id') or ""
 
+        raw_desc = info.get('description', '') or ""
+        clean_desc = re.sub(r'(?:\r?\n\s*)*#\w+(?:\s+#\w+)*\s*$', '', raw_desc).strip()
+
         meta_dict = {
             "title": channel_title,
             "type": "Channel",
             "box_purpose": "channel",
             "alt_title": channel_id,
             "author": channel_title,
-            "description": info.get('description', '') or "",
+            "description": clean_desc,
             "url": info.get('webpage_url') or info.get('original_url') or "",
             "views": views_str,
             "like": likes_str,

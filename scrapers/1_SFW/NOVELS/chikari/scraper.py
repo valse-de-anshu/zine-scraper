@@ -78,7 +78,9 @@ class ChikariScraper(ChikariBaseEngine):
 
         if data:
             self.title = data.get("title") or self.slug.replace("-", " ").title()
-            self.description = data.get("description", "")
+            raw_desc = data.get("description", "") or ""
+            clean_desc = re.sub(r'(?:\r?\n\s*)*Tags:\s*#.*$', '', raw_desc, flags=re.DOTALL | re.IGNORECASE).strip()
+            self.description = clean_desc
             self.status = data.get("status", "Unknown").title() if data.get("status") else "Unknown"
             self.cover_url = data.get("cover_url", "")
             self.rating = str(data.get("rating", "")) if data.get("rating") is not None else ""

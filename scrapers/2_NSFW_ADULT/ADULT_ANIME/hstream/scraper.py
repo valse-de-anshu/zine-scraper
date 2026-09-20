@@ -84,8 +84,10 @@ class HstreamScraper:
                 studio = a.text.strip()
                 
         for p in soup.find_all('p'):
-            if p.text.strip() and len(p.text.strip()) > 30:
-                summary = p.text.strip()
+            p_clean = re.sub(r'\r', '', p.text).strip()
+            p_clean = re.sub(r'\n{3,}', '\n\n', p_clean)
+            if p_clean and len(p_clean) > 30:
+                summary = p_clean
                 break
 
         meta = {

@@ -191,8 +191,31 @@ class PornHubScraper:
                 raw_url = m.group(1)
                 avatar_url = raw_url
 
-            if avatar_url:
-                info["avatar_url"] = avatar_url
+            # ── Views, Subscribers, Rank from .infoBox ───────────────
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(page, "html.parser")
+                for box in soup.find_all(class_="infoBox"):
+                    text_lower = box.get_text(" ", strip=True).lower()
+                    data_title = box.get("data-title", "")
+                    big_el = box.find(class_="big")
+                    big_text = big_el.get_text(strip=True) if big_el else ""
+
+                    if "video views" in text_lower:
+                        m_v = re.search(r'([\d,]+)', data_title)
+                        info["views"] = m_v.group(1) if m_v else big_text
+                    elif "subscriber" in text_lower:
+                        m_s = re.search(r'([\d,]+)', data_title)
+                        sub_val = m_s.group(1) if m_s else big_text
+                        info["likes"] = sub_val
+                        info["like"] = sub_val
+                    elif "rank" in text_lower and not info.get("rank"):
+                        clean_rank = re.sub(r'[^\d]', '', big_text)
+                        if clean_rank:
+                            info["rank"] = clean_rank
+                            info["rated"] = clean_rank
+            except Exception as e:
+                logger.debug(f"Failed to parse PornHub model info boxes: {e}")
 
         except Exception as e:
             logger.debug(f"PornHub model page scrape failed: {e}")
@@ -226,8 +249,20 @@ class PornHubScraper:
                 if ld_match:
                     import json as json_mod
                     d = json_mod.loads(ld_match.group(1))
-                    views_raw = str(d.get('interactionStatistic', [{}])[0].get('userInteractionCount', '0')).replace(',', '')
-                    views = float(views_raw) if views_raw.isdigit() else 0.0
+                    views = 0.0
+                    likes = 0.0
+                    for stat in d.get('interactionStatistic', []):
+                        itype = str(stat.get('interactionType', ''))
+                        count_val = stat.get('userInteractionCount', 0)
+                        try:
+                            count_num = float(str(count_val).replace(',', ''))
+                        except (ValueError, TypeError):
+                            count_num = 0.0
+                        if 'WatchAction' in itype:
+                            views = count_num
+                        elif 'LikeAction' in itype:
+                            likes = count_num
+
                     up_date = str(d.get('uploadDate', ''))[:10]
                     duration = _parse_iso_duration(d.get('duration', ''))
                     title = _decode(d.get('name', '') or vid_title)
@@ -237,7 +272,7 @@ class PornHubScraper:
                         "id":          viewkey or "",
                         "title":       title,
                         "view_count":  views,
-                        "like_count":  0,
+                        "like_count":  likes,
                         "duration":    duration,
                         "upload_date": up_date,
                         "thumbnail":   thumb,
@@ -411,6 +446,18 @@ class PornHubScraper:
             "Avatar URL":     model_info.get("avatar_url") or "",
             "Model URL":      model_url,
             "ID":             model_info.get("user_id") or "Unknown",
+            "Views":          model_info.get("views") or "",
+            "Likes":          model_info.get("likes") or "",
+            "Like":           model_info.get("like") or "",
+            "Rank":           model_info.get("rank") or "",
+            "Rated":          model_info.get("rated") or "",
         }
+
+        if raw_info is not None:
+            raw_info["views"] = model_info.get("views") or ""
+            raw_info["likes"] = model_info.get("likes") or ""
+            raw_info["like"] = model_info.get("like") or ""
+            raw_info["rank"] = model_info.get("rank") or ""
+            raw_info["rated"] = model_info.get("rated") or ""
 
         return metadata, videos, raw_info
