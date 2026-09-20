@@ -135,7 +135,7 @@ class PathAuthority:
         return self._secrets_file
 
     def get_urls_file(self) -> Path:
-        return self.get_batch_root() / "Batch URL.txt"
+        return self._downloads_root / "Batch URL.txt"
         
     def get_url_history_file(self) -> Path:
         return self._url_history_file
@@ -151,12 +151,8 @@ class PathAuthority:
     def get_quick_grab_path(self, site: str, creator: Optional[str] = None) -> Path:
         """e.g. get_quick_grab_path('youtube', 'Linus Tech Tips')"""
         hentai_map = {"hanime": "Hanime", "hanime_red": "HanimeRed", "hentaihaven": "HentaiHaven", "hentaihaven_co": "HentaiHavenCo", "hentaicity": "HentaiCity", "hstream": "Hstream", "oppai_stream": "OppaiStream", "hentaimama": "Hentaimama", "ohentai": "Ohentai", "asmhentai": "AsmHentai"}
-        
-        if site.lower() in hentai_map:
-            base = self.get_quick_grab_root() / "Hentai" / hentai_map[site.lower()]
-        else:
-            base = self.get_quick_grab_root() / site
-            
+        clean_site = hentai_map.get(site.lower(), site)
+        base = self.get_quick_grab_root() / clean_site
         if creator:
             return base / creator
         return base
@@ -167,12 +163,8 @@ class PathAuthority:
     def get_vacuum_path(self, site: str, creator: Optional[str] = None) -> Path:
         """e.g. get_vacuum_path('mangak', 'Solo Leveling')"""
         hentai_map = {"hanime": "Hanime", "hanime_red": "HanimeRed", "hentaihaven": "HentaiHaven", "hentaihaven_co": "HentaiHavenCo", "hentaicity": "HentaiCity", "hstream": "Hstream", "oppai_stream": "OppaiStream", "hentaimama": "Hentaimama", "ohentai": "Ohentai", "asmhentai": "AsmHentai"}
-        
-        if site.lower() in hentai_map:
-            base = self.get_vacuum_root() / "Hentai" / hentai_map[site.lower()]
-        else:
-            base = self.get_vacuum_root() / site
-            
+        clean_site = hentai_map.get(site.lower(), site)
+        base = self.get_vacuum_root() / clean_site
         if creator:
             return base / creator
         return base
@@ -357,7 +349,7 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
     
     site_folder = get_site_folder(url) or "generic"
     
-    hentai_map = {
+    SITE_NAME_MAP = {
         "hanime": "Hanime",
         "hanime_red": "HanimeRed",
         "hentaihaven": "HentaiHaven",
@@ -365,9 +357,40 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
         "hentaicity": "HentaiCity",
         "hstream": "Hstream",
         "oppai_stream": "OppaiStream",
+        "oppai_stream_toon": "OppaiStream",
         "hentaimama": "Hentaimama",
         "ohentai": "Ohentai",
         "asmhentai": "AsmHentai",
+        "nhentai": "nhentai",
+        "yt_music": "YouTube Music",
+        "youtube": "YouTube",
+        "mangadex": "MangaDex",
+        "asurascans": "AsuraScans",
+        "projectsuki": "ProjectSuki",
+        "manhuaplus": "ManhuaPlus",
+        "kunmanga": "KunManga",
+        "topmanhua": "TopManhua",
+        "weebcentral": "WeebCentral",
+        "fanfox": "FanFox",
+        "mangak": "MangaK",
+        "novelarchive": "NovelArchive",
+        "novelbuddy": "NovelBuddy",
+        "novelfire": "NovelFire",
+        "novelphoenix": "NovelPhoenix",
+        "chikari": "Chikari",
+        "gutenberg": "Gutenberg",
+        "archive": "Archive",
+        "soundcloud": "SoundCloud",
+        "idagio": "IDAGIO",
+        "facebook": "Facebook",
+        "instagram": "Instagram",
+        "pinterest": "Pinterest",
+        "pornhub": "Pornhub",
+        "hentai18": "Hentai18",
+        "hentai20": "Hentai20",
+        "manga18fx": "Manga18fx",
+        "manhwaus": "Manhwaus",
+        "omegascans": "OmegaScans",
     }
     
     if not is_vacuum and not is_batch:
@@ -390,32 +413,13 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
         elif category != "toon" and not site_folder.startswith("light_novel."):
             return container_root
 
-    if site_folder.lower() in hentai_map:
-        return container_root / "Hentai" / hentai_map[site_folder.lower()]
-        
-    if site_folder.startswith("light_novel."):
-        sub_folder = site_folder.split(".")[1]
-        return container_root / "Light Novel" / sub_folder
+    site_slug = site_folder.split(".")[-1] if "." in site_folder else site_folder
 
-    # Explicit routing for YouTube Music to prevent collision with YouTube video
-    if site_folder.lower() in ["youtube.yt_music", "yt_music"]:
+    if site_slug.lower() in ["yt_music", "youtube.yt_music"] or site_folder.lower() in ["yt_music", "youtube.yt_music", "1_sfw.music.yt_music"]:
         return container_root / "YouTube Music"
 
-    # If the site folder is nested like "oppai_stream.oppai_stream_toon", clean it up
-    if "." in site_folder:
-        parts = site_folder.split(".")
-        # Default to the parent folder name but nicely capitalized, or if they map to something we know
-        parent = parts[0]
-        if parent.lower() in hentai_map:
-            site_folder = hentai_map[parent.lower()]
-        else:
-            site_folder = parent.title()
-
-    # Also clean up standard "oppai_stream_toon" just in case
-    if site_folder == "oppai_stream_toon":
-        site_folder = "OppaiStream"
-
-    return container_root / site_folder
+    clean_name = SITE_NAME_MAP.get(site_slug.lower(), SITE_NAME_MAP.get(site_folder.lower(), site_slug.title() if site_slug.islower() else site_slug))
+    return container_root / clean_name
 
 def resolve_folder_collision(target_parent: Path, title: str, platform_id: str) -> Path:
     import re as _re

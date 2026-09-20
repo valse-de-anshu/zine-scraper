@@ -78,7 +78,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     if getattr(scraper, "genres", None):
         tags_list.extend(scraper.genres if isinstance(scraper.genres, list) else [scraper.genres])
 
-    status_str = getattr(scraper, "status", "") or next((part for part in target_path.parts if part.lower() in ["ongoing", "completed", "complete"]), "")
+    status_str = getattr(scraper, "status", "") or getattr(scraper, "publication_status", "") or next((part for part in target_path.parts if part.lower() in ["ongoing", "completed", "complete"]), "")
+    classification_str = getattr(scraper, "classification_type", "")
     payload = ZineMetadataPayload(
         title=title,
         type="Manhwa",
@@ -90,7 +91,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         rating=str(getattr(scraper, "rating", "") or ""),
         tags=tags_list,
         year=str(getattr(scraper, "year", "") or ""),
-        url=url
+        url=url,
+        classification_type=classification_str,
+        publication_status=status_str
     )
     MetadataEngine.save_metadata(folder, payload)
 

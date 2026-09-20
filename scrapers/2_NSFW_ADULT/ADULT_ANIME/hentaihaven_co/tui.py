@@ -164,7 +164,7 @@ def handle_hentaihaven_tui(
             except Exception:
                 pass
         if is_vacuum:
-            target_root = lib / "Vacuum" / "Hentai" / "HentaiHavenCo"
+            target_root = lib / "Vacuum"  /  "HentaiHavenCo"
         else:
             target_root = lib / "Quick grab"
 

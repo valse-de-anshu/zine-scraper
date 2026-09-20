@@ -157,7 +157,7 @@ def handle_oppai_stream_tui(
             except Exception:
                 pass
         if is_vacuum:
-            target_root = lib / "Vacuum" / "Hentai" / "OppaiStream"
+            target_root = lib / "Vacuum"  /  "OppaiStream"
         else:
             target_root = lib / "Quick grab"
 

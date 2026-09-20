@@ -1674,7 +1674,7 @@ def get_toon_save_path(url: str, scraper: Any, is_batch: bool, batch_path: Optio
     site_folder = default_root.name
 
     if is_batch:
-        return library_root / "Toon" / "SFW" / "OnGoing" / site_folder
+        return library_root / site_folder
 
     current_menu = library_root.name
     
@@ -1746,7 +1746,10 @@ def get_toon_save_path(url: str, scraper: Any, is_batch: bool, batch_path: Optio
                 console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
                 console.print(f"[menu]{'Status':<12}:[/menu] [site]{status_choice}[/site]")
                 console.print(f"[menu]{'Location':<12}:[/menu] [site]Default[/site]\n")
-                return library_root / "Toon" / type_choice / status_choice / site_folder
+                if scraper:
+                    setattr(scraper, "classification_type", type_choice)
+                    setattr(scraper, "publication_status", status_choice)
+                return library_root / site_folder
             elif choice == "CUSTOM":
                 state = 3
         elif state == 3:
@@ -1771,9 +1774,10 @@ def get_toon_save_path(url: str, scraper: Any, is_batch: bool, batch_path: Optio
                 continue
             
             try:
-                custom_manhua_root = custom_path / "Toon"
-                store_layer.create_directory(custom_manhua_root)
-                final_path = store_layer.create_directory(custom_manhua_root / type_choice)
+                if scraper:
+                    setattr(scraper, "classification_type", type_choice)
+                    setattr(scraper, "publication_status", status_choice)
+                final_path = store_layer.create_directory(custom_path / site_folder)
                 clear_lines(2)
                 return final_path
             except Exception as e:

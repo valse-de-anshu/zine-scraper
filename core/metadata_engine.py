@@ -92,6 +92,8 @@ class ZineMetadataPayload:
     tags: List[str] = field(default_factory=list)                     # Normalized list of genres/tags
     year: Optional[str] = ""                                          # Release or Aired year
     url: Optional[str] = ""
+    classification_type: Optional[str] = ""                           # "SFW" or "NSFW"
+    publication_status: Optional[str] = ""                            # "Ongoing" or "Completed"
 
     # YouTube & Pornhub channel/creator stats only:
     views: Optional[str] = ""
@@ -142,6 +144,19 @@ class MetadataEngine:
                 "type": payload.type,
                 "box_purpose": payload.type.lower(),
             }
+
+            if payload.classification_type:
+                clean_cls = _clean_str(payload.classification_type)
+                if clean_cls:
+                    data["classification"] = clean_cls
+                    data["classification_type"] = clean_cls
+
+            if payload.publication_status:
+                clean_pub = _clean_str(payload.publication_status)
+                if clean_pub:
+                    data["publication_status"] = clean_pub
+                    if not payload.status:
+                        data["status"] = clean_pub
 
             if payload.alt_title:
                 clean_alt = _clean_str(payload.alt_title)

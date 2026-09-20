@@ -155,7 +155,7 @@ def handle_hstream_tui(
             except Exception:
                 pass
         if is_vacuum:
-            target_root = lib / "Vacuum" / "Hentai" / "Hstream"
+            target_root = lib / "Vacuum"  /  "Hstream"
         else:
             target_root = lib / "Quick grab"
 

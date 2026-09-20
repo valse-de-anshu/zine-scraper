@@ -156,7 +156,7 @@ def handle_hanime_tui(
             except Exception:
                 pass
         if is_vacuum:
-            target_root = lib / "Vacuum" / "Hentai" / "Hanime"
+            target_root = lib / "Vacuum"  /  "Hanime"
         else:
             target_root = lib / "Quick grab"
 

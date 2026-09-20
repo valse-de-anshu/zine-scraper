@@ -31,7 +31,7 @@ def get_save_path(
     toon_name = getattr(scraper, "title", None) or "Manga"
 
     if is_batch or not sys.stdin.isatty():
-        target_dir = library_root / "Toon" / "SFW" / "OnGoing" / site_folder
+        target_dir = library_root / site_folder
         store_layer.create_directory(target_dir)
         return target_dir
 
@@ -93,7 +93,7 @@ def get_save_path(
                 console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
                 console.print(f"[menu]{'Status':<12}:[/menu] [site]{status_choice}[/site]")
                 console.print(f"[menu]{'Location':<12}:[/menu] [site]Default[/site]\n")
-                target_dir = library_root / "Toon" / type_choice / status_choice / site_folder
+                target_dir = library_root / site_folder
                 try:
                     store_layer.create_directory(target_dir)
                     return target_dir

@@ -173,7 +173,7 @@ def handle_ohentai_tui(
                 pass
         
         if is_vacuum:
-            target_root = lib / "Vacuum" / "Hentai" / "Ohentai"
+            target_root = lib / "Vacuum"  /  "Ohentai"
         else:
             target_root = lib / "Quick grab"
 

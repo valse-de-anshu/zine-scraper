@@ -150,7 +150,7 @@ def handle_hentaicity_tui(
             except Exception:
                 pass
         if is_vacuum:
-            target_root = lib / "Vacuum" / "Hentai" / "HentaiCity"
+            target_root = lib / "Vacuum"  /  "HentaiCity"
         else:
             target_root = lib / "Quick grab"
 
