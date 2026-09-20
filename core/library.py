@@ -221,13 +221,25 @@ def two_step_verify(
     if str(item_id) not in history_data:
         return VerificationResult(False, f"item_id '{item_id}' not in history")
 
-    recorded_filename = history_data[str(item_id)]
+    entry_val = history_data[str(item_id)]
+    recorded_filename = entry_val.get("filename", "") if isinstance(entry_val, dict) else str(entry_val)
 
     # ── Step 2: Media ─────────────────────────────────────────────────────────
     if media_path is None:
         # Derive path from the parent of .zine and the recorded filename
         parent = zine_dir.parent
+        candidates = [
+            parent / recorded_filename,
+            parent / "video" / recorded_filename,
+            parent / "music" / recorded_filename,
+            parent / "song" / recorded_filename,
+            parent / "short" / recorded_filename,
+        ]
         media_path = parent / recorded_filename
+        for cand in candidates:
+            if cand.exists():
+                media_path = cand
+                break
 
     media_path = Path(media_path)
 

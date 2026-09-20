@@ -115,6 +115,18 @@ def run_workflow(
             cover_url=metadata.get("Thumbnail")
         )
 
+    # Target download directories:
+    # Vacuum / Batch / Albums: folder / "music" with companion lyrics in folder / "music" / "lyrics"
+    # Quick Grab: folder directly with lyrics in folder / "lyrics"
+    if is_vacuum:
+        target_download_dir = folder / "music"
+        lyrics_dir = target_download_dir / "lyrics"
+        location_manager.create_directory(target_download_dir)
+        location_manager.create_directory(lyrics_dir)
+    else:
+        target_download_dir = folder
+        lyrics_dir = folder / "lyrics"
+
     verified_ids = verify_videos(folder, videos, "flac", tracker, scraper.url)
 
     menu_label = "Batch" if is_batch else ("Vacuum" if is_vacuum else "Quick Grab")
@@ -153,6 +165,7 @@ def run_workflow(
     # Clean previous part files if any
     try:
         from butler.part_cleaner import clean_part_files
+        clean_part_files(target_download_dir, videos, tracker, scraper.url)
         clean_part_files(folder, videos, tracker, scraper.url)
     except Exception:
         pass
@@ -201,11 +214,17 @@ def run_workflow(
 
         # Resolve clean file path
         if hasattr(tracker, "resolve_download_path"):
-            resolved_file_path, is_in_verified = tracker.resolve_download_path(folder, str(vid_id), vid_title, "flac")
+            resolved_file_path, is_in_verified = tracker.resolve_download_path(target_download_dir, str(vid_id), vid_title, "flac")
         else:
             filename = f"{vid_title}.flac"
-            resolved_file_path = folder / filename
+            resolved_file_path = target_download_dir / filename
             is_in_verified = resolved_file_path.exists()
+
+        # Check if artist-prefixed file already exists in target directory
+        alt_artist_file = target_download_dir / f"{track_artist} - {vid_title}.flac"
+        if alt_artist_file.exists():
+            resolved_file_path = alt_artist_file
+            is_in_verified = True
 
         display_name = resolved_file_path.name
 
@@ -322,7 +341,7 @@ def run_workflow(
                 try:
                     success = scraper.engine.download_video(
                         url=track["url"],
-                        output_dir=folder,
+                        output_dir=target_download_dir,
                         progress_hook=yt_dlp_hook,
                         is_audio=True,
                         custom_thumbnail=custom_thumb,
@@ -368,10 +387,20 @@ def run_workflow(
 
         # ── YouTube Subtitles & Lyrics Pipeline ──
         if progress_data.get("success"):
-            lrc_file = resolved_file_path.with_suffix(".lrc")
-            has_lyrics = lrc_file.exists() and lrc_file.stat().st_size > 10
+            stem = resolved_file_path.stem
+            lrc_candidates = [
+                target_download_dir / "lyrics" / f"{stem}.lrc",
+                target_download_dir / "lyrics" / f"{track_artist} - {vid_title}.lrc",
+                resolved_file_path.with_suffix(".lrc"),
+                target_download_dir / f"{track_artist} - {vid_title}.lrc",
+                folder / "music" / "lyrics" / f"{stem}.lrc",
+                folder / "music" / "lyrics" / f"{track_artist} - {vid_title}.lrc",
+            ]
+            found_lrc = next((p for p in lrc_candidates if p.exists() and p.stat().st_size > 10), None)
 
-            if not has_lyrics:
+            if found_lrc:
+                console.print(f"  [success]✔ Synced lyrics saved: {found_lrc.name}[/success]")
+            else:
                 track_url = track.get("url") or f"https://www.youtube.com/watch?v={vid_id}"
                 sub_path = scraper.engine.fetch_and_save_subtitles(track_url, resolved_file_path)
                 if sub_path and sub_path.exists():

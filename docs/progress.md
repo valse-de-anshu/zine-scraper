@@ -1,3 +1,20 @@
+# Progress Report - September 20, 2026 (Music & Video Subfolder Organization and Lyrics/Subtitle Verification)
+
+- **Music Album & Discography Clean Subfolder Layout (`scrapers/1_SFW/MUSIC/*`):**
+  - Standardized album and playlist downloads to store audio files in `<Artist>/<Album>/music/` and companion lyrics in `<Artist>/<Album>/music/lyrics/`.
+  - Kept root album folder pristine with only `cover.jpg`/`cover.png`, `.zine/metadata.json`, and the `music/` directory.
+  - Resolved false "No subtitles or lyrics found" warning in `yt_music` workflow by searching `lyrics/<stem>.lrc` and `<artist> - <title>.lrc`.
+
+- **Video Platform Subfolder Structure (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*`, `pornhub`, `youtube`):**
+  - Updated all adult and social video scrapers (`hanime`, `hanime_red`, `hentaihaven`, `hentaihaven_co`, `hentaicity`, `hstream`, `oppai_stream`, `hentaimama`, `ohentai`, `pornhub`, `youtube`) to place video files inside `creator_root / "video"` and subtitles inside `creator_root / "video" / "subtitle"` when in vacuum mode.
+  - Quick Grab single file downloads remain clean without unnecessary nesting.
+
+- **Unified History & Verification Layer (`core/history.py`, `core/library.py`):**
+  - Enhanced `sync_local_history` and `resolve_download_path` to locate files across `video/`, `music/`, `song/`, and `short/` subfolders while resolving canonical `.zine/` history from parent directories.
+  - Updated `verify_item_two_step` in `core/library.py` to support dictionary history schemas and media resolution in subfolders.
+
+---
+
 # Progress Report - September 19, 2026 (CLI Overhaul, Unified Session Logging, Batch Folder Isolation & Comprehensive Hentai Platform Verification)
 
 - **Unified Per-Session & Error Logging Engine (`core/logger.py`, `orchestrator.py`):**

@@ -83,7 +83,7 @@ def run_workflow(
         elif is_music:
             sub_folder = folder / "song"
         else:
-            sub_folder = folder
+            sub_folder = folder / "video"
             
         sub_folder.mkdir(parents=True, exist_ok=True)
 

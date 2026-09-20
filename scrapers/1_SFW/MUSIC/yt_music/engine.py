@@ -413,11 +413,16 @@ class YoutubeMusicEngine:
             # Move final tagged FLAC to destination
             shutil.move(str(downloaded_flac), str(final_dest))
 
-            # If synced lyrics were found, save companion .lrc file in destination
+            # If synced lyrics were found, save companion .lrc file in destination (or lyrics/ folder)
             if lrc_parsed:
                 try:
                     from core.lyrics_engine import format_lrc
-                    lrc_dest = final_dest.with_suffix(".lrc")
+                    lyrics_folder = output_dir / "lyrics"
+                    if "Quick grab" in str(output_dir) and not lyrics_folder.exists():
+                        lrc_dest = final_dest.with_suffix(".lrc")
+                    else:
+                        lyrics_folder.mkdir(parents=True, exist_ok=True)
+                        lrc_dest = lyrics_folder / f"{final_dest.stem}.lrc"
                     with open(lrc_dest, "w", encoding="utf-8") as lf:
                         lf.write(format_lrc(lrc_parsed))
                 except Exception as e:

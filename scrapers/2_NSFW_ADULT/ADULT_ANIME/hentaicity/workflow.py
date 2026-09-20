@@ -64,7 +64,8 @@ def run_workflow(
     clean = re.sub(r'[<>:"/\\|?*]', "", series_title).strip() or "Series"
     creator_root = target_root / clean
     creator_root.mkdir(parents=True, exist_ok=True)
-    sub_folder = creator_root
+    sub_folder = creator_root / "video" if (is_vacuum and content_type == "video") else creator_root
+    sub_folder.mkdir(parents=True, exist_ok=True)
     subtitle_folder = sub_folder / "subtitle"
     subtitle_folder.mkdir(parents=True, exist_ok=True)
 

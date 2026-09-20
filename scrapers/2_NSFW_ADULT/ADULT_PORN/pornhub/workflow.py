@@ -72,7 +72,28 @@ def run_workflow(
 
     creator_root = resolve_folder_collision(target_root, folder_name, platform_id)
     creator_root.mkdir(parents=True, exist_ok=True)
-    sub_folder = creator_root
+    sub_folder = creator_root / "video" if is_vacuum else creator_root
+    sub_folder.mkdir(parents=True, exist_ok=True)
+    subtitle_folder = sub_folder / "subtitle"
+    subtitle_folder.mkdir(parents=True, exist_ok=True)
+
+    # Migrate any legacy files sitting directly in creator_root to video/
+    try:
+        import shutil
+        for legacy_file in creator_root.glob("*.mp4"):
+            dest_file = sub_folder / legacy_file.name
+            if not dest_file.exists():
+                shutil.move(str(legacy_file), str(dest_file))
+    except Exception:
+        pass
+
+    try:
+        from core.video_engine import migrate_and_clean_subtitles
+        migrate_and_clean_subtitles(sub_folder, subtitle_folder)
+        migrate_and_clean_subtitles(creator_root, subtitle_folder)
+    except Exception:
+        pass
+
     is_quick_grab = not is_vacuum
 
     if not videos:

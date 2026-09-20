@@ -69,6 +69,9 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     if is_vacuum:
         folder = resolve_folder_collision(target_path, title, platform_id)
         location_manager.create_directory(folder)
+        target_download_dir = folder / "music"
+        location_manager.create_directory(target_download_dir)
+        location_manager.create_directory(target_download_dir / "lyrics")
         try:
             cover_url = metadata.get("Thumbnail")
             scraper.engine.save_metadata(folder, info, metadata.get("Source", "Unknown"), cover_url=cover_url)
@@ -76,12 +79,13 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             pass
     else:
         folder = target_path
+        target_download_dir = folder
         location_manager.create_directory(folder)
 
     cover_exists = any(folder.glob("cover.*"))
 
     ext_str = "flac" if is_music else "mp4"
-    verified_ids = verify_videos(folder, videos, ext_str, tracker, scraper.url)
+    verified_ids = verify_videos(target_download_dir, videos, ext_str, tracker, scraper.url)
     
     startup_clear()
     print_banner()
@@ -101,6 +105,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         
     try:
         from butler.part_cleaner import clean_part_files
+        clean_part_files(target_download_dir, videos, tracker, scraper.url)
         clean_part_files(folder, videos, tracker, scraper.url)
     except Exception:
         pass
@@ -110,43 +115,26 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         vid_id = video.get("id")
         vid_title = video.get("title")
         vid_url = video.get("url")
-        vid_thumb_url = video.get("thumbnail")
         
-        # Lazy load full metadata for this specific track if the playlist didn't provide it
-        if not vid_thumb_url or str(vid_title).startswith("Track "):
-            try:
-                import requests
-                from bs4 import BeautifulSoup
-                resp = requests.get(vid_url, timeout=5)
-                soup = BeautifulSoup(resp.text, 'html.parser')
-                
-                meta_title = soup.find('meta', property='og:title')
-                if meta_title: vid_title = meta_title['content']
-                
-                meta_image = soup.find('meta', property='og:image')
-                if meta_image: vid_thumb_url = meta_image['content']
-            except Exception:
-                pass
-
-        
-        resolved_file_path, is_in_verified = tracker.resolve_download_path(folder, str(vid_id), vid_title, ext_str)
-        display_name = resolved_file_path.name
+        display_name = f"{vid_title}.{ext_str}"
+        is_in_verified = str(vid_id) in verified_ids
         
         if is_in_verified:
-            tracker.mark_downloaded(scraper.url, str(vid_id), title=title)
-            console.print(f"  [unselected]File exists: {display_name}[/unselected]")
+            console.print(f"  [success]●[/success] [unselected]{display_name} (Already exists)[/unselected]")
             continue
             
-        track_cover_path = None
-        if custom_thumb_path and custom_thumb_path.exists():
-            track_cover_path = custom_thumb_path
-        elif vid_thumb_url:
+        track_cover_url = video.get("thumbnail")
+        if track_cover_url:
             try:
-                temp_thumb = folder / f"temp_{vid_id}.jpg"
-                resp = requests.get(vid_thumb_url, timeout=10)
-                resp.raise_for_status()
-                temp_thumb.write_bytes(resp.content)
-                track_cover_path = temp_thumb
+                r = requests.get(track_cover_url, timeout=10)
+                if r.status_code == 200:
+                    from core.paths import PathAuthority
+                    poop_dir = PathAuthority().get_temp_root()
+                    poop_dir.mkdir(parents=True, exist_ok=True)
+                    track_cover_path = poop_dir / f"track_cover_{int(time.time()*1000)}.jpg"
+                    track_cover_path.write_bytes(r.content)
+                else:
+                    track_cover_path = None
             except Exception:
                 track_cover_path = None
         else:
@@ -229,7 +217,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 
                 try:
                     success = scraper.engine.download_video(
-                        vid_url, folder, stats_callback,
+                        vid_url, target_download_dir, stats_callback,
                         is_audio=is_music,
                         custom_thumbnail=track_cover_path,
                         fixed_title=actual_fixed_title,

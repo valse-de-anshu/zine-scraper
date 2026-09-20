@@ -10,7 +10,7 @@ def verify_videos(folder: Path, videos: List[Dict[str, Any]], ext_str: str = "fl
     if not folder.exists():
         return verified
 
-    flac_files = list(folder.glob("*.flac"))
+    flac_files = list(folder.glob("*.flac")) + list(folder.glob("music/*.flac"))
 
     for v in videos:
         vid_id = str(v.get("id", ""))

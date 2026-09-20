@@ -472,11 +472,20 @@ class HistoryLayer:
         site_url = self.normalize_url(site_url)
         if _is_quick_grab_dir(root_dir):
             return []
-            
-        zine_dir = root_dir / ".zine"
+
+        # Determine the canonical .zine directory (prefer root entity folder if inside a subfolder like video/music)
+        if root_dir.name.lower() in ("video", "music", "song", "short", "lyrics"):
+            parent_zine = root_dir.parent / ".zine"
+            if parent_zine.exists() or not (root_dir / ".zine").exists():
+                zine_dir = parent_zine
+            else:
+                zine_dir = root_dir / ".zine"
+        else:
+            zine_dir = root_dir / ".zine"
+
         self._storage.create_directory(zine_dir)
         local_history_file = zine_dir / "history.json"
-        
+
         # Load local history
         local_history = {}
         if local_history_file.exists():
@@ -484,10 +493,29 @@ class HistoryLayer:
                 local_history = json.loads(self._storage.read_file(local_history_file))
             except Exception:
                 pass
-                
+
         verified_ids = []
         claimed_files = set()
-        
+
+        def _locate_file(fn: str) -> Optional[Path]:
+            candidates = [
+                root_dir / fn,
+                root_dir / "video" / fn,
+                root_dir / "music" / fn,
+                root_dir / "song" / fn,
+                root_dir / "short" / fn,
+            ]
+            if root_dir.name.lower() in ("video", "music", "song", "short", "lyrics"):
+                candidates.insert(0, root_dir.parent / fn)
+                candidates.insert(1, root_dir.parent / "video" / fn)
+                candidates.insert(2, root_dir.parent / "music" / fn)
+                candidates.insert(3, root_dir.parent / "song" / fn)
+                candidates.insert(4, root_dir.parent / "short" / fn)
+            for c in candidates:
+                if c.exists() and c.is_file():
+                    return c
+            return None
+
         # 1. First pass: Verify existing claims
         for item in items:
             item_id = str(item.get("id"))
@@ -496,8 +524,8 @@ class HistoryLayer:
             if item_id in local_history:
                 entry = local_history[item_id]
                 filename, _ = _parse_local_history_entry(entry)
-                file_path = root_dir / filename
-                if file_path.exists():
+                file_path = _locate_file(filename)
+                if file_path and file_path.exists():
                     verified_ids.append(item_id)
                     claimed_files.add(filename)
                     # Update upload_date if available
@@ -523,38 +551,38 @@ class HistoryLayer:
                     del local_history[item_id]
                     if site_url in self._history and item_id in self._history[site_url].get("info", set()):
                         self._history[site_url]["info"].remove(item_id)
-                    
+
         # 2. Second pass: Try to claim loose files matching titles for new items
         for item in items:
             item_id = str(item.get("id"))
             if not item_id or item_id in verified_ids:
                 continue
-                
+
             item_title = item.get("title") or item.get("filename") or ""
             if item_title and "." in item_title:
                 item_title = "".join(item_title.split(".")[:-1])
             clean_title = "".join([c for c in item_title if c.isalnum() or c in " .-_()"]).strip()
             if not clean_title:
                 clean_title = f"item_{item_id}"
-                
+
             # Figure out possible extensions
             ext = default_ext.lstrip(".")
             if item.get("is_video"):
                 exts = ["mp4"]
             else:
                 exts = [ext, "jpg", "png", "jpeg", "flac", "mp3"]
-                
+
+            found = False
             for e in exts:
                 candidate_names = [f"{clean_title}.{e}"]
                 candidate_names.append(f"{clean_title}_{item_id}.{e}")
                 candidate_names.append(f"{clean_title} [{item_id}].{e}")
-                
-                found = False
+
                 for candidate in candidate_names:
                     if candidate in claimed_files:
                         continue
-                    file_path = root_dir / candidate
-                    if file_path.exists():
+                    file_path = _locate_file(candidate)
+                    if file_path and file_path.exists():
                         dt = item.get("upload_date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         local_history[item_id] = {
                             "filename": candidate,
@@ -573,28 +601,41 @@ class HistoryLayer:
                         break
                 if found:
                     break
-                    
-            # Fallback: search the directory for any file containing [item_id]
+
+            # Fallback: search the directories for any file containing [item_id]
             if not found:
-                for f in root_dir.iterdir():
-                    if f.is_file() and f.name not in claimed_files and f"[{item_id}]" in f.name:
-                        dt = item.get("upload_date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        local_history[item_id] = {
-                            "filename": f.name,
-                            "date": dt
-                        }
-                        verified_ids.append(item_id)
-                        claimed_files.add(f.name)
-                        if site_url not in self._history:
-                            self._history[site_url] = {
-                                "title": self._infer_title(site_url),
-                                "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "info": set()
+                search_dirs = [root_dir]
+                for sub in ("video", "music", "song", "short"):
+                    sub_d = root_dir / sub
+                    if sub_d.exists() and sub_d.is_dir():
+                        search_dirs.append(sub_d)
+                if root_dir.name.lower() in ("video", "music", "song", "short", "lyrics"):
+                    search_dirs.append(root_dir.parent)
+
+                for s_dir in search_dirs:
+                    if not s_dir.exists():
+                        continue
+                    for f in s_dir.iterdir():
+                        if f.is_file() and f.name not in claimed_files and f"[{item_id}]" in f.name:
+                            dt = item.get("upload_date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            local_history[item_id] = {
+                                "filename": f.name,
+                                "date": dt
                             }
-                        self._history[site_url]["info"].add(item_id)
-                        found = True
+                            verified_ids.append(item_id)
+                            claimed_files.add(f.name)
+                            if site_url not in self._history:
+                                self._history[site_url] = {
+                                    "title": self._infer_title(site_url),
+                                    "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "info": set()
+                                }
+                            self._history[site_url]["info"].add(item_id)
+                            found = True
+                            break
+                    if found:
                         break
-                    
+
         # Save both global and local history
         self.save_history()
         self._storage.write_file(local_history_file, _sort_and_dump_history(local_history))
@@ -625,7 +666,16 @@ class HistoryLayer:
             candidate_path = root_dir / candidate_name
             return candidate_path, candidate_path.exists()
             
-        zine_dir = root_dir / ".zine"
+        # Determine canonical .zine directory
+        if root_dir.name.lower() in ("video", "music", "song", "short", "lyrics"):
+            parent_zine = root_dir.parent / ".zine"
+            if parent_zine.exists() or not (root_dir / ".zine").exists():
+                zine_dir = parent_zine
+            else:
+                zine_dir = root_dir / ".zine"
+        else:
+            zine_dir = root_dir / ".zine"
+
         self._storage.create_directory(zine_dir)
         local_history_file = zine_dir / "history.json"
         
@@ -640,7 +690,7 @@ class HistoryLayer:
         import html
         title = html.unescape(title)
         # Never prepend or keep leading numbers for songs
-        if root_dir.name.lower() == "song" or "/song" in str(root_dir).lower():
+        if root_dir.name.lower() == "song" or "/song" in str(root_dir).lower() or root_dir.name.lower() == "music":
             title = re.sub(r'^\d+[\.\s\-]+\s*', '', title).strip() or title
         # Clean title for filename
         clean_title = "".join([c for c in title if c.isalnum() or c in " .-_()'"]).strip()
@@ -659,6 +709,12 @@ class HistoryLayer:
             final_path = root_dir / filename
             if final_path.exists():
                 return final_path, True
+            if root_dir.name.lower() in ("video", "music", "song", "short") and (root_dir.parent / filename).exists():
+                return (root_dir.parent / filename), True
+            if (root_dir / "video" / filename).exists():
+                return (root_dir / "video" / filename), True
+            if (root_dir / "music" / filename).exists():
+                return (root_dir / "music" / filename), True
             else:
                 # Reuse the previously registered filename if it's not claimed by another item
                 claimed = set()

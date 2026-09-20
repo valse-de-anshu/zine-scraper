@@ -42,6 +42,9 @@ def run_workflow(
         if is_vacuum:
             folder = target_path / title
             location_manager.create_directory(folder)
+            target_download_dir = folder / "music"
+            location_manager.create_directory(target_download_dir)
+            location_manager.create_directory(target_download_dir / "lyrics")
             try:
                 cover_url = metadata.get("Thumbnail")
                 scraper.engine.save_metadata(folder, info, metadata.get("Source", "Unknown"), cover_url=cover_url)
@@ -49,6 +52,7 @@ def run_workflow(
                 logger.error(f"Failed to save metadata/cover: {e}")
         else:
             folder = target_path
+            target_download_dir = folder
             location_manager.create_directory(folder)
         
         cover_url = metadata.get("Thumbnail")
@@ -59,7 +63,7 @@ def run_workflow(
         ext = ".flac" if is_music else ".mp4"
         
         # 2-Step Verification using decoupled verification layer
-        verified_ids = verify_videos(folder, videos, ext, scraper.url, tracker, is_music)
+        verified_ids = verify_videos(target_download_dir, videos, ext, scraper.url, tracker, is_music)
 
         # Render metadata summary using progress layer
         root_tree = render_metadata_tree(title, folder, metadata, verified_ids, cover_path)
@@ -138,7 +142,7 @@ def run_workflow(
                         scraper.engine.headers.update(extra_headers)
                         
                     success = scraper.engine.download_video(
-                        vid_url, folder, yt_dlp_hook, 
+                        vid_url, target_download_dir, yt_dlp_hook, 
                         raw_stream_url=raw_stream_url, 
                         is_audio=is_music,
                         custom_thumbnail=track_cover_path,
