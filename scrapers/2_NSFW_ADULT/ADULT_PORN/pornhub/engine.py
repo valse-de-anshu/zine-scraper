@@ -14,6 +14,7 @@ Key fixes (v2):
 
 import re
 import json
+import time
 import html as html_module
 import logging
 import subprocess
@@ -180,6 +181,8 @@ class PornHubEngine(VideoEngine):
             from core.paths import PathAuthority
             temp_root = PathAuthority().get_temp_root()
             raw_temp = temp_root / f"pornhub_avatar_{int(time.time() * 1000)}.tmp"
+            
+            # Try curl first
             cmd = ["curl", "-sSL", "--connect-timeout", "20", "--retry", "3", "-o", str(raw_temp), avatar_url]
             res = subprocess.run(cmd, capture_output=True)
             if res.returncode == 0 and raw_temp.exists() and raw_temp.stat().st_size > 500:
@@ -188,6 +191,18 @@ class PornHubEngine(VideoEngine):
                 if saved:
                     logger.info(f"PornHub cover saved to {saved}")
                     return True
+                    
+            # Fallback to requests with custom headers
+            headers = dict(self.headers)
+            r = requests.get(avatar_url, headers=headers, timeout=15)
+            if r.status_code == 200 and len(r.content) > 500:
+                raw_temp.write_bytes(r.content)
+                saved = save_verified_cover(raw_temp, dest.parent, filename=dest.stem)
+                raw_temp.unlink(missing_ok=True)
+                if saved:
+                    logger.info(f"PornHub cover saved to {saved}")
+                    return True
+
             if raw_temp.exists():
                 raw_temp.unlink(missing_ok=True)
             return False
@@ -281,12 +296,14 @@ class PornHubEngine(VideoEngine):
         meta_path.write_text(json.dumps(meta_dict, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info(f"PornHub metadata saved for {clean_model}")
 
-        # ── Download cover.png ────────────────────────────────────────
+        # ── Download cover.png / cover.jpg ───────────────────────────
         if not skip_cover and avatar_url:
-            # Save next to metadata dir (inside creator root), not inside .zine
-            cover_path = root_dir / "cover.png"
-            if not cover_path.exists():
-                self.download_avatar(avatar_url, cover_path)
+            has_cover = any(
+                (root_dir / f"cover{e}").exists()
+                for e in [".jpg", ".png", ".webp", ".jpeg"]
+            )
+            if not has_cover:
+                self.download_avatar(avatar_url, root_dir / "cover.png")
 
     # ─── Video download ──────────────────────────────────────────────────
 

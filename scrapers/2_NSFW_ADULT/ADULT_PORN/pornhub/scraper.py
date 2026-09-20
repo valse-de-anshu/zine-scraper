@@ -152,12 +152,34 @@ class PornHubScraper:
             "user_id":     None,
             "url":         model_url,
         }
+        page = ""
         try:
-            r = requests.get(model_url, headers=headers, timeout=15)
-            if r.status_code != 200:
-                logger.warning(f"PornHub model page returned {r.status_code}")
+            cmd = [
+                "curl", "-sSL", "--compressed",
+                "-A", headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+                "-e", headers.get("Referer", "https://www.pornhub.com/"),
+                "--connect-timeout", "15",
+                model_url,
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout and len(res.stdout) > 200:
+                page = res.stdout
+        except Exception as e:
+            logger.debug(f"Curl model page fetch failed: {e}")
+
+        if not page:
+            try:
+                r = requests.get(model_url, headers=headers, timeout=15)
+                if r.status_code == 200:
+                    page = r.text
+                else:
+                    logger.warning(f"PornHub model page returned {r.status_code}")
+                    return info
+            except Exception as e:
+                logger.error(f"Failed to fetch PornHub model page {model_url}: {e}")
                 return info
-            page = r.text
+
+        try:
 
             # ── Model name from <title> ────────────────────────────────
             m = re.search(r'<title>([^<]+)</title>', page)
@@ -172,24 +194,56 @@ class PornHubScraper:
             if uid_match:
                 info["user_id"] = uid_match.group(1)
 
-            # ── Avatar: first <img class="avatar..."> on the page ─────
+            # ── Avatar / Cover extraction ─────────────────────────────
             avatar_url = None
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(page, "html.parser")
 
-            # Pattern 1: <img class="avatar..." src="...">
-            m = re.search(
-                r'<img[^>]+class="[^"]*avatar[^"]*"[^>]+src="(https://[^"]+phncdn[^"]+\.(?:jpg|jpeg|png|webp|gif))"',
-                page
-            )
-            if not m:
-                # Pattern 2: src before class attribute
-                m = re.search(
-                    r'<img[^>]+src="(https://[^"]+phncdn[^"]+\.(?:jpg|jpeg|png|webp|gif))"[^>]+class="[^"]*avatar[^"]*"',
-                    page
+                # 1. Look for avatar img by specific ID or class
+                avatar_img = (
+                    soup.find("img", id="getAvatar")
+                    or soup.find("img", class_="jcrop-preview")
+                    or soup.find("img", id="thumb_user")
+                    or soup.find("img", class_="avatar")
+                    or soup.find("img", class_="large-avatar")
+                    or soup.find("img", id="coverPictureDefault")
+                    or soup.find("img", id="getCoverPicture")
                 )
+                if avatar_img:
+                    avatar_url = avatar_img.get("src") or avatar_img.get("data-src") or avatar_img.get("data-thumb_url")
 
-            if m:
-                raw_url = m.group(1)
-                avatar_url = raw_url
+                # 2. Look for img with alt matching model name
+                if not avatar_url:
+                    clean_name_lower = info["model_name"].lower()
+                    for img in soup.find_all("img"):
+                        alt = (img.get("alt") or "").strip().lower()
+                        src = img.get("src") or img.get("data-src") or ""
+                        if alt and clean_name_lower == alt and src.startswith("http"):
+                            avatar_url = src
+                            break
+            except Exception as e:
+                logger.debug(f"BeautifulSoup avatar extraction error: {e}")
+
+            if not avatar_url:
+                # Regex fallbacks
+                m = re.search(r'<img[^>]+id=["\']getAvatar["\'][^>]+src=["\']([^"\']+)["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+src=["\']([^"\']+)["\'][^>]+id=["\']getAvatar["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+class="[^"]*jcrop-preview[^"]*"[^>]+src=["\']([^"\']+)["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+id=["\'](?:coverPictureDefault|coverPicture|getCoverPicture)["\'][^>]+src=["\']([^"\']+)["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+class="[^"]*avatar[^"]*"[^>]+src="(https://[^"]+\.(?:jpg|jpeg|png|webp|gif))"', page)
+                if m:
+                    avatar_url = m.group(1)
+
+            if avatar_url:
+                info["avatar_url"] = avatar_url
+                self.cover_url = avatar_url
+                self.avatar_url = avatar_url
+                self.cover_image = avatar_url
 
             # ── Views, Subscribers, Rank from .infoBox ───────────────
             try:
@@ -229,6 +283,7 @@ class PornHubScraper:
         First tries ultra-fast direct HTML JSON-LD parsing (0.2s).
         Falls back to full yt-dlp extraction if HTML fetch fails.
         """
+        from .engine import _fmt_date
         viewkey = _extract_viewkey(vid_url)
         base = {
             "url":         vid_url,
@@ -263,7 +318,7 @@ class PornHubScraper:
                         elif 'LikeAction' in itype:
                             likes = count_num
 
-                    up_date = str(d.get('uploadDate', ''))[:10]
+                    up_date = _fmt_date(str(d.get('uploadDate', ''))[:10])
                     duration = _parse_iso_duration(d.get('duration', ''))
                     title = _decode(d.get('name', '') or vid_title)
                     thumb = d.get('thumbnailUrl', '')
@@ -294,7 +349,7 @@ class PornHubScraper:
                 "view_count":  info.get("view_count") or 0,
                 "like_count":  info.get("like_count") or 0,
                 "duration":    info.get("duration") or 0,
-                "upload_date": info.get("upload_date") or "",
+                "upload_date": _fmt_date(info.get("upload_date") or ""),
                 "thumbnail":   thumb,
                 "uploader":    _decode(info.get("uploader") or info.get("channel") or ""),
             })

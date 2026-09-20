@@ -125,17 +125,20 @@ def run_workflow(
 
     # ── Chronological numbering (oldest = 1, newest = last) ─────────────
     # yt-dlp returns PH playlists newest-first. After enrichment upload_date
-    # may be populated — sort ascending if available, else just reverse the list.
-    # Always cast to str since yt-dlp can return date as int OR str.
+    # is normalized to YYYY-MM-DD. Sort ascending by date so oldest video is #1.
     if len(videos) > 1:
-        have_dates = [v for v in videos if v.get("upload_date")]
-        if have_dates and len(have_dates) == len(videos):
+        def _get_sort_key(v):
+            d = str(v.get("upload_date") or "").strip().replace("-", "")
+            return d if len(d) == 8 and d.isdigit() else "99999999"
+
+        have_valid_dates = [v for v in videos if _get_sort_key(v) != "99999999"]
+        if len(have_valid_dates) >= len(videos) // 2 and len(have_valid_dates) > 0:
             try:
-                videos.sort(key=lambda v: str(v.get("upload_date") or ""))
+                videos.sort(key=_get_sort_key)
             except Exception:
-                videos.reverse()  # fallback: PH is newest-first → reverse = oldest first
+                videos.reverse()
         else:
-            # No/partial dates — PH is newest-first, so reverse → oldest first
+            # Fallback: PH feed is natively newest-first → reverse = oldest first
             videos.reverse()
 
     should_prefix_number = is_vacuum and (len(videos) > 1)

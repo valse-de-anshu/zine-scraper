@@ -35,10 +35,15 @@ def render_metadata_tree(
     if is_vacuum:
         has_cover = False
         if creator_root.exists():
-            for ext in ["cover.jpg", "cover.png", "cover.webp"]:
-                for p in creator_root.rglob(ext):
+            for ext in ["cover.jpg", "cover.png", "cover.webp", "cover.jpeg"]:
+                if (creator_root / ext).exists():
                     has_cover = True
                     break
+            if not has_cover:
+                for p in creator_root.glob("cover.*"):
+                    if p.is_file() and p.suffix.lower() in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+                        has_cover = True
+                        break
         cover_status = "[success]●[/success]" if has_cover else "[unselected]○[/unselected]"
         root_tree.add(align_header("Cover", cover_status))
 
