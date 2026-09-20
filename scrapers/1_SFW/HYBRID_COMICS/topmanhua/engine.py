@@ -270,7 +270,8 @@ class BaseScraper:
         stats_callback=None
     ) -> dict:
         self.consecutive_failures = 0
-        temp_dir = folder / f"_temp_{ch_num}"
+        safe_num = re.sub(r"[^\w.-]", "_", str(ch_num))
+        temp_dir = PathAuthority().get_temp_root() / f"topmanhua_ch_{safe_num}_{int(time.time() * 1000)}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
 

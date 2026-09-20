@@ -266,7 +266,9 @@ def download_chapter(
                 "missing": 0, "success": True}
 
     # ── 3. Create temp directory for raw downloaded images ───────────────────
-    temp_dir = folder / f"_tmp_{ch_num}"
+    from core.paths import PathAuthority
+    safe_num = re.sub(r"[^\w.-]", "_", str(ch_num))
+    temp_dir = PathAuthority().get_temp_root() / f"omega_ch_{safe_num}_{int(time.time() * 1000)}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     downloaded: List[Path] = []

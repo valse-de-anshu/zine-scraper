@@ -135,7 +135,10 @@ class AsmHentaiScraper(BaseScraper):
     def _download_with_retry(self, gallery_id, dir_id, num_pages, folder, ch_num, ch_url,
                               live=None, stats_callback=None) -> dict:
         """Downloads each page trying .jpg → .png → .webp extensions."""
-        temp_dir = folder / f"_temp_{ch_num}"
+        from core.paths import PathAuthority
+        import time
+        safe_num = re.sub(r"[^\w.-]", "_", str(ch_num))
+        temp_dir = PathAuthority().get_temp_root() / f"asm_ch_{safe_num}_{int(time.time() * 1000)}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
         base = f"https://images.asmhentai.com/{dir_id}/{gallery_id}"

@@ -165,7 +165,8 @@ class BaseScraper:
 
     def process_chapter_multi(self, img_urls: List[str], folder: Path, ch_num: str, ch_url: str, live=None, stats_callback=None) -> dict:
         self.consecutive_failures = 0
-        temp_dir = folder / f"_temp_{ch_num}"
+        safe_num = re.sub(r"[^\w.-]", "_", str(ch_num))
+        temp_dir = PathAuthority().get_temp_root() / f"h20_ch_{safe_num}_{int(time.time() * 1000)}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
         

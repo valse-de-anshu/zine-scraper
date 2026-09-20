@@ -171,7 +171,10 @@ class NHentaiScraper(BaseScraper):
 
     def _download_with_retry(self, media_id, num_pages, folder, ch_num, ch_url, live=None, stats_callback=None) -> dict:
         """Special downloader that tries multiple extensions if the exact one is unknown."""
-        temp_dir = folder / f"_temp_{ch_num}"
+        from core.paths import PathAuthority
+        import time
+        safe_num = re.sub(r"[^\w.-]", "_", str(ch_num))
+        temp_dir = PathAuthority().get_temp_root() / f"nh_ch_{safe_num}_{int(time.time() * 1000)}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
         valid_pages = num_pages
