@@ -288,8 +288,10 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
                 call_kwargs["custom_metadata"] = meta_dict
             if "skip_cover" in params:
                 call_kwargs["skip_cover"] = False
-            if "cover_url" in params:
-                call_kwargs["cover_url"] = cover_url
+            if "videos" in params:
+                call_kwargs["videos"] = videos if "videos" in locals() and videos else None
+            if "avatar_url" in params:
+                call_kwargs["avatar_url"] = cover_url
             scraper.engine.save_metadata(target_folder, **call_kwargs)
             saved = True
         except Exception as e:

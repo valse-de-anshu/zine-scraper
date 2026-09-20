@@ -230,63 +230,55 @@ class PornHubEngine(VideoEngine):
                 return 0.0
 
         def _entry(v: Dict[str, Any]) -> Dict[str, Any]:
+            v_cnt = int(_safe_num(v.get("view_count") or v.get("views")))
+            l_cnt = int(_safe_num(v.get("like_count") or v.get("likes") or v.get("like")))
+            r_val = _safe_num(v.get("rating") or v.get("rated")) or l_cnt
             return {
-                "id":          str(v.get("id") or ""),
-                "title":       _decode(str(v.get("title") or "")),
-                "upload_date": str(_fmt_date(v.get("upload_date") or "")),
-                "view_count":  _safe_num(v.get("view_count")),
-                "like_count":  _safe_num(v.get("like_count")),
-                "duration":    _safe_num(v.get("duration")),
-                "url":         str(v.get("url") or ""),
+                "id":    str(v.get("id") or ""),
+                "title": _decode(str(v.get("title") or "")),
+                "views": v_cnt,
+                "like":  l_cnt,
+                "likes": l_cnt,
+                "rated": int(r_val) if isinstance(r_val, (int, float)) and float(r_val).is_integer() else r_val,
+                "url":   str(v.get("url") or ""),
             }
 
         all_entries = [_entry(v) for v in video_list]
 
-        # most_viewed — descending view_count (only entries that have counts)
+        # most_viewed — descending view_count
         most_viewed = sorted(
-            [e for e in all_entries if e["view_count"] > 0],
-            key=lambda e: e["view_count"], reverse=True
+            [e for e in all_entries if e["views"] > 0],
+            key=lambda e: e["views"], reverse=True
         )[:10] or all_entries[:10]
 
-        # top_rated — descending like_count
+        # top_rated — descending like_count / rated
         top_rated = sorted(
-            [e for e in all_entries if e["like_count"] > 0],
-            key=lambda e: e["like_count"], reverse=True
-        )[:10] or all_entries[:10]
-
-        # latest — descending upload_date (ISO string, lexicographic sort works)
-        latest = sorted(
-            [e for e in all_entries if e["upload_date"]],
-            key=lambda e: e["upload_date"], reverse=True
-        )[:10]
-
-        # longest — descending duration in seconds
-        longest = sorted(
-            [e for e in all_entries if e["duration"] > 0],
-            key=lambda e: e["duration"], reverse=True
+            [e for e in all_entries if e["like"] > 0 or e["rated"] > 0],
+            key=lambda e: (e["like"], e["rated"]), reverse=True
         )[:10] or all_entries[:10]
 
         # ── Calculate views and likes ──────────────────────────────────
-        total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
-        total_l = sum(int(e["like_count"]) for e in all_entries if e.get("like_count"))
+        total_v = sum(int(e["views"]) for e in all_entries if e.get("views"))
+        total_l = sum(int(e["like"]) for e in all_entries if e.get("like"))
         views_str = f"{total_v:,}" if total_v > 0 else ""
         likes_str = f"{total_l:,}" if total_l > 0 else ""
 
-        # ── Save unified metadata via MetadataEngine ──────────────────
-        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
         clean_model = _decode(model_name)
-        payload = ZineMetadataPayload(
-            title=clean_model,
-            type="Channel",
-            author=clean_model,
-            url=info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
-            views=views_str,
-            likes=likes_str,
-            hottest=most_viewed,
-            most_rated=top_rated,
-        )
-        MetadataEngine.save_metadata(root_dir, payload)
-        logger.info(f"PornHub metadata saved via MetadataEngine for {clean_model}")
+        meta_dict = {
+            "title": clean_model,
+            "type": "Channel",
+            "box_purpose": "channel",
+            "author": clean_model,
+            "url": info.get("webpage_url") or info.get("original_url") or info.get("url") or "",
+            "views": views_str,
+            "like": likes_str,
+            "likes": likes_str,
+            "rated": likes_str,
+            "most_viewed": most_viewed,
+            "top_rated": top_rated,
+        }
+        meta_path.write_text(json.dumps(meta_dict, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.info(f"PornHub metadata saved for {clean_model}")
 
         # ── Download cover.png ────────────────────────────────────────
         if not skip_cover and avatar_url:

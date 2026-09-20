@@ -519,47 +519,52 @@ class YoutubeEngine(VideoEngine):
         for e in entries:
             if not isinstance(e, dict):
                 continue
+            v_cnt = int(e.get("view_count") or 0)
+            l_cnt = int(e.get("like_count") or 0)
             formatted_entries.append({
                 "id": str(e.get("id") or ""),
                 "title": str(e.get("title") or ""),
-                "views": int(e.get("view_count") or 0),
-                "likes": int(e.get("like_count") or 0),
-                "duration": int(e.get("duration") or 0),
+                "views": v_cnt,
+                "like": l_cnt,
+                "likes": l_cnt,
+                "rated": l_cnt,
                 "url": str(e.get("webpage_url") or e.get("url") or "")
             })
 
-        hottest = sorted(
+        most_viewed = sorted(
             [e for e in formatted_entries if e["views"] > 0],
             key=lambda x: x["views"], reverse=True
         )[:10] or formatted_entries[:10]
 
-        most_rated = sorted(
-            [e for e in formatted_entries if e["likes"] > 0],
-            key=lambda x: x["likes"], reverse=True
+        top_rated = sorted(
+            [e for e in formatted_entries if e["like"] > 0],
+            key=lambda x: x["like"], reverse=True
         )[:10] or formatted_entries[:10]
 
         total_v = info.get('view_count') or sum(e["views"] for e in formatted_entries)
-        total_l = info.get('channel_follower_count') or info.get('like_count') or sum(e["likes"] for e in formatted_entries)
+        total_l = info.get('channel_follower_count') or info.get('like_count') or sum(e["like"] for e in formatted_entries)
         views_str = f"{int(total_v):,}" if total_v else ""
         likes_str = f"{int(total_l):,}" if total_l else ""
 
         channel_title = info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
         channel_id = info.get('uploader_id') or info.get('channel_id') or ""
 
-        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
-        payload = ZineMetadataPayload(
-            title=channel_title,
-            type="Channel",
-            alt_title=channel_id,
-            author=channel_title,
-            description=info.get('description', ''),
-            url=info.get('webpage_url') or info.get('original_url') or "",
-            views=views_str,
-            likes=likes_str,
-            hottest=hottest,
-            most_rated=most_rated,
-        )
-        MetadataEngine.save_metadata(root_dir, payload)
+        meta_dict = {
+            "title": channel_title,
+            "type": "Channel",
+            "box_purpose": "channel",
+            "alt_title": channel_id,
+            "author": channel_title,
+            "description": info.get('description', '') or "",
+            "url": info.get('webpage_url') or info.get('original_url') or "",
+            "views": views_str,
+            "like": likes_str,
+            "likes": likes_str,
+            "rated": likes_str,
+            "most_viewed": most_viewed,
+            "top_rated": top_rated,
+        }
+        meta_path.write_text(json.dumps(meta_dict, indent=2, ensure_ascii=False), encoding="utf-8")
 
         if skip_cover:
             return
