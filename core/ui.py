@@ -126,9 +126,67 @@ class CustomConsole(Console):
 custom_theme = Theme(THEMES["tokyo-night-storm"])
 console = CustomConsole(theme=custom_theme, color_system="truecolor" if supports_color() else None)
 
+_CURRENT_THEME_NAME: str = "tokyo-night-storm"
+
 def apply_theme(theme_name: str):
+    global _CURRENT_THEME_NAME
+    _CURRENT_THEME_NAME = theme_name
     import theme
     theme.apply_theme(console, theme_name)
+
+def get_exit_art_colors(forceful: bool = False) -> Tuple[Tuple[int, int, int], Tuple[int, int, int], str]:
+    """
+    Dynamically resolves start color, end color, and text style from the active theme
+    for rendering exit art (exit.txt and forcefully_stop.txt).
+    
+    Returns:
+        (start_color_rgb, end_color_rgb, text_style_str)
+    """
+    entry = None
+    try:
+        entry = console._theme_stack._entries[-1]
+    except Exception:
+        pass
+
+    theme_dict = THEMES.get(_CURRENT_THEME_NAME, THEMES["tokyo-night-storm"])
+
+    def _get_rgb(key: str, fallback_key: Optional[str] = None, default_rgb: Tuple[int, int, int] = (187, 154, 247)) -> Tuple[int, int, int]:
+        for k in (key, fallback_key):
+            if not k:
+                continue
+            try:
+                if entry and k in entry:
+                    st = entry[k]
+                    if st and hasattr(st, "color") and st.color:
+                        return st.color.get_truecolor()
+                if theme_dict and k in theme_dict:
+                    st = Style.parse(theme_dict[k]) if isinstance(theme_dict[k], str) else theme_dict[k]
+                    if st and st.color:
+                        return st.color.get_truecolor()
+            except Exception:
+                pass
+        return default_rgb
+
+    if forceful:
+        # Forceful exit (forcefully_stop.txt): warning/sexy_pink -> error
+        end_color = _get_rgb("error", default_rgb=(219, 75, 75))
+        start_color = _get_rgb("sexy_pink", fallback_key="warning", default_rgb=(187, 154, 247))
+        if start_color == end_color:
+            start_color = _get_rgb("warning", fallback_key="selected", default_rgb=(224, 175, 104))
+            if start_color == end_color:
+                start_color = _get_rgb("menu", default_rgb=(122, 162, 247))
+        text_style = f"bold #{end_color[0]:02x}{end_color[1]:02x}{end_color[2]:02x}"
+        return start_color, end_color, text_style
+    else:
+        # Normal exit (exit.txt): menu/info -> sexy_pink/selected
+        start_color = _get_rgb("menu", fallback_key="info", default_rgb=(122, 162, 247))
+        end_color = _get_rgb("sexy_pink", fallback_key="selected", default_rgb=(187, 154, 247))
+        if start_color == end_color:
+            end_color = _get_rgb("selected", fallback_key="title", default_rgb=(187, 154, 247))
+            if start_color == end_color:
+                end_color = _get_rgb("title", default_rgb=(200, 200, 200))
+        text_style = f"bold #{end_color[0]:02x}{end_color[1]:02x}{end_color[2]:02x}"
+        return start_color, end_color, text_style
 
 def make_gradient_text(text: str, start_color: Tuple[int, int, int], end_color: Tuple[int, int, int], total_length: Optional[int] = None) -> Text:
     rich_text = Text()
@@ -907,22 +965,16 @@ def clean_exit(forceful: bool = False):
         clean_lines.append(art_part)
         text_parts.append(text_part)
 
+    start_color, end_color, text_style = get_exit_art_colors(forceful=forceful)
+
     for i, art_line in enumerate(clean_lines):
         text_line = text_parts[i]
-        if forceful:
-             # Magenta to Deep Red gradient
-             # Consistent max_len ensures vertical alignment of colors
-             gradient_art = make_gradient_text(art_line, (187, 154, 247), (219, 75, 75), total_length=max_len)
-             if text_line:
-                 # Keep text in the "Hot" end color
-                 full_line = gradient_art.append(text_line, style="bold #db4b4b")
-                 console.print(gradient_art)
-             else:
-                 console.print(gradient_art)
-        else:
-             # Blue to Magenta gradient
-             gradient_art = make_gradient_text(art_line, (122, 162, 247), (187, 154, 247), total_length=max_len)
-             console.print(gradient_art)
+        # Dynamically resolved theme gradient; consistent max_len ensures vertical alignment
+        gradient_art = make_gradient_text(art_line, start_color, end_color, total_length=max_len)
+        if text_line:
+            # Highlight text line with active theme's accent/error style
+            gradient_art.append(text_line, style=text_style)
+        console.print(gradient_art)
     console.print("")
     sys.stdout.write("\033[?25h\033[0m\n")
     sys.stdout.flush()
