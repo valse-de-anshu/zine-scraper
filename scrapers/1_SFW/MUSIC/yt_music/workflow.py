@@ -73,7 +73,8 @@ def run_workflow(
             console.print("")
             console.print(panel)
             if sys.stdin.isatty():
-                console.input("\n[info]Press Enter to return...[/info]")
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return...")
         else:
             console.print(f"[error]Skipping {url}: {metadata_error}[/error]")
             time.sleep(1.5)
@@ -424,4 +425,5 @@ def run_workflow(
 
     console.print("")
     if not is_batch and sys.stdin.isatty():
-        console.input("[info]Press Enter to return...[/info]")
+        from core.ui import wait_for_return
+        wait_for_return("Press Enter to return...")

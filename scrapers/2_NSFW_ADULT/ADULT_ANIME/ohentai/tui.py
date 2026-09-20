@@ -193,7 +193,8 @@ def handle_ohentai_tui(
 
     if not is_batch_mode:
         if __import__("sys").stdin.isatty():
-            console.input("\n[info]Download finished. Press Enter to return...[/info]")
+            from core.ui import wait_for_return
+            wait_for_return("Download finished. Press Enter to return...")
 
 def handle_tui(
     url: str,

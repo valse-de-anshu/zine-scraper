@@ -51,7 +51,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             )
             console.print("")
             console.print(panel)
-            console.input("\n[info]Press Enter to return to the URL field...[/info]") if __import__("sys").stdin.isatty() else None
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return to the URL field...")
         else:
             console.print(f"[error]Skipping: {metadata_error}[/error]")
             time.sleep(1.5)
@@ -269,4 +270,5 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         console.print(f"\n[error]✘[/error] Failed: No items saved\n")
         
     if not is_batch:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+        from core.ui import wait_for_return
+        wait_for_return("Download finished. Press Enter to return...")

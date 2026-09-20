@@ -30,7 +30,8 @@ def handle_tui(url, tracker, location_manager, scraper, batch_path=None, is_batc
             )
             console.print("")
             console.print(panel)
-            console.input("\n[info]Press Enter to return to the URL field...[/info]") if __import__("sys").stdin.isatty() else None
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return to the URL field...")
         else:
             console.print("[error]Skipping SoundCloud playlist in batch mode (Unsupported).[/error]")
             time.sleep(1.5)

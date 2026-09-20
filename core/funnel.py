@@ -197,7 +197,8 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
         if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
             core.ui.trigger_revolt_exit()
 
-    console.input("\n[info]Batch finished. Press Enter to return to menu...[/info]")
+    from core.ui import wait_for_return
+    wait_for_return("Press Enter to return...")
 
 def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, batch_all: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
     import core.ui
@@ -225,17 +226,12 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
     if not scraper:
         logging.error(f"Unsupported URL: {url}")
         from core.logger import record_error_log
-        from core.ui import print_failure_box
+        from core.ui import print_failure_box, wait_for_return
         record_error_log("Unsupported URL or command", context={"url": url})
         print_failure_box(safe_url, reason="Domain or URL format is not supported by any active scraper in Zine.")
         if not is_batch:
             if sys.stdin.isatty() and not getattr(scraper, "_is_cli", False):
-                try:
-                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                    sys.stdout.flush()
-                    input()
-                except (EOFError, KeyboardInterrupt):
-                    pass
+                wait_for_return("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -245,12 +241,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         console.print(f"[warning]Unsupported site folder for URL: {safe_url}[/warning]")
         if not is_batch:
             if sys.stdin.isatty():
-                try:
-                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                    sys.stdout.flush()
-                    input()
-                except (EOFError, KeyboardInterrupt):
-                    pass
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -262,12 +254,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         console.print(f"[error]Site handler error for {site_folder}[/error]")
         if not is_batch:
             if sys.stdin.isatty():
-                try:
-                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                    sys.stdout.flush()
-                    input()
-                except (EOFError, KeyboardInterrupt):
-                    pass
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -485,17 +473,13 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         except Exception:
             pass
         if not is_batch and sys.stdin.isatty():
-            try:
-                sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                sys.stdout.flush()
-                input()
-            except (EOFError, KeyboardInterrupt):
-                pass
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
         return True
     except Exception as e:
         logging.error(f"Failed to load/execute TUI for {site_folder}: {e}", exc_info=True)
         from core.logger import record_error_log
-        from core.ui import print_failure_box
+        from core.ui import print_failure_box, wait_for_return
         record_error_log(e, context={"url": url, "site_folder": site_folder, "batch_path": str(batch_path) if batch_path else None})
         try:
             journal.finish_download(url=url, status="failed", error=str(e))
@@ -510,8 +494,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             
         console.print(f"[error]Failed to load TUI for {escape(str(site_folder))}: {escape(str(e))}[/error]")
         if not is_batch:
-            console.print("\n[info]Press any key to return...[/info]", end="")
-            get_key_with_esc()
+            wait_for_return("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -1080,8 +1063,8 @@ def main():
                 from core.cli_help import run_cli_doctor
                 startup_clear()
                 run_cli_doctor()
-                console.print("[dim]Press Enter to return to main menu...[/dim]")
-                input()
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return to main menu...")
             elif url_lower in ["clean", "/clean", "--clean"]:
                 from core.cli_help import run_cli_clean
                 run_cli_clean()
@@ -1090,8 +1073,8 @@ def main():
                 from core.cli_help import print_cli_version
                 startup_clear()
                 print_cli_version()
-                console.print("\n[dim]Press Enter to return to main menu...[/dim]")
-                input()
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return to main menu...")
             elif url_lower in ["slice", "/slice", "slicer"]:
                 from core.image_slicer import run_image_slicer_tui
                 run_image_slicer_tui()

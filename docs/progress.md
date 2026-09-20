@@ -1,3 +1,24 @@
+# Progress Report - September 20, 2026 (Bugfix: Universal Single-Keypress Return & Instant Confirmation Across All TUIs)
+
+- **Universal Single-Keypress Return (`core/ui.py:wait_for_return`, `core/funnel.py`, all `workflow.py` / `tui.py` files):**
+  - **Identified Problem**:
+    - Users were required to press `Enter` 2–3 times at the end of downloads or when returning from TUIs.
+    - **Root Causes**:
+      1. Canonical mode stdin buffer desynchronization after Rich `Live` visualizer runs and terminal mode restores (`console.input()` waiting for `\n` while terminal sends `\r` or retains buffered characters).
+      2. Duplicate `input()` prompts in some scrapers (e.g. `console.input()` followed by a secondary `input()`).
+      3. Double return prompts when returning from scrapers back into `funnel.py`.
+  - **Resolution**:
+    - **Implemented `core.ui.wait_for_return()`**:
+      - Uses cbreak TTY mode with non-blocking `select()` reading.
+      - Discards/flushes any lingering unread input characters (`termios.tcflush(fd, termios.TCIFLUSH)` on POSIX / `msvcrt.kbhit()` buffer drain on Windows).
+      - Returns instantly on the **very first keystroke** (`Enter`, `Space`, `Esc`, `q`, etc.) without requiring multiple presses.
+      - Safe in non-interactive/batch modes (`if not sys.stdin.isatty(): return`).
+    - **Global Migration Across All 48 Scrapers and Infrastructure**:
+      - Replaced all legacy `console.input(...Press Enter to return...)` and raw `input()` return prompts with `wait_for_return(...)` across all scrapers, `funnel.py`, `bake_engine.py`, `lyrics_engine.py`, `image_slicer.py`, and `setup.py`.
+      - Eliminated all duplicate `input()` calls in adult anime and media TUIs.
+
+---
+
 # Progress Report - September 20, 2026 (Feature: Zero-Friction Toon/Comic Automation & Centralized Settings Configurator)
 
 - **Zero-Friction Ingestion across 22 Comic, Manga, Manhwa, Novel, Doujinshi & Webtoon Scrapers (`core/ui.py`, 22 `location.py` files):**

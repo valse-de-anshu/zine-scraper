@@ -63,7 +63,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
-                console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return...")
             else:
                 time.sleep(1.5)
             return
@@ -175,7 +176,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
     if not to_process:
         console.print("\n[success]All chapters are already downloaded and verified.[/success]")
         if not is_batch:
-            console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
         else:
             time.sleep(1.0)
         return
@@ -205,6 +207,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
     console.print(f"\n[success]Download complete: {title}[/success]")
     if not is_batch:
-        console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+        from core.ui import wait_for_return
+        wait_for_return("Press Enter to return...")
     else:
         time.sleep(1.5)

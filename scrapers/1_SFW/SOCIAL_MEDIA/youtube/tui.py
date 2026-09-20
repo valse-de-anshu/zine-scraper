@@ -439,12 +439,8 @@ def handle_youtube_tui(
     )
     
     if not is_batch_mode:
-        console.input("\n[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
-        pass
-        try:
-            input()
-        except EOFError:
-            pass
+        from core.ui import wait_for_return
+        wait_for_return("Download finished. Press Enter to return...")
 
 def handle_tui(url, tracker, location_manager, scraper, batch_path=None, is_batch=False):
     """Unified handshake wrapper for YouTube TUI."""

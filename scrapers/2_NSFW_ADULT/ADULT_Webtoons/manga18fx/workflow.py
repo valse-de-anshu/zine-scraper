@@ -50,7 +50,8 @@ def run_workflow(
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
                 if __import__("sys").stdin.isatty():
-                    console.input("\n[info]Press Enter to return...[/info]")
+                    from core.ui import wait_for_return
+                    wait_for_return("Press Enter to return...")
             else:
                 time.sleep(1.5)
             return
@@ -159,7 +160,8 @@ def run_workflow(
         console.print("[success]All chapters are already downloaded.[/success]")
         if not is_batch:
             if __import__("sys").stdin.isatty():
-                console.input("\n[info]Download finished. Press Enter to return...[/info]")
+                from core.ui import wait_for_return
+                wait_for_return("Download finished. Press Enter to return...")
         return
 
     console.print(" ")
@@ -284,4 +286,5 @@ def run_workflow(
 
     if not is_batch:
         if __import__("sys").stdin.isatty():
-            console.input("\n[info]Download finished. Press Enter to return...[/info]")
+            from core.ui import wait_for_return
+            wait_for_return("Download finished. Press Enter to return...")

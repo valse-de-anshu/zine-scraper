@@ -192,7 +192,8 @@ def handle_hanime_red_tui(
 
     if not is_batch_mode and sys.stdin.isatty():
         try:
-            console.input("\n[info]Download finished. Press Enter to return...[/info]")
+            from core.ui import wait_for_return
+            wait_for_return("Download finished. Press Enter to return...")
         except (EOFError, KeyboardInterrupt):
             pass
 

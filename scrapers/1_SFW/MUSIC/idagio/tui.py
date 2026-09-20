@@ -32,7 +32,8 @@ def handle_tui(url, tracker, location_manager, scraper, batch_path=None, is_batc
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
-                console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+                from core.ui import wait_for_return
+                wait_for_return("Press Enter to return...")
             else:
                 time.sleep(1.5)
             return
@@ -57,4 +58,5 @@ def handle_tui(url, tracker, location_manager, scraper, batch_path=None, is_batc
     # Run the workflow
     run_workflow(url, tracker, location_manager, scraper, target_path, metadata, videos, info)
     if not is_batch:
-        console.input("\n[info]Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+        from core.ui import wait_for_return
+        wait_for_return("Press Enter to return...")

@@ -280,7 +280,8 @@ def run_image_slicer_tui():
 
         console.print(f"\n[success]● Complete! Sliced: {sliced} strips | Untouched: {untouched} pages[/success]\n")
         
-        console.input("[info]Press Enter to continue...[/info]")
+        from core.ui import wait_for_return
+        wait_for_return("Press Enter to return...")
         
         startup_clear()
         print_banner()

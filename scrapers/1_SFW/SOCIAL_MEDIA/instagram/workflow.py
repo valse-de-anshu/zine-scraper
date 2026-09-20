@@ -361,4 +361,5 @@ def run_workflow(
         console.print(log_msg)
     if global_logs:
         console.print()
-    console.input("[info]Download finished. Press Enter to return...[/info]") if __import__("sys").stdin.isatty() else None
+    from core.ui import wait_for_return
+    wait_for_return("Download finished. Press Enter to return...")

@@ -196,4 +196,5 @@ def run_workflow(
 
     # Enter key confirmation prompt guard (Interactive TTY only; bypassed in batch mode)
     if not getattr(scraper, "is_batch", False) and sys.stdin.isatty():
-        console.input("\n[info]Download finished. Press Enter to return...[/info]")
+        from core.ui import wait_for_return
+        wait_for_return("Download finished. Press Enter to return...")
