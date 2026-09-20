@@ -130,51 +130,145 @@ class SettingsSelector(Selector):
             return "ESC"
 
         console.show_cursor(False)
-        try:
+        if os.name != "nt" and sys.stdin.isatty():
+            import tty, termios
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                termios.tcflush(fd, termios.TCIFLUSH)
+                tty.setcbreak(fd)
+                with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
+                    set_active_live(live)
+                    live.update(self._render(), refresh=True)
+                    while True:
+                        chunk = _read_tty_chunk(fd, timeout=0.05)
+                        if not chunk:
+                            continue
+
+                        action = _parse_selector_chunk(chunk)
+                        if action == "ESC":
+                            return "ESC"
+
+                        elif action == "UP":
+                            new_i = self.index
+                            for _ in range(len(self.flat_items)):
+                                new_i = (new_i - 1) % len(self.flat_items)
+                                if not self.flat_items[new_i][3]:
+                                    self.index = new_i
+                                    break
+                            live.update(self._render(), refresh=True)
+
+                        elif action == "DOWN":
+                            new_i = self.index
+                            for _ in range(len(self.flat_items)):
+                                new_i = (new_i + 1) % len(self.flat_items)
+                                if not self.flat_items[new_i][3]:
+                                    self.index = new_i
+                                    break
+                            live.update(self._render(), refresh=True)
+
+                        elif action == "ENTER":
+                            return self.flat_items[self.index][2]
+
+                        elif action == "HOME":
+                            for idx, item in enumerate(self.flat_items):
+                                if not item[3]:
+                                    self.index = idx
+                                    break
+                            live.update(self._render(), refresh=True)
+
+                        elif action == "END":
+                            for idx in range(len(self.flat_items) - 1, -1, -1):
+                                if not self.flat_items[idx][3]:
+                                    self.index = idx
+                                    break
+                            live.update(self._render(), refresh=True)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                set_active_live(None)
+                console.show_cursor(True)
+        else:
+            import msvcrt, time
             with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
                 set_active_live(live)
                 live.update(self._render(), refresh=True)
                 while True:
-                    key = self._get_key()
-                    if key in ("ESC", "q", "\x03"):
+                    if not msvcrt.kbhit():
+                        time.sleep(0.03)
+                        continue
+                    ch = msvcrt.getch()
+                    if ch in (b"\x1b", b"\x03", b"q", b"Q"):
                         return "ESC"
-
-                    elif key in ("[A", "k"):  # Up
-                        new_i = self.index
-                        for _ in range(len(self.flat_items)):
-                            new_i = (new_i - 1) % len(self.flat_items)
-                            if not self.flat_items[new_i][3]:
-                                self.index = new_i
-                                break
-                        live.update(self._render(), refresh=True)
-
-                    elif key in ("[B", "j"):  # Down
-                        new_i = self.index
-                        for _ in range(len(self.flat_items)):
-                            new_i = (new_i + 1) % len(self.flat_items)
-                            if not self.flat_items[new_i][3]:
-                                self.index = new_i
-                                break
-                        live.update(self._render(), refresh=True)
-
-                    elif key in ("\r", "\n", " "):
+                    elif ch in (b"\r", b"\n", b" "):
                         return self.flat_items[self.index][2]
+                    elif ch in (b"\x00", b"\xe0"):
+                        if msvcrt.kbhit():
+                            ch2 = msvcrt.getch()
+                            if ch2 in (b"H", b"K"):  # Up / Left
+                                new_i = self.index
+                                for _ in range(len(self.flat_items)):
+                                    new_i = (new_i - 1) % len(self.flat_items)
+                                    if not self.flat_items[new_i][3]:
+                                        self.index = new_i
+                                        break
+                                live.update(self._render(), refresh=True)
+                            elif ch2 in (b"P", b"M"):  # Down / Right
+                                new_i = self.index
+                                for _ in range(len(self.flat_items)):
+                                    new_i = (new_i + 1) % len(self.flat_items)
+                                    if not self.flat_items[new_i][3]:
+                                        self.index = new_i
+                                        break
+                                live.update(self._render(), refresh=True)
+                            elif ch2 == b"G":  # Home
+                                for idx, item in enumerate(self.flat_items):
+                                    if not item[3]:
+                                        self.index = idx
+                                        break
+                                live.update(self._render(), refresh=True)
+                            elif ch2 == b"O":  # End
+                                for idx in range(len(self.flat_items) - 1, -1, -1):
+                                    if not self.flat_items[idx][3]:
+                                        self.index = idx
+                                        break
+                                live.update(self._render(), refresh=True)
 
-                    elif key in ("[H", "\x01"):  # Home
-                        for idx, item in enumerate(self.flat_items):
-                            if not item[3]:
-                                self.index = idx
-                                break
-                        live.update(self._render(), refresh=True)
 
-                    elif key in ("[F", "\x05"):  # End
-                        for idx in range(len(self.flat_items) - 1, -1, -1):
-                            if not self.flat_items[idx][3]:
-                                self.index = idx
-                                break
-                        live.update(self._render(), refresh=True)
-        finally:
-            set_active_live(None)
+def _parse_selector_chunk(chunk_bytes: bytes) -> str:
+    if not chunk_bytes:
+        return "NONE"
+
+    if b"\x03" in chunk_bytes or chunk_bytes in (b"\x1b", b"q", b"Q"):
+        return "ESC"
+
+    if chunk_bytes in (b"\r", b"\n", b" "):
+        return "ENTER"
+
+    raw_str = chunk_bytes.decode("utf-8", errors="ignore")
+
+    up_patterns = ["\x1b[A", "\x1bOA", "[A", "OA", "k", "K", "\x1b[D", "\x1bOD"]
+    if any(raw_str == p or raw_str.startswith(p) for p in up_patterns):
+        return "UP"
+
+    down_patterns = ["\x1b[B", "\x1bOB", "[B", "OB", "j", "J", "\x1b[C", "\x1bOC"]
+    if any(raw_str == p or raw_str.startswith(p) for p in down_patterns):
+        return "DOWN"
+
+    home_patterns = ["\x1b[H", "\x1bOH", "[H", "OH", "\x1b[1~", "[1~", "\x01"]
+    if any(raw_str == p or raw_str.startswith(p) for p in home_patterns):
+        return "HOME"
+
+    end_patterns = ["\x1b[F", "\x1bOF", "[F", "OF", "\x1b[4~", "[4~", "\x05"]
+    if any(raw_str == p or raw_str.startswith(p) for p in end_patterns):
+        return "END"
+
+    if "\r" in raw_str or "\n" in raw_str:
+        return "ENTER"
+
+    if raw_str.startswith("\x1b") and len(raw_str) == 1:
+        return "ESC"
+
+    return "NONE"
 
 
 def _read_tty_chunk(fd: int, timeout: float = 0.05) -> bytes:
