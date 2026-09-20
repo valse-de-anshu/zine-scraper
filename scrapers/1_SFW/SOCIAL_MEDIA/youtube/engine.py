@@ -524,7 +524,6 @@ class YoutubeEngine(VideoEngine):
                 "title": str(e.get("title") or ""),
                 "views": int(e.get("view_count") or 0),
                 "likes": int(e.get("like_count") or 0),
-                "duration": int(e.get("duration") or 0),
                 "url": str(e.get("webpage_url") or e.get("url") or "")
             })
 
