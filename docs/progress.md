@@ -1,16 +1,19 @@
-# Progress Report - September 20, 2026 (Fix: Quick Grab Single-Chapter Isolation & Root Truncation Bug Across 22 Scrapers)
+# Progress Report - September 20, 2026 (Architecture Alignment: Quick Grab Flat Access & Single-Chapter Isolation Across 22 Scrapers)
 
-- **Quick Grab Chapter Isolation & Folder Path Resolution (`core/ui.py`, 22 `workflow.py` files):**
-  - **Identified Problem**:
-    - Across 22 Manga, Manhwa, Hybrid Comics, Doujinshi, Webtoons, and Novel workflows, `if "Quick grab" in target_path.parts: folder = Path(*target_path.parts[:idx+1])` was corrupting the download directory, truncating it to `~/Downloads/Zine/Quick grab` and completely wiping out `<Site>` and `<Title>`.
-    - `apply_chapter_limit` only checked `_batch_quick_grab`, causing interactive Quick Grab or single-chapter links (e.g. `https://projectsuki.com/read/...`) to queue all 89+ chapters and download the whole series instead of the single target chapter.
+- **Quick Grab vs. Vacuum Architecture Alignment (`core/ui.py`, 22 `workflow.py` files):**
+  - **Identified Architecture & Requirements**:
+    - **Quick Grab Design**: Quick Grab is designed for instant, single-item access. Downloaded chapters/files are placed directly inside `~/Downloads/Zine/Quick grab/` without nested `<Site>/<Title>` subdirectories. Metadata persistence and cover downloads are skipped for clean root operation.
+    - **Vacuum Design**: Vacuum mode archives entire series/franchises into organized taxonomy paths (`~/Downloads/Zine/Vacuum/<Site>/<Title>/`), complete with `.zine/metadata.json` and cover art.
+    - **Single Chapter vs Full Series**: Single-chapter URLs and Quick Grab mode download ONLY the requested chapter (`to_process[:1]`), preventing accidental 89+ chapter downloads when a specific chapter link is provided.
   - **Resolution**:
-    - **Centralized `apply_chapter_limit` Enhancement (`core/ui.py`)**:
-      - Added automatic chapter-URL pattern matching and chapter number extraction for specific chapter endpoints (`/read/`, `/c/`, `/ch-`, `/chapter/`, `/g/`).
-      - In Quick grab mode, automatically isolates the exact matched chapter or single chapter (`to_process[:1]`).
-      - In Vacuum mode (`--A`, `_force_vacuum`), preserves full series download (`to_process`).
-    - **Folder Path Normalization across 22 Scrapers**:
-      - Replaced faulty `target_path.parts` slicing with standard `folder = ZineFolder(target_path) / title`, preserving clean folder structures in Quick grab (`~/Downloads/Zine/Quick grab/<Site>/<Title>/`), Vacuum (`~/Downloads/Zine/Vacuum/<Site>/<Title>/`), and Batch (`~/Downloads/Zine/Batch/<Site>/<Title>/`).
+    - **Folder Resolution (`workflow.py` across 22 Scrapers)**:
+      - Quick Grab: `folder = Path(*target_path.parts[:idx+1])` (saving chapters directly into `~/Downloads/Zine/Quick grab/ChapterXXX`).
+      - Vacuum / Batch: `folder = ZineFolder(target_path) / title` (saving series in `~/Downloads/Zine/<Mode>/<Site>/<Title>/`).
+    - **Chapter Limit & Link Detection (`core/ui.py:apply_chapter_limit`)**:
+      - Automatically detects chapter endpoints (`/read/`, `/c/`, `/ch-`, `/chapter/`, `/g/`).
+      - Strictly limits `to_process` to the target chapter in Quick grab while allowing full series download in Vacuum (`--A`, `_force_vacuum`).
+    - **Metadata Guard**:
+      - MetadataEngine skips `.zine` generation when `folder` is the flat Quick grab directory.
 
 ---
 

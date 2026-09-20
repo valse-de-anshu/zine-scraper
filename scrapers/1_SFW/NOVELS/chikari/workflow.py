@@ -90,7 +90,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
             return
         if "Quick grab" in target_path.parts:
             idx = target_path.parts.index("Quick grab")
-            folder = Path(*target_path.parts[:idx+1]) / title
+            folder = Path(*target_path.parts[:idx+1])
         else:
             folder = ZineFolder(target_path) / title
         location_manager.create_directory(folder)
@@ -105,7 +105,11 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any,
 
         is_quick_grab = "Quick grab" in str(target_path)
 
-        folder = ZineFolder(target_path) / title
+        if "Quick grab" in target_path.parts:
+            idx = target_path.parts.index("Quick grab")
+            folder = Path(*target_path.parts[:idx+1])
+        else:
+            folder = ZineFolder(target_path) / title
             
         location_manager.create_directory(folder)
         save_url_to_file(url, title)
