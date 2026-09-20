@@ -10,15 +10,17 @@
       - Resolves save path immediately to `~/Downloads/Zine/Quick grab` for Quick Grab mode or `~/Downloads/Zine/Vacuum/<Site>` for Vacuum mode.
       - Standardized all 22 `location.py` files to cleanly delegate to `get_toon_save_path`.
 
-- **Permanent Media & Automation Settings Configurator (`core/config.py`, `core/settings_tui.py`):**
-  - **Centralized Preferences**:
-    - Added global media configuration options:
-      - `Novel Output Format` [TXT / EPUB / PDF / All] (`novel_format`)
-      - `Download Cover Art` [Yes / No] (`download_cover`)
-      - `Video Quality Preset` [Best / 1080p / 720p / 480p] (`default_video_quality`)
-      - `Audio Download Format` [MP3 / FLAC / OPUS] (`default_audio_format`)
-      - `Duplicate File Action` [Skip Existing / Overwrite] (`duplicate_behavior`)
-    - Added interactive `BoxSelector` submenus in `SettingsSelector` for clean, single-panel configuration.
+- **Categorized Multi-Section Settings TUI Overhaul (`core/settings_tui.py`):**
+  - **Categorized Multi-Section Layout**:
+    - Replaced flat unorganized list with 5 dedicated, styled visual sections:
+      - `📁 Storage & Directories` (Library Root, Music Quick-Grab)
+      - `⚡ Engine & Network` (Chapter Delay, Connection Check, Duplicate Handling)
+      - `🎨 Media Preferences` (Novel Format, Cover Art, Video Quality Preset, Audio Format)
+      - `🧠 AI & Audiobooks` (Whisper AI, Breeze TTS 2, Qwen TTS)
+      - `🖥️ Interface & System` (Color Theme, Quick Guide)
+    - Section headers dynamically skip during keyboard navigation (↑/↓, Home, End).
+  - **Active Cursor State Memory**:
+    - Retains cursor position on the last modified setting across submenu exits and option updates (`default_key=last_key`).
 
 ---
 

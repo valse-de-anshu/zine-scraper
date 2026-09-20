@@ -54,29 +54,58 @@ def _short_path(path_val: str, max_len: int = 38) -> str:
 
 
 class SettingsSelector(Selector):
-    """Clean single-box Panel renderer for Zine Settings Configurator."""
+    """Aesthetic multi-section and flat Panel renderer for Zine Settings."""
+
+    def __init__(self, options: Any, default_key: Optional[str] = None, title: str = "◆ ZINE SETTINGS CONFIGURATOR ◆"):
+        super().__init__(options=[], title=title)
+        self.raw_options = options
+        self.flat_items: List[Tuple[str, Any, Optional[str], bool]] = []
+        self.is_sectioned = False
+        self.box_title = title
+
+        # Check if passed categorized sections or flat list
+        if options and isinstance(options[0], tuple) and len(options[0]) == 2 and isinstance(options[0][1], list):
+            self.is_sectioned = True
+            for sec_title, items in options:
+                self.flat_items.append((sec_title, None, None, True))  # header
+                for label, val_str, key in items:
+                    self.flat_items.append((label, val_str, key, False))
+        else:
+            self.is_sectioned = False
+            for label_and_val, key in options:
+                label, val_str = label_and_val
+                self.flat_items.append((label, val_str, key, False))
+
+        # Determine initial selection index
+        self.index = 1 if self.is_sectioned else 0
+        if default_key:
+            for i, item in enumerate(self.flat_items):
+                if not item[3] and item[2] == default_key:
+                    self.index = i
+                    break
 
     def _render(self) -> Panel:
-        table = Table(box=None, show_header=False, padding=(0, 1))
-        table.add_column("label", width=25)
+        table = Table(box=None, show_header=False, padding=(0, 1), expand=True)
+        table.add_column("label", width=32, no_wrap=True)
         table.add_column("sep", width=2, justify="center")
-        table.add_column("val", width=42)
+        table.add_column("val", width=38, no_wrap=True)
 
-        for i, (label_and_val, key) in enumerate(self.options):
-            label, val_str = label_and_val
-            is_active = (i == self.index)
-
-            l_text = Text(no_wrap=True, overflow="crop")
-            v_text = Text(no_wrap=True, overflow="crop")
-
-            if is_active:
-                l_text.append(f"▶ {label}", style="bold sexy_pink")
-                v_text.append(str(val_str), style="bold white")
-                table.add_row(l_text, Text(":", style="bold sexy_pink"), v_text)
+        for i, (label_or_sec, val_str, key, is_header) in enumerate(self.flat_items):
+            if is_header:
+                if i > 0:
+                    table.add_row(Text(""), Text(""), Text(""))
+                table.add_row(Text(f"◆ {label_or_sec}", style="bold sexy_pink"), Text(""), Text(""))
             else:
-                l_text.append(f"  {label}", style="unselected")
-                v_text.append(str(val_str), style="unselected")
-                table.add_row(l_text, Text(":", style="unselected"), v_text)
+                is_active = (i == self.index)
+                if is_active:
+                    l_text = Text(f"  ▶ {label_or_sec}", style="bold sexy_pink")
+                    sep = Text(":", style="bold sexy_pink")
+                    v_text = Text(str(val_str), style="bold white")
+                else:
+                    l_text = Text(f"    {label_or_sec}", style="unselected")
+                    sep = Text(":", style="unselected")
+                    v_text = Text(str(val_str), style="unselected")
+                table.add_row(l_text, sep, v_text)
 
         footer = Text(justify="center")
         footer.append("↑↓", style="bold white");    footer.append(" Navigate  ", style="unselected")
@@ -85,13 +114,67 @@ class SettingsSelector(Selector):
 
         return Panel(
             table,
-            title="[bold white]◆ ZINE SETTINGS CONFIGURATOR[/bold white]",
+            title=f"[bold white]{self.box_title}[/bold white]",
             subtitle=footer,
             subtitle_align="center",
             border_style="sexy_pink",
             padding=(1, 2),
             width=80,
         )
+
+    def select(self) -> Optional[str]:
+        if "unittest" in sys.modules or not sys.stdin.isatty():
+            for item in self.flat_items:
+                if not item[3]:
+                    return item[2]
+            return "ESC"
+
+        console.show_cursor(False)
+        try:
+            with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
+                set_active_live(live)
+                live.update(self._render(), refresh=True)
+                while True:
+                    key = self._get_key()
+                    if key in ("ESC", "q", "\x03"):
+                        return "ESC"
+
+                    elif key in ("[A", "k"):  # Up
+                        new_i = self.index
+                        for _ in range(len(self.flat_items)):
+                            new_i = (new_i - 1) % len(self.flat_items)
+                            if not self.flat_items[new_i][3]:
+                                self.index = new_i
+                                break
+                        live.update(self._render(), refresh=True)
+
+                    elif key in ("[B", "j"):  # Down
+                        new_i = self.index
+                        for _ in range(len(self.flat_items)):
+                            new_i = (new_i + 1) % len(self.flat_items)
+                            if not self.flat_items[new_i][3]:
+                                self.index = new_i
+                                break
+                        live.update(self._render(), refresh=True)
+
+                    elif key in ("\r", "\n", " "):
+                        return self.flat_items[self.index][2]
+
+                    elif key in ("[H", "\x01"):  # Home
+                        for idx, item in enumerate(self.flat_items):
+                            if not item[3]:
+                                self.index = idx
+                                break
+                        live.update(self._render(), refresh=True)
+
+                    elif key in ("[F", "\x05"):  # End
+                        for idx in range(len(self.flat_items) - 1, -1, -1):
+                            if not self.flat_items[idx][3]:
+                                self.index = idx
+                                break
+                        live.update(self._render(), refresh=True)
+        finally:
+            set_active_live(None)
 
 
 def _read_tty_chunk(fd: int, timeout: float = 0.05) -> bytes:
@@ -901,6 +984,7 @@ def breeze_tts_settings_tui():
 
 def launch_settings_tui():
     """Interactive settings menu to configure Zine preferences cleanly in a single panel box."""
+    last_key = None
     while True:
         startup_clear()
         print_banner()
@@ -944,29 +1028,41 @@ def launch_settings_tui():
         curr_tts_ref_audio = config.get("tts_clone_ref_audio", "")
         curr_tts_ref_audio_display = _short_path(curr_tts_ref_audio) if curr_tts_ref_audio else "None"
         
-        options = [
-            (("Library Root Path",        _short_path(curr_download)), "download_base"),
-            (("Music Quick-Grab Path",    _short_path(curr_music_display)), "music_quick_grab_path"),
-            (("Chapter Download Delay",   f"{curr_delay}s"), "chapter_delay"),
-            (("Connection Check Delay",   f"{curr_check}s"), "internet_check_interval"),
-            (("Novel Output Format",      curr_novel_fmt), "novel_format"),
-            (("Download Cover Art",       curr_cover_art), "download_cover"),
-            (("Video Quality Preset",     curr_vid_qual), "default_video_quality"),
-            (("Audio Download Format",    curr_audio_fmt), "default_audio_format"),
-            (("Duplicate File Action",    curr_dup_act), "duplicate_behavior"),
-            (("Whisper AI Subtitles",     "▶ Configure Options"), "submenu_whisper"),
-            (("Breeze TTS 2 (GGUF / C++)","▶ Configure Options"), "submenu_breeze"),
-            (("Qwen Audiobooks TTS",      "▶ Configure Options"), "submenu_qwen"),
-            (("Color Theme",              curr_theme), "theme"),
-            (("Quick Guide",              curr_tips), "show_tips"),
+        sections = [
+            ("📁 Storage & Directories", [
+                ("Library Root Path",        _short_path(curr_download), "download_base"),
+                ("Music Quick-Grab Path",    _short_path(curr_music_display), "music_quick_grab_path"),
+            ]),
+            ("⚡ Engine & Network", [
+                ("Chapter Download Delay",   f"{curr_delay}s", "chapter_delay"),
+                ("Connection Check Delay",   f"{curr_check}s", "internet_check_interval"),
+                ("Duplicate File Action",    curr_dup_act, "duplicate_behavior"),
+            ]),
+            ("🎨 Media Preferences", [
+                ("Novel Output Format",      curr_novel_fmt, "novel_format"),
+                ("Download Cover Art",       curr_cover_art, "download_cover"),
+                ("Video Quality Preset",     curr_vid_qual, "default_video_quality"),
+                ("Audio Download Format",    curr_audio_fmt, "default_audio_format"),
+            ]),
+            ("🧠 AI & Audiobooks", [
+                ("Whisper AI Subtitles",     "▶ Configure Options", "submenu_whisper"),
+                ("Breeze TTS 2 (Audiobooks)","▶ Configure Options", "submenu_breeze"),
+                ("Qwen Audiobooks TTS",      "▶ Configure Options", "submenu_qwen"),
+            ]),
+            ("🖥️ Interface & System", [
+                ("Color Theme",              curr_theme, "theme"),
+                ("Quick Guide",              curr_tips, "show_tips"),
+            ]),
         ]
 
-        choice = SettingsSelector(options).select()
+        choice = SettingsSelector(sections, default_key=last_key).select()
 
         if choice in ("ESC", None, "CTRL_C"):
             break
 
-        elif choice == "novel_format":
+        last_key = choice
+
+        if choice == "novel_format":
             fmt_opts = [
                 ("Plain Text (.txt)                   ", "TXT"),
                 ("EPUB E-Book (.epub)                 ", "EPUB"),
