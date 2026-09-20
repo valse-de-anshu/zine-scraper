@@ -120,7 +120,7 @@ def run_workflow(
 
     from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.url)
-    to_process = apply_chapter_limit(to_process, scraper)
+    to_process = apply_chapter_limit(to_process, scraper, url=url, target_path=target_path)
 
     startup_clear()
     print_banner()

@@ -2008,20 +2008,80 @@ except ImportError:
 
 
 
-def apply_chapter_limit(to_process: List[Tuple[str, str]], scraper: Any) -> List[Tuple[str, str]]:
+def apply_chapter_limit(
+    to_process: List[Tuple[str, str]],
+    scraper: Any,
+    url: Optional[str] = None,
+    target_path: Optional[Path] = None
+) -> List[Tuple[str, str]]:
     """
-    Limits the un-downloaded items/chapters according to active flags.
+    Limits the un-downloaded items/chapters according to active mode, URL type, and flags.
     --<N> (e.g. --2, --5) downloads the next N un-downloaded items in systematic order.
-    --0 (Quick grab) downloads the single next item.
+    --0 (Quick grab) / Quick grab mode downloads the single target item.
     --A / --a (Vacuum all) downloads all un-downloaded items.
     """
+    if not to_process:
+        return to_process
+
+    # 1. Check explicit force vacuum / batch all flags
     if getattr(scraper, '_force_vacuum', False) or getattr(scraper, '_batch_all', False):
         return to_process
+
+    # 2. Check explicit chapter limit flag (e.g. --2, --5)
     chapter_limit = getattr(scraper, '_chapter_limit', None)
     if isinstance(chapter_limit, int) and chapter_limit > 0:
         return to_process[:chapter_limit]
-    if getattr(scraper, '_batch_quick_grab', False):
+
+    # 3. Detect Quick grab mode from flags, scraper attributes, or target destination
+    is_quick_grab = (
+        getattr(scraper, '_batch_quick_grab', False)
+        or getattr(scraper, 'is_quick_grab', False)
+        or (target_path and "quick grab" in str(target_path).lower())
+    )
+
+    # 4. Check if the input URL is a single chapter/item link
+    raw_url = str(url or getattr(scraper, 'url', '') or '').strip()
+    is_chapter_link = False
+    if hasattr(scraper, 'is_chapter_link'):
+        try:
+            is_chapter_link = bool(scraper.is_chapter_link())
+        except Exception:
+            is_chapter_link = False
+    if not is_chapter_link:
+        is_chapter_link = any(x in raw_url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/", "/g/"])
+
+    if is_chapter_link:
+        # Match the specific chapter URL or chapter number if possible
+        matched = []
+        # Try exact URL match
+        for item in to_process:
+            ch_num, ch_url = item
+            if ch_url and (ch_url.rstrip('/') == raw_url.rstrip('/') or raw_url.rstrip('/').endswith(ch_url.rstrip('/')) or ch_url.rstrip('/').endswith(raw_url.rstrip('/'))):
+                matched.append(item)
+                break
+        if matched:
+            return matched
+
+        # Try matching chapter number from URL
+        import re
+        m = re.search(r"(?:chapter-|/c/|/ch-|/ch/|/read/\d+/|/read/|/chapter/)([\d]+(?:[\.-][\d]+)?)", raw_url.lower())
+        if m:
+            target_num = m.group(1).replace("-", ".")
+            for item in to_process:
+                ch_num, ch_url = item
+                if str(ch_num).strip() == target_num or str(ch_num).strip() == str(int(float(target_num)) if '.' in target_num and target_num.endswith('.0') else target_num):
+                    matched.append(item)
+                    break
+        if matched:
+            return matched
+
+        # If in Quick Grab or chapter link, take only the single chapter
+        if is_quick_grab or not getattr(scraper, '_force_vacuum', False):
+            return to_process[:1]
+
+    if is_quick_grab:
         return to_process[:1]
+
     return to_process
 
 

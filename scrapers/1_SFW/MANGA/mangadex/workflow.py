@@ -197,7 +197,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
 
             track_url = f"{scraper.url}#{chosen_lang}" if len(chosen_langs) > 1 else scraper.url
             verified_nums, to_process = verify_chapters(folder, chapters, tracker, track_url)
-            to_process = apply_chapter_limit(to_process, scraper)
+            to_process = apply_chapter_limit(to_process, scraper, url=url, target_path=target_path)
 
             tree_title = f"{title} [{chosen_lang}]" if len(chosen_langs) > 1 else title
             tree_lang = f"{lang_display} ({lang_idx}/{len(chosen_langs)})" if len(chosen_langs) > 1 else lang_display

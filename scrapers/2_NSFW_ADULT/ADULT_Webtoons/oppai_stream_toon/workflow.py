@@ -63,11 +63,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
     if not target_path:
         return
         
-    if "Quick grab" in target_path.parts:
-        idx = target_path.parts.index("Quick grab")
-        folder = Path(*target_path.parts[:idx+1])
-    else:
-        folder = ZineFolder(target_path) / title
+    folder = ZineFolder(target_path) / title
     location_manager.create_directory(folder)
     save_url_to_file(url, title)
     
@@ -115,7 +111,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             
     from core.ui import apply_chapter_limit
     verified_nums, to_process = verify_chapters(folder, chapters, tracker, scraper.url)
-    to_process = apply_chapter_limit(to_process, scraper)
+    to_process = apply_chapter_limit(to_process, scraper, url=url, target_path=target_path)
     
     startup_clear()
     print_banner()
