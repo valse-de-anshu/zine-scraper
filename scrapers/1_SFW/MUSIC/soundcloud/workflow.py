@@ -85,17 +85,25 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
 
     cover_exists = any(folder.glob("cover.*"))
 
-    ext_str = "flac" if is_music else "mp4"
+    from core.config import ConfigLayer
+    from core.paths import PathAuthority
+    cfg = ConfigLayer(PathAuthority(), location_manager)
+    audio_fmt = cfg.get("default_audio_format", "FLAC").lower() if is_music else "mp4"
+    if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+        audio_fmt = "flac"
+
+    ext_str = audio_fmt
     verified_ids = verify_videos(target_download_dir, videos, ext_str, tracker, scraper.url)
     
     startup_clear()
     print_banner()
     if is_batch:
-        console.print(f"[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+        console.print(f"[menu]Menu[/menu]         : [site]Vacuum Mode[/site]")
     console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
     cat_display = f"{target_path.parts[-2]} / {target_path.parts[-1]}" if len(target_path.parts) > 1 else target_path.name
     console.print(f"[menu]Category[/menu]     : [info]{cat_display}[/info]")
     console.print(f"[menu]Folder[/menu]       : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+
     console.print("")
     
     render_completion_tree(title, folder, metadata, verified_ids, cover_exists)

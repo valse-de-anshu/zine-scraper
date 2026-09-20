@@ -1189,13 +1189,16 @@ def launch_settings_tui():
 
         elif choice == "default_audio_format":
             aud_opts = [
-                ("MP3 (320kbps Standard)  ", "MP3"),
-                ("FLAC (Lossless Audio)    ", "FLAC"),
-                ("OPUS (High Efficiency)   ", "OPUS"),
+                ("FLAC (Lossless Audio / Default) ", "FLAC"),
+                ("MP3 (320kbps Standard)         ", "MP3"),
+                ("OPUS (High Efficiency)          ", "OPUS"),
+                ("M4A (AAC / Apple Audio)         ", "M4A"),
+                ("WAV (Uncompressed PCM)          ", "WAV"),
             ]
             new_aud = BoxSelector(aud_opts, "Select Audio Format").select()
             if new_aud and new_aud != "ESC":
                 config.set("default_audio_format", new_aud)
+
 
         elif choice == "duplicate_behavior":
             dup_opts = [

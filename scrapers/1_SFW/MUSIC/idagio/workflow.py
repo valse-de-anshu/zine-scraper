@@ -59,11 +59,17 @@ def run_workflow(
         from urllib.parse import urlparse
         ext = Path(urlparse(cover_url).path).suffix or ".jpg" if cover_url else ".jpg"
         cover_path = folder / f"cover{ext}"
-        is_music = getattr(scraper, "scraper_type", "manga") == "music"
-        ext = ".flac" if is_music else ".mp4"
+        from core.config import ConfigLayer
+        from core.paths import PathAuthority
+        cfg = ConfigLayer(PathAuthority(), location_manager)
+        audio_fmt = cfg.get("default_audio_format", "FLAC").lower() if is_music else "mp4"
+        if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+            audio_fmt = "flac"
+        ext = f".{audio_fmt}"
         
         # 2-Step Verification using decoupled verification layer
         verified_ids = verify_videos(target_download_dir, videos, ext, scraper.url, tracker, is_music)
+
 
         # Render metadata summary using progress layer
         root_tree = render_metadata_tree(title, folder, metadata, verified_ids, cover_path)

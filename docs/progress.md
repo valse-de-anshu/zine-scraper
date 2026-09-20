@@ -1,3 +1,24 @@
+# Progress Report - September 20, 2026 (Refactor: Music Scrapers Zero-Friction Automation & Settings-Connected Audio Processor)
+
+- **Music Scrapers Zero-Friction & Dynamic Format Processor (`scrapers/1_SFW/MUSIC/*`, `core/config.py`, `core/settings_tui.py`, `core/video_engine.py`):**
+  - **Identified Problem**:
+    - Music scrapers had unnecessary interactive prompts for track selection, format, cover art, and save locations.
+    - Default audio format in `core/config.py` was set to MP3 rather than FLAC lossless, and scraper engines hardcoded `.flac` without reading user settings.
+  - **Resolution**:
+    - **Default Audio Format Changed to `FLAC`**:
+      - `core/config.py`: `DEFAULT_CONFIG["default_audio_format"]` is now `"FLAC"`.
+      - `core/settings_tui.py`: Added FLAC as top recommended default in Audio Download Format settings selector alongside MP3, OPUS, M4A, WAV, AAC.
+    - **Engine Connected to Settings**:
+      - `core/video_engine.py`: `download_video()` dynamically reads `default_audio_format` from user configuration (falling back to FLAC) and passes `--audio-format <ext>` to `yt-dlp`.
+      - `scrapers/1_SFW/MUSIC/yt_music/engine.py`: `download_track()` dynamically reads `default_audio_format` from configuration, produces files with the proper extension, and tags them via `_tag_audio_file()`.
+    - **Removed Interactive Blocking Prompts**:
+      - `yt_music`: `get_track_selection()` immediately returns all tracks without popping up interactive format/mode dialogs.
+      - `soundcloud`: Removed interactive custom cover prompt and folder location dialog; saves directly to default container root.
+      - `ytdlp` & `idagio`: Streamlined save location resolution without prompt loops.
+      - Workflows dynamically display the active audio format (e.g., `Song (FLAC)`) in the metadata banner.
+
+---
+
 # Progress Report - September 20, 2026 (Refactor: Batch Mode Removed — Unified Into Vacuum Queue)
 
 - **Batch → Vacuum Queue Unification (`core/funnel.py`, `core/journal.py`, `core/library.py`, `orchestrator.py`):**

@@ -159,7 +159,17 @@ class VideoEngine:
         videos_dir = output_dir
         videos_dir.mkdir(parents=True, exist_ok=True)
 
-        ext = "flac" if is_audio else "mp4"
+        if is_audio:
+            from core.config import ConfigLayer
+            from core.paths import PathAuthority
+            from core.storage import StorageLayer
+            cfg = ConfigLayer(PathAuthority(), StorageLayer())
+            audio_fmt = (format_override or cfg.get("default_audio_format", "FLAC")).lower()
+            if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+                audio_fmt = "flac"
+            ext = audio_fmt
+        else:
+            ext = "mp4"
         
         # If we have a fixed title, use it for the filename
         if fixed_title:
@@ -175,6 +185,7 @@ class VideoEngine:
         
         tmp_path = poop_dir / f"{clean_title}.{ext}"
         final_dest = videos_dir / f"{clean_title}.{ext}"
+
 
         import tempfile
         import os
@@ -254,11 +265,12 @@ class VideoEngine:
             if is_audio:
                 cmd.extend([
                     "-x",
-                    "--audio-format", "flac",
+                    "--audio-format", ext,
                     "--audio-quality", "0",
                     "--embed-metadata",
                     "--embed-thumbnail"
                 ])
+
             else:
                 if ".mp4" in target or ".m3u8" in target:
                     pass # Do not pass any format flag for direct streams

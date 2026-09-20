@@ -251,13 +251,22 @@ class YoutubeMusicEngine:
         if len(clean_title) > 150:
             clean_title = clean_title[:150].strip()
 
+        # ── Audio Format Resolution from Settings ────────────────────────────
+        from core.config import ConfigLayer
+        from core.paths import PathAuthority
+        from core.storage import StorageLayer
+        cfg = ConfigLayer(PathAuthority(), StorageLayer())
+        audio_fmt = cfg.get("default_audio_format", "FLAC").lower()
+        if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+            audio_fmt = "flac"
+
         # Filename format - songs must not have leading numbers
         if fixed_artist and fixed_title and fixed_artist.lower() not in clean_title.lower():
             clean_artist = "".join([c for c in fixed_artist if c.isalnum() or c in " .-_()'"]).strip()
             clean_artist = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_artist).strip() or clean_artist
-            filename = f"{clean_artist} - {clean_title}.flac"
+            filename = f"{clean_artist} - {clean_title}.{audio_fmt}"
         else:
-            filename = f"{clean_title}.flac"
+            filename = f"{clean_title}.{audio_fmt}"
 
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         poop_dir = project_root / "💩"
@@ -328,16 +337,12 @@ class YoutubeMusicEngine:
             "--socket-timeout", "15",
             "--extractor-args", f"youtube:player-client={chosen_client}",
             "-x",
-            "--audio-format", "flac",
+            "--audio-format", audio_fmt,
             "--audio-quality", "0",
         ]
 
         # Cookie integration from user settings
         try:
-            from core.config import ConfigLayer
-            from core.paths import PathAuthority
-            from core.storage import StorageLayer
-            cfg = ConfigLayer(PathAuthority(), StorageLayer())
             browser = cfg.get("cookies_browser")
             if browser and browser != "None":
                 cmd.extend(["--cookies-from-browser", str(browser)])
@@ -387,21 +392,23 @@ class YoutubeMusicEngine:
 
             proc.wait()
 
-            candidates = list(poop_dir.glob(f"{temp_token}*.flac"))
+            candidates = list(poop_dir.glob(f"{temp_token}*.{audio_fmt}"))
+            if not candidates:
+                candidates = [f for f in poop_dir.glob(f"{temp_token}*") if not f.name.endswith(".part") and not f.name.endswith(".ytdl") and not f.name.endswith(".txt")]
             if not candidates or candidates[0].stat().st_size < 1024:
                 return False
 
-            downloaded_flac = candidates[0]
+            downloaded_audio = candidates[0]
 
             # Wait briefly for lyrics thread
             lrc_ready.wait(timeout=2.0)
 
-            # Plain lyrics text for vorbis comment
+            # Plain lyrics text for vorbis/id3 comment
             plain_lyrics = "\n".join(e.get("text", "") for e in lrc_parsed if isinstance(e, dict)) if lrc_parsed else None
 
-            # ── Embed Vorbis / FLAC metadata & Cover Art ──────────────────────
-            self._tag_flac_file(
-                downloaded_flac,
+            # ── Embed Metadata & Cover Art ──────────────────────
+            self._tag_audio_file(
+                downloaded_audio,
                 title=fixed_title,
                 artist=fixed_artist,
                 album=fixed_album,
@@ -410,8 +417,8 @@ class YoutubeMusicEngine:
                 lyrics=plain_lyrics
             )
 
-            # Move final tagged FLAC to destination
-            shutil.move(str(downloaded_flac), str(final_dest))
+            # Move final tagged file to destination
+            shutil.move(str(downloaded_audio), str(final_dest))
 
             # If synced lyrics were found, save companion .lrc file in destination (or lyrics/ folder)
             if lrc_parsed:
@@ -446,9 +453,9 @@ class YoutubeMusicEngine:
             logger.error(f"YouTube Music download error: {e}")
             return False
 
-    def _tag_flac_file(
+    def _tag_audio_file(
         self,
-        flac_path: Path,
+        audio_path: Path,
         title: Optional[str] = None,
         artist: Optional[str] = None,
         album: Optional[str] = None,
@@ -456,37 +463,46 @@ class YoutubeMusicEngine:
         custom_thumb: Optional[Path] = None,
         lyrics: Optional[str] = None
     ):
-        """Tags the output FLAC file with rich Vorbis metadata and embeds album art."""
+        """Tags audio files (.flac, .mp3, .opus, .m4a, .wav) with metadata and album art."""
+        ext = audio_path.suffix.lower()
+        if ext == ".flac":
+            try:
+                from mutagen.flac import FLAC, Picture
+                audio = FLAC(str(audio_path))
+                if title: audio["TITLE"] = title
+                if artist: audio["ARTIST"] = artist
+                if album: audio["ALBUM"] = album
+                if track_number is not None: audio["TRACKNUMBER"] = str(track_number)
+                if lyrics: audio["LYRICS"] = lyrics
+                if custom_thumb and Path(custom_thumb).exists():
+                    from core.cover_utils import ensure_compatible_image_bytes_for_tagging
+                    thumb_data, mime = ensure_compatible_image_bytes_for_tagging(custom_thumb)
+                    if thumb_data and len(thumb_data) > 100:
+                        audio.clear_pictures()
+                        pic = Picture()
+                        pic.type = 3
+                        pic.mime = mime or "image/jpeg"
+                        pic.data = thumb_data
+                        audio.add_picture(pic)
+                audio.save()
+                return
+            except Exception as e:
+                logger.debug(f"Mutagen FLAC tagging failed: {e}")
+
+        # Universal fallback for all audio formats via bake_engine
         try:
-            from mutagen.flac import FLAC, Picture
-            audio = FLAC(str(flac_path))
-
-            if title:
-                audio["TITLE"] = title
-            if artist:
-                audio["ARTIST"] = artist
-            if album:
-                audio["ALBUM"] = album
-            if track_number is not None:
-                audio["TRACKNUMBER"] = str(track_number)
-            if lyrics:
-                audio["LYRICS"] = lyrics
-
-            # Embed front album cover art
-            if custom_thumb and Path(custom_thumb).exists():
-                from core.cover_utils import ensure_compatible_image_bytes_for_tagging
-                thumb_data, mime = ensure_compatible_image_bytes_for_tagging(custom_thumb)
-                if thumb_data and len(thumb_data) > 100:
-                    audio.clear_pictures()
-                    pic = Picture()
-                    pic.type = 3  # Cover (front)
-                    pic.mime = mime or "image/jpeg"
-                    pic.data = thumb_data
-                    audio.add_picture(pic)
-
-            audio.save()
+            from core.bake_engine import bake_metadata_and_cover
+            bake_metadata_and_cover(
+                audio_path,
+                title=title or "",
+                artist=artist or "",
+                album=album or "",
+                track=str(track_number) if track_number else "",
+                cover_path=custom_thumb
+            )
         except Exception as e:
-            logger.debug(f"Mutagen FLAC tagging failed: {e}")
+            logger.debug(f"Universal bake_metadata_and_cover failed: {e}")
+
 
     def save_metadata(
         self,

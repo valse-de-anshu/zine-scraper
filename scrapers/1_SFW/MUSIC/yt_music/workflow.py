@@ -128,7 +128,15 @@ def run_workflow(
         target_download_dir = folder
         lyrics_dir = folder / "lyrics"
 
-    verified_ids = verify_videos(folder, videos, "flac", tracker, scraper.url)
+    from core.config import ConfigLayer
+    from core.paths import PathAuthority
+    from core.storage import StorageLayer
+    cfg = ConfigLayer(PathAuthority(), StorageLayer())
+    audio_fmt = cfg.get("default_audio_format", "FLAC").lower()
+    if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+        audio_fmt = "flac"
+
+    verified_ids = verify_videos(folder, videos, audio_fmt, tracker, scraper.url)
 
     menu_label = "Batch" if is_batch else ("Vacuum" if is_vacuum else "Quick Grab")
 
@@ -140,7 +148,7 @@ def run_workflow(
     console.print(f"[menu]{'Artist':<12}:[/menu] [title]{artist}[/title]")
     if album and album != "Single":
         console.print(f"[menu]{'Album':<12}:[/menu] [title]{album}[/title]")
-    console.print(f"[menu]{'Type':<12}:[/menu] [site]Song (FLAC Lossless)[/site]")
+    console.print(f"[menu]{'Type':<12}:[/menu] [site]Song ({audio_fmt.upper()})[/site]")
 
     root_tree = render_metadata_tree(title, folder, metadata, len(verified_ids), custom_thumb_path or cover_file, is_vacuum)
     console.print(root_tree)
@@ -183,7 +191,7 @@ def run_workflow(
         console.print(f"[menu]{'Artist':<12}:[/menu] [title]{artist}[/title]")
         if album and album != "Single":
             console.print(f"[menu]{'Album':<12}:[/menu] [title]{album}[/title]")
-        console.print(f"[menu]{'Type':<12}:[/menu] [site]Song (FLAC Lossless)[/site]")
+        console.print(f"[menu]{'Type':<12}:[/menu] [site]Song ({audio_fmt.upper()})[/site]")
         console.print(root_tree)
         console.print("")
         for hist in completed_history:
@@ -215,14 +223,14 @@ def run_workflow(
 
         # Resolve clean file path
         if hasattr(tracker, "resolve_download_path"):
-            resolved_file_path, is_in_verified = tracker.resolve_download_path(target_download_dir, str(vid_id), vid_title, "flac")
+            resolved_file_path, is_in_verified = tracker.resolve_download_path(target_download_dir, str(vid_id), vid_title, audio_fmt)
         else:
-            filename = f"{vid_title}.flac"
+            filename = f"{vid_title}.{audio_fmt}"
             resolved_file_path = target_download_dir / filename
             is_in_verified = resolved_file_path.exists()
 
         # Check if artist-prefixed file already exists in target directory
-        alt_artist_file = target_download_dir / f"{track_artist} - {vid_title}.flac"
+        alt_artist_file = target_download_dir / f"{track_artist} - {vid_title}.{audio_fmt}"
         if alt_artist_file.exists():
             resolved_file_path = alt_artist_file
             is_in_verified = True
@@ -233,6 +241,7 @@ def run_workflow(
             if hasattr(tracker, "mark_downloaded"):
                 tracker.mark_downloaded(scraper.url, str(vid_id), vid_title)
             hist_line = f"  [unselected]File exists: {display_name}[/unselected]"
+
             console.print(hist_line)
             completed_history.append(hist_line)
             continue

@@ -24,7 +24,7 @@ DEFAULT_CONFIG = {
     "novel_format": "TXT",
     "download_cover": True,
     "default_video_quality": "1080p",
-    "default_audio_format": "MP3",
+    "default_audio_format": "FLAC",
     "duplicate_behavior": "Skip Existing",
     "ai_subtitles_vram": "6GB (INT8)",
     "ai_target_lang": "English",
