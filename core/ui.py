@@ -882,7 +882,14 @@ class Selector:
                 val = input().strip()
                 idx = int(val) - 1
                 if 0 <= idx < len(self.options):
-                    return self.options[idx][1]
+                    chosen_label = self.options[idx][0]
+                    chosen_val = self.options[idx][1]
+                    try:
+                        from core.journal import DownloadJournal
+                        DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                    except Exception:
+                        pass
+                    return chosen_val
             except Exception:
                 pass
             console.print("[error]● Invalid selection. Please try again.[/error]")
@@ -918,7 +925,14 @@ class Selector:
                         self.index = (self.index + 1) % len(self.options)
                         live.update(self._render(), refresh=True)
                     elif key in ('\r', '\n'):
-                        return self.options[self.index][1]
+                        chosen_label = self.options[self.index][0]
+                        chosen_val = self.options[self.index][1]
+                        try:
+                            from core.journal import DownloadJournal
+                            DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                        except Exception:
+                            pass
+                        return chosen_val
                     elif key == '=':
                         return "="
                     elif key == 'ESC':
@@ -1140,8 +1154,16 @@ class MultiSelector:
                             self.selected.add(self.index)
                     elif key in ('\r', '\n'): # Enter to confirm
                         if not self.selected:
-                            return [self.options[self.index]]
-                        return [self.options[i] for i in sorted(self.selected)]
+                            res = [self.options[self.index]]
+                        else:
+                            res = [self.options[i] for i in sorted(self.selected)]
+                        try:
+                            from core.journal import DownloadJournal
+                            names = [opt.get("name") or opt.get("title") or str(opt) for opt in res]
+                            DownloadJournal.get_active().record_choice(self.title, f"Selected {len(names)} items ({', '.join(names[:3])}{'...' if len(names) > 3 else ''})", names)
+                        except Exception:
+                            pass
+                        return res
                     elif key == '\x03': # Ctrl+C
                         clean_exit(forceful=True)
 

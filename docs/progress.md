@@ -1,3 +1,27 @@
+# Progress Report - September 20, 2026 (Structured Session Telemetry, Download Journal & Rich Metadata Logging in Logs/Downlode 💩)
+
+- **Download Journal Subsystem (`core/journal.py`, `orchestrator.py`, `core/paths.py`):**
+  - **Identified Problem**:
+    - Users needed a detailed, human-readable record for every download session reflecting exactly what link was downloaded, what choices were made in the interactive TUI (or CLI flags: format, quality, mode, selection range), and rich metadata (artist, album, channel, author, total items, cover status, destination).
+    - Session records needed to be unique and isolated (new session JSON per run, never appending to or reusing prior session files) stored directly in `Logs/Downlode 💩/` alongside `Download History.json` and `Batch History.json`.
+  - **Resolution**:
+    - **`DownloadJournal` Class (`core/journal.py`)**:
+      - Manages session lifecycle (`session_YYYY-MM-DD_HH-MM-SS.json` and mirrored `latest_session.json`) inside `Logs/Downlode 💩/`.
+      - Tracks session types (`Batch`, `CLI`, `Interactive TUI`), CLI arguments, start/finish timestamps, and structured per-link downloads.
+      - Dual-layer telemetry capture:
+        1. **Programmatic hooks**: Direct bindings in `core/ui.py` (`Selector.select`, `MultiSelector.select`) recording prompts, choices, and counts; direct hooks in `core/history.py` (`mark_downloaded`, `set_title`, `resolve_download_path`, `BatchHistoryManager`).
+        2. **Terminal pipe**: `consume_terminal_line` regex parser tapping directly into console output to extract headers (`Location`, `Artist`, `Album`, `Menu`, `Quality`), file status (`File exists:`), and downloaded items (`●`) in real time, while gracefully filtering out non-media notices (subtitles, lyrics searches).
+    - **Session Lifecycle Hooks (`orchestrator.py`, `core/funnel.py`)**:
+      - `DownloadJournal.init_session(sys.argv[1:])` initialized on orchestrator entry.
+      - Guaranteed session closure via `finally: DownloadJournal.get_active().finish_session()`.
+      - Funnel hooks `journal.start_download()` and `journal.finish_download()` across both success and failure pathways.
+
+- **Enriched History Synchronization (`core/history.py`, `core/journal.py`):**
+  - Updated `HistoryLayer` and `BatchHistoryManager` to preserve extra metadata keys (`site`, `mode`, `destination`, `chosen_options`, `metadata`, `status`) on disk and in memory without destructive stripping.
+  - Automatically synchronizes rich metadata and choices from `DownloadJournal` into `Logs/Downlode 💩/Download History.json` and `Logs/Downlode 💩/Batch History.json`.
+
+---
+
 # Progress Report - September 20, 2026 (Music & Video Subfolder Organization and Lyrics/Subtitle Verification)
 
 - **Music Album & Discography Clean Subfolder Layout (`scrapers/1_SFW/MUSIC/*`):**

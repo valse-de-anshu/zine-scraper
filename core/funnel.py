@@ -272,6 +272,19 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             time.sleep(1.5)
         return False
 
+    from core.journal import DownloadJournal
+    journal = DownloadJournal.get_active()
+    init_mode = "Batch" if is_batch else ("Quick grab" if batch_quick_grab else "Vacuum")
+    initial_title = getattr(scraper, "title", None) or getattr(scraper, "name", None) or "Unknown"
+    journal.start_download(
+        url=url,
+        site=site_folder,
+        title=initial_title,
+        menu_mode=init_mode,
+        destination=batch_path,
+        flags=flags
+    )
+
     try:
         logging.info(f"Passing control to TUI for site: {site_folder} with scraper: {scraper.__class__.__name__}")
         
@@ -342,6 +355,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         original_input = console.input
         original_print = console.print
         original_sleep = time.sleep
+        import builtins
+        original_builtin_print = builtins.print
         
         def patched_input(prompt="", **kwargs):
             import core.ui
@@ -360,11 +375,22 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             nonlocal last_error, already_up_to_date
             text = " ".join(str(a) for a in args)
             text_lower = text.lower()
-            if "[error]" in text or "failed to" in text_lower or "could not retrieve" in text_lower or "failed: no chapters" in text_lower or "download failed" in text_lower:
+
+            if "download failed" in text_lower or "error:" in text_lower or "error downloading" in text_lower:
                 last_error = clean_error_text(text)
             elif "already downloaded" in text_lower or "already up to date" in text_lower:
                 already_up_to_date = True
+
+            # Direct terminal pipe to Download Journal
+            try:
+                journal.consume_terminal_line(text)
+            except Exception:
+                pass
+
             return original_print(*args, **kwargs)
+
+        def patched_builtin_print(*args, **kwargs):
+            patched_print(*args, **kwargs)
 
         def patched_sleep(secs):
             import core.ui
@@ -380,6 +406,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
         console.input = patched_input
         console.print = patched_print
+        builtins.print = patched_builtin_print
         time.sleep = patched_sleep
         try:
             scraper._batch_quick_grab = batch_quick_grab
@@ -395,10 +422,18 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             fire_notification() # In case it's batch mode and didn't call input
             try:
                 final_title = getattr(scraper, "title", None)
+                has_downloaded = check_has_downloaded()
+                final_status = "completed" if (has_downloaded or already_up_to_date) else ("failed" if last_error else "completed")
+                
+                journal.finish_download(
+                    url=url,
+                    status=final_status,
+                    error=last_error if final_status == "failed" else None
+                )
+
                 if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
                     target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
                     from core.history import BatchHistoryManager
-                    has_downloaded = check_has_downloaded()
                     if has_downloaded or already_up_to_date:
                         hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
                         if BatchHistoryManager._instance:
@@ -413,6 +448,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             hist_layer._active_batch_flags = []
             console.input = original_input
             console.print = original_print
+            builtins.print = original_builtin_print
             if original_mark_downloaded:
                 hist_layer.mark_downloaded = original_mark_downloaded
             
@@ -423,6 +459,10 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         from core.logger import record_error_log
         from core.ui import print_failure_box
         record_error_log(e, context={"url": url, "site_folder": site_folder, "batch_path": str(batch_path) if batch_path else None})
+        try:
+            journal.finish_download(url=url, status="failed", error=str(e))
+        except Exception:
+            pass
         print_failure_box(getattr(scraper, "title", None) or url, reason=str(e))
         try:
             from butler.notify import send_os_notification

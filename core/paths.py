@@ -63,8 +63,10 @@ class PathAuthority:
         
         # Logs 
         self._logs_root = self._suite_root / "Logs"
-        self._history_file = self._logs_root / "Download History.json"
-        self._batch_history_file = self._logs_root / "Batch History.json"
+        self._download_logs_root = self._logs_root / "Downlode 💩"
+        self._download_logs_root.mkdir(parents=True, exist_ok=True)
+        self._history_file = self._download_logs_root / "Download History.json"
+        self._batch_history_file = self._download_logs_root / "Batch History.json"
         self._url_history_file = self._logs_root / "URL History.txt"
 
         # AI Models Hub
@@ -142,6 +144,11 @@ class PathAuthority:
 
     def get_logs_root(self) -> Path:
         return self._logs_root
+
+    def get_download_logs_root(self) -> Path:
+        """Returns the primary JSON history and journal directory (Logs/Downlode 💩)."""
+        self._download_logs_root.mkdir(parents=True, exist_ok=True)
+        return self._download_logs_root
 
     # ── Library structure paths (all rooted at downloads_root) ──────────────
 

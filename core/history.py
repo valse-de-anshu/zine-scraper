@@ -161,6 +161,7 @@ class HistoryLayer:
                 if not url:
                     continue
                 flags = []
+                extra = {}
                 if isinstance(val, list):
                     info_items = set(str(x) for x in val)
                     title = self._infer_title(url)
@@ -177,6 +178,7 @@ class HistoryLayer:
                         flags = [raw_flags]
                     elif isinstance(raw_flags, list):
                         flags = [str(f) for f in raw_flags]
+                    extra = {k: v for k, v in val.items() if k not in ("info", "items", "title", "date", "flags")}
                 else:
                     info_items = set()
                     title = self._infer_title(url)
@@ -192,13 +194,18 @@ class HistoryLayer:
                     for flg in flags:
                         if flg not in result[url]["flags"]:
                             result[url]["flags"].append(flg)
+                    for ek, ev in extra.items():
+                        if ek not in result[url] or not result[url][ek]:
+                            result[url][ek] = ev
                 else:
-                    result[url] = {
+                    entry_payload = {
                         "title": title,
                         "date": date_val,
                         "flags": flags,
                         "info": info_items
                     }
+                    entry_payload.update(extra)
+                    result[url] = entry_payload
             return result
         except Exception:
             return {}
@@ -243,6 +250,8 @@ class HistoryLayer:
             raw_fl = v_dict.get("flags", [])
             v_flags = [str(f) for f in raw_fl] if isinstance(raw_fl, list) else ([str(raw_fl)] if isinstance(raw_fl, str) else [])
 
+            extra_disk = {k: v for k, v in v_dict.items() if k not in ("info", "items", "title", "date", "flags")}
+
             if norm_k in disk_normalized:
                 disk_normalized[norm_k]["info"].update(v_info)
                 if not is_valid_title(disk_normalized[norm_k]["title"]) and is_valid_title(v_title):
@@ -252,13 +261,18 @@ class HistoryLayer:
                 for fl in v_flags:
                     if fl not in disk_normalized[norm_k]["flags"]:
                         disk_normalized[norm_k]["flags"].append(fl)
+                for ek, ev in extra_disk.items():
+                    if ek not in disk_normalized[norm_k] or not disk_normalized[norm_k][ek]:
+                        disk_normalized[norm_k][ek] = ev
             else:
-                disk_normalized[norm_k] = {
+                disk_entry_val = {
                     "title": v_title,
                     "date": v_date,
                     "flags": v_flags,
                     "info": v_info
                 }
+                disk_entry_val.update(extra_disk)
+                disk_normalized[norm_k] = disk_entry_val
 
         # Normalize memory entries into canonical URLs
         mem_normalized: Dict[str, Dict[str, Any]] = {}
@@ -275,6 +289,7 @@ class HistoryLayer:
             v_date = v.get("date")
             raw_fl = v.get("flags", [])
             v_flags = [str(f) for f in raw_fl] if isinstance(raw_fl, list) else ([str(raw_fl)] if isinstance(raw_fl, str) else [])
+            extra_mem = {k: v for k, v in v.items() if k not in ("info", "items", "title", "date", "flags")}
 
             if norm_k in mem_normalized:
                 mem_normalized[norm_k]["info"].update(v_info)
@@ -285,13 +300,18 @@ class HistoryLayer:
                 for fl in v_flags:
                     if fl not in mem_normalized[norm_k]["flags"]:
                         mem_normalized[norm_k]["flags"].append(fl)
+                for ek, ev in extra_mem.items():
+                    if ek not in mem_normalized[norm_k] or not mem_normalized[norm_k][ek]:
+                        mem_normalized[norm_k][ek] = ev
             else:
-                mem_normalized[norm_k] = {
+                mem_entry_val = {
                     "title": v_title,
                     "date": v_date,
                     "flags": v_flags,
                     "info": v_info
                 }
+                mem_entry_val.update(extra_mem)
+                mem_normalized[norm_k] = mem_entry_val
 
         self._history = mem_normalized
 
@@ -333,15 +353,20 @@ class HistoryLayer:
             }
             if combined_flags:
                 payload["flags"] = combined_flags
+
+            # Preserve extra metadata (site, mode, destination, status, chosen_options, metadata, etc.)
+            all_extra_keys = (set(mem_entry.keys()) | set(disk_entry.keys())) - {"title", "date", "flags", "info", "items"}
+            for ek in all_extra_keys:
+                ev = mem_entry.get(ek) or disk_entry.get(ek)
+                if ev is not None:
+                    payload[ek] = ev
+
             payload["info"] = sorted(list(combined_info), key=self._sort_key)
 
             data[url] = payload
-            self._history[url] = {
-                "title": chosen_title,
-                "date": dt,
-                "flags": combined_flags,
-                "info": combined_info
-            }
+            entry_history = dict(payload)
+            entry_history["info"] = combined_info
+            self._history[url] = entry_history
 
         raw_data = json.dumps(data, indent=4, ensure_ascii=False)
         self._storage.write_file(self._history_file, raw_data)
@@ -379,6 +404,12 @@ class HistoryLayer:
                     if f not in existing_flags:
                         existing_flags.append(f)
         self.save_history()
+
+        try:
+            from core.journal import DownloadJournal
+            DownloadJournal.get_active().update_active(site_url, title=title)
+        except Exception:
+            pass
 
     def mark_url_tracked(self, site_url: str, title: Optional[str] = None):
         """Registers a site URL in history without any specific items and persists."""
@@ -443,6 +474,13 @@ class HistoryLayer:
         # Seamlessly update BatchHistoryManager if active
         if BatchHistoryManager._instance:
             BatchHistoryManager._instance.update_item(site_url, item_id_str, title=title or entry.get("title"))
+
+        # Seamlessly update DownloadJournal if active
+        try:
+            from core.journal import DownloadJournal
+            DownloadJournal.get_active().record_item(site_url, item_id_str, title=title or entry.get("title"), status="downloaded")
+        except Exception:
+            pass
 
     def unmark_downloaded(self, site_url: str, item_id: str):
         """Removes an item from downloaded registry for a site URL."""
@@ -664,6 +702,12 @@ class HistoryLayer:
             ext = ext.lstrip(".")
             candidate_name = f"{clean_title}.{ext}"
             candidate_path = root_dir / candidate_name
+            if candidate_path.exists():
+                try:
+                    from core.journal import DownloadJournal
+                    DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=candidate_name, status="already_exists")
+                except Exception:
+                    pass
             return candidate_path, candidate_path.exists()
             
         # Determine canonical .zine directory
@@ -708,12 +752,32 @@ class HistoryLayer:
             filename, _ = _parse_local_history_entry(entry)
             final_path = root_dir / filename
             if final_path.exists():
+                try:
+                    from core.journal import DownloadJournal
+                    DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=filename, status="already_exists")
+                except Exception:
+                    pass
                 return final_path, True
             if root_dir.name.lower() in ("video", "music", "song", "short") and (root_dir.parent / filename).exists():
+                try:
+                    from core.journal import DownloadJournal
+                    DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=filename, status="already_exists")
+                except Exception:
+                    pass
                 return (root_dir.parent / filename), True
             if (root_dir / "video" / filename).exists():
+                try:
+                    from core.journal import DownloadJournal
+                    DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=filename, status="already_exists")
+                except Exception:
+                    pass
                 return (root_dir / "video" / filename), True
             if (root_dir / "music" / filename).exists():
+                try:
+                    from core.journal import DownloadJournal
+                    DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=filename, status="already_exists")
+                except Exception:
+                    pass
                 return (root_dir / "music" / filename), True
             else:
                 # Reuse the previously registered filename if it's not claimed by another item
@@ -746,6 +810,11 @@ class HistoryLayer:
             if url: entry["url"] = url
             local_history[item_id] = entry
             self._storage.write_file(local_history_file, _sort_and_dump_history(local_history))
+            try:
+                from core.journal import DownloadJournal
+                DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=candidate_name, status="already_exists")
+            except Exception:
+                pass
             return candidate_path, True
 
         if candidate_name not in claimed:
@@ -770,6 +839,11 @@ class HistoryLayer:
                 if url: entry["url"] = url
                 local_history[item_id] = entry
                 self._storage.write_file(local_history_file, _sort_and_dump_history(local_history))
+                try:
+                    from core.journal import DownloadJournal
+                    DownloadJournal.get_active().record_item(url or str(root_dir), str(item_id), title=clean_title, filename=candidate_name, status="already_exists")
+                except Exception:
+                    pass
                 return candidate_path, True
             if candidate_name not in claimed:
                 entry = {
@@ -823,6 +897,9 @@ class BatchHistoryManager:
                                             existing["status"] = "completed"
                                         if v.get("title") and v.get("title") != "Unknown":
                                             existing["title"] = v.get("title")
+                                        for ek, ev in v.items():
+                                            if ek not in existing or not existing[ek]:
+                                                existing[ek] = ev
                                         v_info = set(str(x) for x in v.get("info", []))
                                         e_info = set(str(x) for x in existing.get("info", []))
                                         existing["info"] = sorted(
@@ -834,7 +911,7 @@ class BatchHistoryManager:
         return data
 
     def save(self):
-        """Atomically saves batch history to both Logs/Batch History.json and Logs/💩/batch_history.json."""
+        """Atomically saves batch history to both Logs/Downlode 💩/Batch History.json and Logs/💩/batch_history.json."""
         try:
             def get_sort_date(item):
                 v = item[1]
@@ -845,7 +922,7 @@ class BatchHistoryManager:
             sorted_history = dict(sorted(self._history.items(), key=get_sort_date, reverse=True))
             raw = json.dumps(sorted_history, indent=4, ensure_ascii=False)
             
-            # Write to primary Logs/Batch History.json
+            # Write to primary Logs/Downlode 💩/Batch History.json
             self._storage.write_file(self._batch_file, raw)
             
             # Mirror to Logs/💩/batch_history.json
@@ -880,7 +957,21 @@ class BatchHistoryManager:
                 key=lambda x: (0, float(x)) if x.replace('.', '', 1).isdigit() else (1, str(x))
             )
         }
+        for ek in ("destination", "save_path", "chosen_options", "metadata", "site"):
+            if ek in existing and ek not in self._history[norm_url]:
+                self._history[norm_url][ek] = existing[ek]
         self.save()
+
+        try:
+            from core.journal import DownloadJournal
+            DownloadJournal.get_active().start_download(
+                url=norm_url,
+                title=title or existing.get("title"),
+                menu_mode=mode,
+                flags=combined_flags
+            )
+        except Exception:
+            pass
 
     def update_item(self, url: str, item_id: str, title: Optional[str] = None):
         """Appends a downloaded item/chapter ID in real time during active scraping."""
@@ -913,7 +1004,13 @@ class BatchHistoryManager:
         entry["date"] = dt
         self.save()
 
-    def record_finish(self, url: str, status: str = "completed", title: Optional[str] = None, save_path: Optional[str] = None):
+        try:
+            from core.journal import DownloadJournal
+            DownloadJournal.get_active().record_item(norm_url, str(item_id), title=title or entry.get("title"), status="downloaded")
+        except Exception:
+            pass
+
+    def record_finish(self, url: str, status: str = "completed", title: Optional[str] = None, save_path: Optional[str] = None, chosen_options: Optional[Dict[str, Any]] = None, metadata: Optional[Dict[str, Any]] = None):
         """Marks a batch item as finished (completed/failed/interrupted) and updates final metadata."""
         norm_url = HistoryLayer.normalize_url(url)
         if not norm_url:
@@ -940,4 +1037,15 @@ class BatchHistoryManager:
         entry["date"] = dt
         if save_path:
             entry["save_path"] = str(save_path)
+            entry["destination"] = str(save_path)
+        if chosen_options:
+            entry.setdefault("chosen_options", {}).update(chosen_options)
+        if metadata:
+            entry.setdefault("metadata", {}).update(metadata)
         self.save()
+
+        try:
+            from core.journal import DownloadJournal
+            DownloadJournal.get_active().finish_download(norm_url, status=status)
+        except Exception:
+            pass

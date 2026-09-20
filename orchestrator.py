@@ -51,7 +51,10 @@ if len(sys.argv) > 1:
 
 # Initialize unified session logger
 from core.logger import init_session_logger, record_error_log
+from core.journal import DownloadJournal
+
 session_log_path = init_session_logger(sys.argv[1:])
+session_journal = DownloadJournal.init_session(sys.argv[1:])
 
 # Protect the central FileHandler from being removed by engine scripts
 original_removeHandler = logging.Logger.removeHandler
@@ -77,6 +80,10 @@ if __name__ == "__main__":
         record_error_log(e, context={"args": sys.argv[1:], "cwd": os.getcwd()})
         raise
     finally:
+        try:
+            session_journal.finish_session()
+        except Exception:
+            pass
         try:
             import psutil
             current_process = psutil.Process(os.getpid())
