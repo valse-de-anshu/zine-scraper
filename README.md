@@ -651,7 +651,7 @@ Zine Scraper is licensed under the **[Creative Commons Attribution-NonCommercial
 
 ### Summary of Terms:
 
-* 👤 **Attribution (`BY`)**: You must give appropriate credit to the author (**Anshu / Valse**), provide a link to the license, and indicate if modifications were made. You may not redistribute or rebrand the software under your own name without prominent credit.
+* 👤 **Attribution (`BY`)**: You must give appropriate credit to the author (**Anshu**), provide a link to the license, and indicate if modifications were made. You may not redistribute or rebrand the software under your own name without prominent credit.
 * 🚫 **Non-Commercial (`NC`)**: You may **not** use the software or any derived material for commercial gain, paid packaging, sponsored redistribution, or monetized platforms.
 * 🔄 **Share-Alike (`SA`)**: If you remix, adapt, or build upon this codebase, you must distribute your contributions under the exact same license terms.
 * 🛡️ **Personal Archival Disclaimer**: This software is provided as-is, strictly for personal, non-commercial media archiving and offline backup. Always respect content creators, rights holders, and platform terms of service.
