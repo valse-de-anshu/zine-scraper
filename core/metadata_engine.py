@@ -231,9 +231,11 @@ class MetadataEngine:
                 data["likes"] = str(payload.likes)
 
             if payload.hottest:
+                data["most_viewed"] = payload.hottest
                 data["hottest"] = payload.hottest
 
             if payload.most_rated:
+                data["top_rated"] = payload.most_rated
                 data["most_rated"] = payload.most_rated
 
             primary_path = zine_dir / "metadata.json"

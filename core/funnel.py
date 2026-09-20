@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import List, Tuple, Any, Optional
 import logging
 
+logger = logging.getLogger("core.funnel")
+
 from core.ui import console, startup_clear, print_banner, clean_exit, Selector, get_theme_input_ansi, read_tty_key
 from rich.table import Table
 from rich.panel import Panel
@@ -263,6 +265,7 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
     clean_title = re.sub(r'[\/\\:\*\?\"\<\>\|]', '_', str(extracted_title).strip()).strip('. ')
 
     # Vacuum container root
+    scraper._force_vacuum = True
     default_root = get_container_root(url, scraper, is_batch=True, batch_path=batch_path)
     target_folder = default_root / clean_title
     target_folder.mkdir(parents=True, exist_ok=True)
@@ -274,9 +277,21 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
             import inspect
             sig = inspect.signature(scraper.engine.save_metadata)
             params = sig.parameters
+            call_kwargs = {}
             if "info" in params:
-                scraper.engine.save_metadata(target_folder, info_dict or meta_dict, meta_dict.get("Source", "Unknown"), cover_url=cover_url)
-                saved = True
+                call_kwargs["info"] = info_dict or meta_dict
+            if "source" in params:
+                call_kwargs["source"] = meta_dict.get("Source", site_folder or "Unknown")
+            if "model_name" in params:
+                call_kwargs["model_name"] = clean_title
+            if "custom_metadata" in params:
+                call_kwargs["custom_metadata"] = meta_dict
+            if "skip_cover" in params:
+                call_kwargs["skip_cover"] = False
+            if "cover_url" in params:
+                call_kwargs["cover_url"] = cover_url
+            scraper.engine.save_metadata(target_folder, **call_kwargs)
+            saved = True
         except Exception as e:
             logger.debug(f"Scraper engine save_metadata fallback: {e}")
 

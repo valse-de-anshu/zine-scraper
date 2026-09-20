@@ -355,6 +355,8 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
     is_vacuum = False
     if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
         is_vacuum = True
+    elif getattr(scraper, "_batch_quick_grab", False):
+        is_vacuum = False
     elif getattr(scraper, "is_playlist", False):
         is_vacuum = True
     elif getattr(scraper, "get_link_type", lambda: "")() in ["playlist", "channel", "board", "profile", "album", "artist", "model"]:
@@ -362,7 +364,7 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
     else:
         site_folder = get_site_folder(url) or "generic"
         category = get_category_for_scraper(site_folder, scraper=scraper)
-        if category == "toon":
+        if category in ["toon", "novel", "book", "asset"]:
             is_chapter_link = False
             if hasattr(scraper, "is_chapter_link"):
                 try:
@@ -371,13 +373,18 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
                     is_chapter_link = False
             if not is_chapter_link:
                 raw_u = getattr(scraper, "original_url", None) or getattr(scraper, "raw_url", None) or url
-                is_chapter_link = any(x in str(raw_u).lower() or x in str(url).lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/"])
+                is_chapter_link = any(x in str(raw_u).lower() or x in str(url).lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/", "/episodes/", "/watch?v=", "/watch/"])
             if not is_chapter_link:
                 is_vacuum = True
         else:
             is_vacuum = False
             
-    container_name = "Vacuum" if (is_batch or is_vacuum) else "Quick grab"
+    if getattr(scraper, "_batch_quick_grab", False):
+        container_name = "Quick grab"
+    elif getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+        container_name = "Vacuum"
+    else:
+        container_name = "Vacuum" if is_vacuum else "Quick grab"
     container_root = library_root / container_name
     
     site_folder = get_site_folder(url) or "generic"
