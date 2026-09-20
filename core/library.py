@@ -111,14 +111,18 @@ def scaffold_library(root: Path, storage) -> None:
         storage.write_file(prompt_file, "")
 
     # Logs directory
-    logs_dir = project_root / "Logs"
-    storage.create_directory(logs_dir)
-    storage.create_directory(logs_dir / "💩")
-    history_file = logs_dir / "Download History.json"
+    from core.paths import PathAuthority
+    pa = PathAuthority()
+    storage.create_directory(pa.get_logs_root())
+    storage.create_directory(pa.get_logs_root() / "💩")
+    
+    down_logs_dir = pa.get_download_logs_root()
+    storage.create_directory(down_logs_dir)
+    history_file = pa.get_history_file()
     if not history_file.exists():
         storage.write_file(history_file, "{}")
 
-    batch_history_file = logs_dir / "Batch History.json"
+    batch_history_file = pa.get_batch_history_file()
     if not batch_history_file.exists():
         storage.write_file(batch_history_file, "{}")
 
