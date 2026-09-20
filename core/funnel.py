@@ -127,7 +127,12 @@ def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = N
         chapter_limit = None
         batch_all = False
 
-        # Parse inline flags: --0 (Quick grab), --<N> (chapter limit), --A/--a (vacuum all)
+        # Parse inline flags: --0 (Quick grab), --<N> (chapter limit), --A/--a (vacuum all), --meta/--metadata
+        only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE))
+        if only_metadata:
+            flags.append("--meta")
+        url = re.sub(r"\s*--(?:meta|metadata)\b", "", url, flags=re.IGNORECASE).strip()
+
         flag_matches = re.findall(r"--(\d+|[aA])\b", url)
         for flag_str in flag_matches:
             if flag_str.lower() == 'a':
@@ -159,7 +164,8 @@ def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = N
             batch_quick_grab=batch_quick_grab,
             batch_all=batch_all,
             flags=flags,
-            chapter_limit=chapter_limit
+            chapter_limit=chapter_limit,
+            only_metadata=only_metadata
         )
 
         if success:
@@ -187,7 +193,174 @@ def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = N
 handle_batch = handle_vacuum_queue
 
 
-def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, batch_all: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
+def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, scraper: Any, site_folder: str, batch_path: Optional[Path] = None, is_batch: bool = False) -> bool:
+    from core.paths import get_container_root
+    from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+    from rich.panel import Panel
+    from rich.syntax import Syntax
+    import json
+    import requests
+
+    console.print(f"[menu]Mode[/menu]         : [sexy_pink]Metadata Extractor (--meta)[/sexy_pink]")
+    console.print(f"[menu]URL[/menu]          : [site]{escape(url)}[/site]")
+    console.print(f"[menu]Site Engine[/menu]  : [info]{site_folder}[/info]")
+    console.print("")
+
+    info_dict = {}
+    meta_dict = {}
+    extracted_title = "Unknown"
+    cover_url = getattr(scraper, "cover_url", None) or getattr(scraper, "cover_image", None)
+
+    with console.status("[info]Extracting metadata from source...[/info]", spinner="dots"):
+        try:
+            if hasattr(scraper, "get_metadata_and_videos"):
+                meta_dict, videos, info_dict = scraper.get_metadata_and_videos()
+                extracted_title = getattr(scraper, "title", None) or meta_dict.get("Channel/Series") or meta_dict.get("title") or (info_dict.get("title") if isinstance(info_dict, dict) else None) or "Unknown"
+                if not cover_url:
+                    cover_url = meta_dict.get("Thumbnail") or (info_dict.get("thumbnail") if isinstance(info_dict, dict) else None)
+            elif hasattr(scraper, "get_metadata_and_assets"):
+                meta_dict, assets = scraper.get_metadata_and_assets()
+                extracted_title = meta_dict.get("Title") or getattr(scraper, "title", "Unknown")
+                if not cover_url:
+                    cover_url = meta_dict.get("Cover URL")
+            elif hasattr(scraper, "get_title_and_chapters"):
+                extracted_title, chapters = scraper.get_title_and_chapters()
+            elif hasattr(scraper, "get_chapters"):
+                chapters = scraper.get_chapters()
+                extracted_title = getattr(scraper, "title", "Unknown")
+            elif hasattr(scraper, "get_boards_and_pins"):
+                boards, profile = scraper.get_boards_and_pins()
+                extracted_title = profile.get("name") or getattr(scraper, "title", "Unknown")
+            else:
+                extracted_title = getattr(scraper, "title", "Unknown")
+        except Exception as e:
+            console.print(f"[error]Failed to extract metadata: {escape(str(e))}[/error]")
+            if not is_batch and sys.stdin.isatty():
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to return...")
+            return False
+
+    if not extracted_title or extracted_title == "Unknown":
+        extracted_title = getattr(scraper, "title", None) or getattr(scraper, "name", None) or "Unknown"
+
+    clean_title = re.sub(r'[\/\\:\*\?\"\<\>\|]', '_', str(extracted_title).strip()).strip('. ')
+
+    # Vacuum container root
+    default_root = get_container_root(url, scraper, is_batch=True, batch_path=batch_path)
+    target_folder = default_root / clean_title
+    target_folder.mkdir(parents=True, exist_ok=True)
+
+    # Save metadata using scraper engine if available or MetadataEngine
+    saved = False
+    if hasattr(scraper, "engine") and hasattr(scraper.engine, "save_metadata"):
+        try:
+            import inspect
+            sig = inspect.signature(scraper.engine.save_metadata)
+            params = sig.parameters
+            if "info" in params:
+                scraper.engine.save_metadata(target_folder, info_dict or meta_dict, meta_dict.get("Source", "Unknown"), cover_url=cover_url)
+                saved = True
+        except Exception as e:
+            logger.debug(f"Scraper engine save_metadata fallback: {e}")
+
+    if not saved:
+        title_val = extracted_title
+        alt_title_val = getattr(scraper, "alt_title", "") or meta_dict.get("alt_title", "") or meta_dict.get("Alternative Title", "")
+        author_val = getattr(scraper, "author", "") or meta_dict.get("Author", "") or meta_dict.get("Creator", "") or meta_dict.get("Uploader", "") or meta_dict.get("uploader", "")
+        artist_val = getattr(scraper, "artist", "") or meta_dict.get("Artist", "")
+        studio_val = getattr(scraper, "studio", "") or meta_dict.get("Studio", "")
+        desc_val = getattr(scraper, "description", "") or meta_dict.get("Description", "") or meta_dict.get("Summary", "") or (info_dict.get("description") if isinstance(info_dict, dict) else "")
+        status_val = getattr(scraper, "status", "") or meta_dict.get("Status", "")
+        rating_val = str(getattr(scraper, "rating", "") or meta_dict.get("Rating", "") or "")
+        year_val = str(getattr(scraper, "year", "") or meta_dict.get("Year", "") or meta_dict.get("Release Date", "") or meta_dict.get("Date", "") or meta_dict.get("date", "") or "")
+
+        tags_raw = getattr(scraper, "tags", []) or getattr(scraper, "genres", []) or meta_dict.get("Tags") or meta_dict.get("genres") or meta_dict.get("Subject") or meta_dict.get("Subjects") or []
+        tags_list = []
+        if isinstance(tags_raw, str):
+            for sub in tags_raw.replace(";", ",").split(","):
+                if sub.strip():
+                    tags_list.append(sub.strip())
+        elif isinstance(tags_raw, list):
+            for item in tags_raw:
+                if isinstance(item, str):
+                    for sub in item.replace(";", ",").split(","):
+                        if sub.strip() and sub.strip() not in tags_list:
+                            tags_list.append(sub.strip())
+
+        media_type = "Manga"
+        if "NOVEL" in site_folder.upper():
+            media_type = "Novel"
+        elif "MANHWA" in site_folder.upper():
+            media_type = "Manhwa"
+        elif "MANHUA" in site_folder.upper():
+            media_type = "Manhua"
+        elif "KNOWLEDGE" in site_folder.upper() or "STUDY" in site_folder.upper():
+            media_type = "Book"
+        elif "MUSIC" in site_folder.upper():
+            media_type = "Song"
+        elif "SOCIAL" in site_folder.upper() or "PORN" in site_folder.upper():
+            media_type = "Channel"
+        elif "ANIME" in site_folder.upper() or "SERIES" in site_folder.upper():
+            media_type = "Series"
+
+        payload = ZineMetadataPayload(
+            title=title_val,
+            type=media_type,
+            alt_title=alt_title_val,
+            author=author_val,
+            artist=artist_val,
+            studio=studio_val,
+            description=desc_val,
+            status=status_val,
+            rating=rating_val,
+            tags=tags_list,
+            year=year_val,
+            url=url,
+            views=str(getattr(scraper, "views", "") or meta_dict.get("Views", "") or meta_dict.get("views", "") or ""),
+            likes=str(getattr(scraper, "likes", "") or meta_dict.get("Likes", "") or meta_dict.get("likes", "") or ""),
+            hottest=getattr(scraper, "hottest", []) or meta_dict.get("hottest", []),
+            most_rated=getattr(scraper, "most_rated", []) or meta_dict.get("most_rated", [])
+        )
+        MetadataEngine.save_metadata(target_folder, payload)
+
+    # Save cover if available
+    cover_file = target_folder / "cover.png"
+    if not cover_file.exists() and cover_url:
+        try:
+            if hasattr(scraper, "save_cover"):
+                scraper.save_cover(target_folder)
+            elif cover_url:
+                headers = getattr(scraper, "headers", {"User-Agent": "Mozilla/5.0"})
+                res = requests.get(cover_url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    cover_ext = ".jpg" if "jpeg" in res.headers.get("Content-Type", "") or cover_url.endswith((".jpg", ".jpeg")) else ".png"
+                    (target_folder / f"cover{cover_ext}").write_bytes(res.content)
+        except Exception as e:
+            logger.debug(f"Cover download non-fatal error: {e}")
+
+    meta_file = target_folder / ".zine" / "metadata.json"
+    if meta_file.exists():
+        console.print(f"[success]✔ Metadata extracted and saved successfully![/success]")
+        console.print(f"[menu]Location[/menu]     : [site]{escape(str(meta_file.resolve()))}[/site]\n")
+        try:
+            raw_json = meta_file.read_text(encoding="utf-8")
+            syntax = Syntax(raw_json, "json", theme="monokai", line_numbers=True)
+            console.print(Panel(syntax, title=f"[bold cyan]📄 .zine/metadata.json — {extracted_title}[/bold cyan]", border_style="cyan"))
+        except Exception:
+            pass
+        if not is_batch and sys.stdin.isatty():
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
+        return True
+    else:
+        console.print(f"[error]Failed to write metadata.json to {target_folder}[/error]")
+        if not is_batch and sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...")
+        return False
+
+
+def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, batch_all: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None, only_metadata: bool = False) -> bool:
     import core.ui
     if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
         core.ui.trigger_revolt_exit()
@@ -236,6 +409,9 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         else:
             time.sleep(1.5)
         return False
+
+    if only_metadata:
+        return handle_only_metadata(url, hist_layer, store_layer, scraper, site_folder, batch_path=batch_path, is_batch=is_batch)
 
     try:
         tui_module = importlib.import_module(f"scrapers.{site_folder}.tui")
@@ -986,7 +1162,7 @@ def main():
             from core.cli_help import run_cli_clean
             run_cli_clean()
             sys.exit(0)
-        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum")):
+        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
             from core.cli_help import handle_unknown_flag
             handle_unknown_flag(raw_arg)
             sys.exit(2)
@@ -1103,7 +1279,12 @@ def main():
                 batch_quick_grab = False
                 chapter_limit = None
                 batch_all = False
-                flag_matches = re.findall(r"--(\d+|[aA])\b", url_input)
+                only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url_input, re.IGNORECASE))
+                if only_metadata:
+                    flags.append("--meta")
+                clean_url = re.sub(r"\s*--(?:meta|metadata)\b", "", url_input, flags=re.IGNORECASE).strip()
+
+                flag_matches = re.findall(r"--(\d+|[aA])\b", clean_url)
                 for flag_str in flag_matches:
                     if flag_str.lower() == 'a':
                         batch_all = True
@@ -1116,7 +1297,7 @@ def main():
                         else:
                             chapter_limit = val
                             flags.append(f"--{val}")
-                clean_url = re.sub(r"\s*--(\d+|[aA])\b", "", url_input).strip()
+                clean_url = re.sub(r"\s*--(\d+|[aA])\b", "", clean_url).strip()
 
                 # Headless if launched via CLI args (no interactive TUI needed in that path)
                 is_headless = bool(cli_args)
@@ -1130,7 +1311,8 @@ def main():
                     batch_quick_grab=batch_quick_grab,
                     batch_all=batch_all,
                     flags=flags,
-                    chapter_limit=chapter_limit
+                    chapter_limit=chapter_limit,
+                    only_metadata=only_metadata
                 )
 
                 if cli_args:

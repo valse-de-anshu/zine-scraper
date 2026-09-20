@@ -44,7 +44,7 @@ if len(sys.argv) > 1:
         from core.cli_help import run_cli_clean
         run_cli_clean()
         sys.exit(0)
-    elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum")):
+    elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)
         sys.exit(2)
