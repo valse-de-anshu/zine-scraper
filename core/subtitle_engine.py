@@ -217,17 +217,35 @@ def run_subtitle_tui():
         time.sleep(3)
         return
         
-    project_root = Path(__file__).resolve().parent.parent
-    configured_path = config.get("ai_subtitles_model", "~/Models/faster-whisper-large-v3-turbo")
-    model_path = os.path.expanduser(configured_path)
-    if not os.path.exists(model_path):
-        # Check project root Models/ directory
-        local_model = project_root / "Models" / "faster-whisper-large-v3-turbo"
-        if local_model.exists():
-            model_path = str(local_model)
-        elif (Path.home() / "Models" / "faster-whisper-large-v3-turbo").exists():
-            model_path = str(Path.home() / "Models" / "faster-whisper-large-v3-turbo")
+    models_root = paths.get_models_root()
+    stt_root = paths.get_stt_models_root()
+    configured_path = config.get("ai_subtitles_model", "Models/STT/faster-whisper-large-v3-turbo")
+    clean_configured = sanitize_user_path(configured_path)
+    
+    # Priority 1: Check absolute or relative configured path
+    candidate_path = Path(clean_configured).expanduser().resolve() if os.path.isabs(clean_configured) else (paths.get_app_root() / clean_configured).resolve()
+    if candidate_path.exists() and candidate_path.is_dir():
+        model_path = str(candidate_path)
+    else:
+        # Priority 2: Check Models/STT/faster-whisper-large-v3-turbo
+        local_stt_model = stt_root / "faster-whisper-large-v3-turbo"
+        local_root_model = models_root / "faster-whisper-large-v3-turbo"
+        if local_stt_model.exists():
+            model_path = str(local_stt_model)
+        elif local_root_model.exists():
+            model_path = str(local_root_model)
+        else:
+            # Priority 3: Scan Models/STT/ then Models/ for any faster-whisper folder
+            found_models = [p for p in stt_root.glob("faster-whisper*") if p.is_dir() and (p / "config.json").exists()]
+            if not found_models:
+                found_models = [p for p in models_root.glob("faster-whisper*") if p.is_dir() and (p / "config.json").exists()]
+            if found_models:
+                model_path = str(found_models[0])
+            else:
+                model_path = str(local_stt_model)
 
+    sub_mode = config.get("ai_subtitles_mode", "Both")
+    target_lang = config.get("ai_target_lang", "English")
     vram_target = config.get("ai_subtitles_vram", "6GB (INT8)")
     
     if sub_mode == "None":
@@ -235,10 +253,10 @@ def run_subtitle_tui():
         time.sleep(2)
         return
         
-    if not os.path.exists(model_path):
+    if not os.path.exists(model_path) or not os.path.isdir(model_path):
         console.print(f"[error]Whisper Model not found at {model_path}![/error]")
-        console.print("[info]Run this command to download the model into Models/:[/info]")
-        console.print("[site]python -c \"from huggingface_hub import snapshot_download; snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo', local_dir='Models/faster-whisper-large-v3-turbo')\"[/site]")
+        console.print("[info]Run this command to download the model into Models/STT/:[/info]")
+        console.print("[site]python -c \"from huggingface_hub import snapshot_download; snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo', local_dir='Models/STT/faster-whisper-large-v3-turbo')\"[/site]")
         console.print("[info]See [site]Models/README to downlode ai model.md[/site] for all download options.[/info]")
         time.sleep(4)
         return

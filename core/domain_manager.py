@@ -18,13 +18,14 @@ class DomainManager:
         if not self.scrapers_dir.exists():
             return
             
-        for config_path in self.scrapers_dir.glob("*/site_config.json"):
-            scraper_folder = config_path.parent.name
+        for config_path in self.scrapers_dir.rglob("site_config.json"):
+            scraper_folder = config_path.parent.relative_to(self.scrapers_dir).as_posix().replace("/", ".")
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                     
                 self.configs[scraper_folder] = config
+                self.configs[config_path.parent.name] = config
                 
                 # Register primary domain and all aliases
                 domains = [config.get("primary_domain")] + config.get("aliases", [])

@@ -1,0 +1,620 @@
+import os
+import re
+import shutil
+import logging
+import threading
+import json
+import subprocess
+import time
+from pathlib import Path
+from typing import Dict, Any, Callable, Optional, List
+import yt_dlp
+import requests
+
+logger = logging.getLogger(__name__)
+
+class YoutubeMusicEngine:
+    """
+    Isolated engine for YouTube Music audio extraction, FLAC conversion,
+    metadata tagging, and synced lyrics fetching.
+    """
+
+    def __init__(self, headers: Optional[Dict[str, str]] = None):
+        self.headers = headers or {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://music.youtube.com/",
+        }
+        self.common_ydl_opts = {
+            'nocheckcertificate': True,
+            'cachedir': False,
+            'no_warnings': True,
+            'ignoreerrors': False,
+            'retries': 10,
+            'fragment_retries': 10,
+            'timeout': 60,
+            'http_headers': self.headers,
+            'concurrent_fragment_downloads': 5,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web']
+                },
+                'youtubetab': {
+                    'skip': ['authcheck']
+                }
+            }
+        }
+        try:
+            from core.config import ConfigLayer
+            from core.paths import PathAuthority
+            from core.storage import StorageLayer
+            cfg = ConfigLayer(PathAuthority(), StorageLayer())
+            browser = cfg.get("cookies_browser")
+            if browser and browser != "None":
+                self.common_ydl_opts['cookiesfrombrowser'] = (str(browser), None, None, None)
+        except Exception:
+            pass
+
+    def extract_playlist_info(self, url: str, playlist_limit: Optional[int] = None, playlist_start: Optional[int] = None) -> Dict[str, Any]:
+        """Extracts flat info for a YT Music playlist or album with multi-client rotation."""
+        if playlist_limit is None:
+            try:
+                from core.config import ConfigLayer
+                from core.paths import PathAuthority
+                from core.storage import StorageLayer
+                config = ConfigLayer(PathAuthority(), StorageLayer())
+                playlist_limit = config.get("playlist_max_items", 200)
+            except Exception:
+                playlist_limit = 200
+
+        client_waterfall = [
+            ['android', 'ios', 'web'],
+            ['web_creator', 'mweb', 'android'],
+            ['ios', 'mweb', 'web'],
+            ['android_music', 'android', 'web']
+        ]
+        last_exc = None
+        for chain in client_waterfall:
+            ydl_opts = self.common_ydl_opts.copy()
+            ydl_opts.update({
+                'quiet': True,
+                'extract_flat': True,
+                'dump_single_json': True,
+                'ignoreconfig': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': chain
+                    },
+                    'youtubetab': {
+                        'skip': ['authcheck']
+                    }
+                }
+            })
+            if playlist_limit and playlist_limit > 0:
+                ydl_opts['playlistend'] = playlist_limit
+            if playlist_start and playlist_start > 0:
+                ydl_opts['playliststart'] = playlist_start
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Could not extract playlist metadata from {url}")
+
+    def extract_track_info(self, url: str, fast: bool = False) -> Dict[str, Any]:
+        """Extracts metadata for a single YouTube Music track with multi-client rotation."""
+        client_waterfall = [
+            ['android', 'ios', 'web'],
+            ['web_creator', 'mweb', 'android'],
+            ['ios', 'mweb', 'web'],
+            ['android_music', 'android', 'web']
+        ]
+        last_exc = None
+        for chain in client_waterfall:
+            ydl_opts = self.common_ydl_opts.copy()
+            ydl_opts.update({
+                'quiet': True,
+                'dump_single_json': True,
+                'noplaylist': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': chain
+                    },
+                    'youtubetab': {
+                        'skip': ['authcheck']
+                    }
+                }
+            })
+            if fast:
+                ydl_opts.update({
+                    'extract_flat': True,
+                    'check_formats': False,
+                    'ignoreconfig': True,
+                    'noplugins': True,
+                })
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Could not extract track metadata from {url}")
+
+    def download_cover_art(
+        self,
+        folder: Path,
+        thumbnails: Optional[List[Any]] = None,
+        track_id: Optional[str] = None,
+        cover_url: Optional[str] = None,
+        filename_prefix: Optional[str] = None
+    ) -> Optional[Path]:
+        """
+        Downloads high-resolution album cover art using a prioritized fallback waterfall.
+        Saves cover.jpg / cover.png (or <filename_prefix>.jpg) in the target directory.
+        """
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+
+        prefix = filename_prefix or "cover"
+        existing = list(folder.glob(f"{prefix}.*"))
+        if existing and existing[0].stat().st_size > 2048:
+            return existing[0]
+
+        candidates: List[str] = []
+
+        # 1. Ultra-HD Google CDN URL
+        if cover_url and "googleusercontent.com" in cover_url:
+            high_res = re.sub(r'=w\d+-h\d+[^\"\'\s]*', '=w1200-h1200-l90-rj', cover_url)
+            candidates.append(high_res)
+            candidates.append(cover_url)
+
+        # 2. Signed playlist/album thumbnail URLs
+        if thumbnails:
+            for t in reversed(thumbnails):
+                u = t.get("url") if isinstance(t, dict) else str(t)
+                if u and "googleusercontent.com" in u:
+                    high_res = re.sub(r'=w\d+-h\d+[^\"\'\s]*', '=w1200-h1200-l90-rj', u)
+                    if high_res not in candidates:
+                        candidates.append(high_res)
+                elif u and "?" in u and u not in candidates:
+                    candidates.append(u)
+
+        # 3. Provided cover_url
+        if cover_url and cover_url not in candidates:
+            candidates.append(cover_url)
+
+        # 4. Track-specific maxresdefault / sddefault
+        if track_id:
+            candidates.append(f"https://i.ytimg.com/vi/{track_id}/maxresdefault.jpg")
+            candidates.append(f"https://i.ytimg.com/vi/{track_id}/sddefault.jpg")
+            candidates.append(f"https://i.ytimg.com/vi/{track_id}/hqdefault.jpg")
+
+        # 5. Unsigned thumbnail URLs as fallback
+        if thumbnails:
+            for t in reversed(thumbnails):
+                u = t.get("url") if isinstance(t, dict) else str(t)
+                if u and u not in candidates:
+                    candidates.append(u)
+
+        for url_cand in candidates:
+            try:
+                r = requests.get(url_cand, headers=self.headers, timeout=8)
+                if r.status_code == 200 and len(r.content) > 2048:
+                    from core.cover_utils import save_verified_cover
+                    saved = save_verified_cover(r.content, folder, filename=prefix)
+                    if saved:
+                        return saved
+            except Exception:
+                continue
+
+        return None
+
+    def download_video(
+        self,
+        url: str,
+        output_dir: Path,
+        progress_hook: Optional[Callable] = None,
+        raw_stream_url: Optional[str] = None,
+        is_audio: bool = True,
+        custom_thumbnail: Optional[Path] = None,
+        fixed_title: Optional[str] = None,
+        fixed_artist: Optional[str] = None,
+        fixed_album: Optional[str] = None,
+        track_number: Optional[int] = None,
+        track_id: Optional[str] = None,
+        attempt: int = 1,
+        **kwargs
+    ) -> bool:
+        """
+        Downloads a YouTube Music track and converts it into high-fidelity FLAC audio
+        with embedded metadata, album cover, and synced lyrics.
+        Implements a 3-tier multi-client rotation waterfall for seamless playlist downloads.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        clean_title = "".join([c for c in (fixed_title or "track") if c.isalnum() or c in " .-_()'"]).strip()
+        clean_title = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_title).strip() or clean_title
+        if not clean_title:
+            clean_title = "track"
+        if len(clean_title) > 150:
+            clean_title = clean_title[:150].strip()
+
+        # ── Audio Format Resolution from Settings ────────────────────────────
+        from core.config import ConfigLayer
+        from core.paths import PathAuthority
+        from core.storage import StorageLayer
+        cfg = ConfigLayer(PathAuthority(), StorageLayer())
+        audio_fmt = cfg.get("default_audio_format", "FLAC").lower()
+        if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+            audio_fmt = "flac"
+
+        # Filename format - songs must not have leading numbers
+        if fixed_artist and fixed_title and fixed_artist.lower() not in clean_title.lower():
+            clean_artist = "".join([c for c in fixed_artist if c.isalnum() or c in " .-_()'"]).strip()
+            clean_artist = re.sub(r'^\d+[\.\s\-]+\s*', '', clean_artist).strip() or clean_artist
+            filename = f"{clean_artist} - {clean_title}.{audio_fmt}"
+        else:
+            filename = f"{clean_title}.{audio_fmt}"
+
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        poop_dir = project_root / "💩"
+        poop_dir.mkdir(parents=True, exist_ok=True)
+
+        final_dest = output_dir / filename
+        temp_token = f"ytm_{os.getpid()}_{track_id or 'audio'}"
+        temp_outtmpl = poop_dir / f"{temp_token}.%(ext)s"
+
+        # ── Background lyrics fetch ──────────────────────────────────────────
+        lrc_parsed = []
+        lrc_ready = threading.Event()
+
+        def _bg_lyrics_fetch():
+            try:
+                from core.lyrics_engine import waterfall_fetch_lyrics, clean_track_string
+                t = clean_track_string(fixed_title or "")
+                a = clean_track_string(fixed_artist or "")
+                if t:
+                    lines, _ = waterfall_fetch_lyrics(t, a)
+                    lrc_parsed.extend(lines)
+            except Exception as e:
+                logger.debug(f"Lyrics fetch error: {e}")
+            finally:
+                lrc_ready.set()
+
+        if fixed_title or fixed_artist:
+            lyric_thread = threading.Thread(target=_bg_lyrics_fetch, daemon=True)
+            lyric_thread.start()
+        else:
+            lrc_ready.set()
+
+        # ── Resolve Album Art to Embed ───────────────────────────────────────
+        cover_to_embed = custom_thumbnail
+        if not cover_to_embed or not Path(cover_to_embed).exists():
+            existing_covers = [c for c in output_dir.glob("cover.*") if c.is_file() and c.stat().st_size > 2048]
+            if existing_covers:
+                cover_to_embed = existing_covers[0]
+            elif track_id:
+                cover_to_embed = self.download_cover_art(poop_dir, track_id=track_id, filename_prefix=f"cover_{temp_token}")
+
+        # Standardize download URL
+        download_url = url
+        if track_id:
+            download_url = f"https://www.youtube.com/watch?v={track_id}"
+        elif "music.youtube.com" in download_url:
+            download_url = download_url.replace("music.youtube.com", "www.youtube.com")
+
+        # 3-Tier Multi-Client Rotation Waterfall
+        client_rotation = [
+            "android,web,default",
+            "web_creator,mweb,android",
+            "ios,mweb,web"
+        ]
+        chosen_client = client_rotation[(attempt - 1) % len(client_rotation)]
+
+        ytdlp_bin = shutil.which("yt-dlp") or "yt-dlp"
+        cmd = [
+            ytdlp_bin,
+            download_url,
+            "-o", str(temp_outtmpl),
+            "--no-playlist",
+            "--retries", "10",
+            "--fragment-retries", "10",
+            "--concurrent-fragments", "5",
+            "--no-check-certificate",
+            "--no-warnings",
+            "--socket-timeout", "15",
+            "--extractor-args", f"youtube:player-client={chosen_client}",
+            "-x",
+            "--audio-format", audio_fmt,
+            "--audio-quality", "0",
+        ]
+
+        # Cookie integration from user settings
+        try:
+            browser = cfg.get("cookies_browser")
+            if browser and browser != "None":
+                cmd.extend(["--cookies-from-browser", str(browser)])
+        except Exception:
+            pass
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+
+            unit_map = {
+                'B': 1, 'KIB': 1024, 'KB': 1000,
+                'MIB': 1024**2, 'MB': 1000**2,
+                'GIB': 1024**3, 'GB': 1000**3
+            }
+
+            if proc.stdout:
+                for line in iter(proc.stdout.readline, ""):
+                    if not line:
+                        break
+                    if progress_hook and "[download]" in line:
+                        m = re.search(r'\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+)(\w+)\s+at\s+~?([\d\.]+)(\w+/s)?', line)
+                        if m:
+                            try:
+                                pct = float(m.group(1))
+                                size_val = float(m.group(2))
+                                size_unit = m.group(3).upper()
+                                speed_val = float(m.group(4))
+                                total_b = int(size_val * unit_map.get(size_unit, 1024**2))
+                                dl_b = int((pct / 100.0) * total_b)
+                                spd = int(speed_val * 1024**2)
+                                progress_hook({
+                                    'status': 'downloading',
+                                    'downloaded_bytes': dl_b,
+                                    'total_bytes': total_b,
+                                    'speed': spd
+                                })
+                            except Exception:
+                                pass
+                    elif progress_hook and "[ExtractAudio]" in line:
+                        progress_hook({'status': 'finished'})
+
+            proc.wait()
+
+            candidates = list(poop_dir.glob(f"{temp_token}*.{audio_fmt}"))
+            if not candidates:
+                candidates = [f for f in poop_dir.glob(f"{temp_token}*") if not f.name.endswith(".part") and not f.name.endswith(".ytdl") and not f.name.endswith(".txt")]
+            if not candidates or candidates[0].stat().st_size < 1024:
+                return False
+
+            downloaded_audio = candidates[0]
+
+            # Wait briefly for lyrics thread
+            lrc_ready.wait(timeout=2.0)
+
+            # Plain lyrics text for vorbis/id3 comment
+            plain_lyrics = "\n".join(e.get("text", "") for e in lrc_parsed if isinstance(e, dict)) if lrc_parsed else None
+
+            # ── Embed Metadata & Cover Art ──────────────────────
+            self._tag_audio_file(
+                downloaded_audio,
+                title=fixed_title,
+                artist=fixed_artist,
+                album=fixed_album,
+                track_number=track_number,
+                custom_thumb=cover_to_embed,
+                lyrics=plain_lyrics
+            )
+
+            # Move final tagged file to destination
+            shutil.move(str(downloaded_audio), str(final_dest))
+
+            # If synced lyrics were found, save companion .lrc file in destination (or lyrics/ folder)
+            if lrc_parsed:
+                try:
+                    from core.lyrics_engine import format_lrc
+                    lyrics_folder = output_dir / "lyrics"
+                    if "Quick grab" in str(output_dir) and not lyrics_folder.exists():
+                        lrc_dest = final_dest.with_suffix(".lrc")
+                    else:
+                        lyrics_folder.mkdir(parents=True, exist_ok=True)
+                        lrc_dest = lyrics_folder / f"{final_dest.stem}.lrc"
+                    with open(lrc_dest, "w", encoding="utf-8") as lf:
+                        lf.write(format_lrc(lrc_parsed))
+                except Exception as e:
+                    logger.debug(f"Failed to write .lrc file: {e}")
+
+            # Clean up all temporary files in 💩
+            for junk in poop_dir.glob(f"{temp_token}*"):
+                try:
+                    junk.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            for junk in poop_dir.glob(f"cover_{temp_token}*"):
+                try:
+                    junk.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+            return final_dest.exists() and final_dest.stat().st_size > 1024
+
+        except Exception as e:
+            logger.error(f"YouTube Music download error: {e}")
+            return False
+
+    def _tag_audio_file(
+        self,
+        audio_path: Path,
+        title: Optional[str] = None,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        track_number: Optional[int] = None,
+        custom_thumb: Optional[Path] = None,
+        lyrics: Optional[str] = None
+    ):
+        """Tags audio files (.flac, .mp3, .opus, .m4a, .wav) with metadata and album art."""
+        ext = audio_path.suffix.lower()
+        if ext == ".flac":
+            try:
+                from mutagen.flac import FLAC, Picture
+                audio = FLAC(str(audio_path))
+                if title: audio["TITLE"] = title
+                if artist: audio["ARTIST"] = artist
+                if album: audio["ALBUM"] = album
+                if track_number is not None: audio["TRACKNUMBER"] = str(track_number)
+                if lyrics: audio["LYRICS"] = lyrics
+                if custom_thumb and Path(custom_thumb).exists():
+                    from core.cover_utils import ensure_compatible_image_bytes_for_tagging
+                    thumb_data, mime = ensure_compatible_image_bytes_for_tagging(custom_thumb)
+                    if thumb_data and len(thumb_data) > 100:
+                        audio.clear_pictures()
+                        pic = Picture()
+                        pic.type = 3
+                        pic.mime = mime or "image/jpeg"
+                        pic.data = thumb_data
+                        audio.add_picture(pic)
+                audio.save()
+                return
+            except Exception as e:
+                logger.debug(f"Mutagen FLAC tagging failed: {e}")
+
+        # Universal fallback for all audio formats via bake_engine
+        try:
+            from core.bake_engine import bake_metadata_and_cover
+            bake_metadata_and_cover(
+                audio_path,
+                title=title or "",
+                artist=artist or "",
+                album=album or "",
+                track=str(track_number) if track_number else "",
+                cover_path=custom_thumb
+            )
+        except Exception as e:
+            logger.debug(f"Universal bake_metadata_and_cover failed: {e}")
+
+
+    def save_metadata(
+        self,
+        folder: Path,
+        info: Dict[str, Any],
+        source: str = "YouTube Music",
+        cover_url: Optional[str] = None,
+        thumbnails: Optional[List[Any]] = None,
+        track_id: Optional[str] = None
+    ):
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        album_title = info.get("album") or info.get("title") or "Unknown Album"
+        artist_name = info.get("artist") or info.get("uploader") or info.get("channel") or ""
+        payload = ZineMetadataPayload(
+            title=album_title,
+            type="Song",
+            author=artist_name,
+            artist=artist_name,
+            description=info.get("description", ""),
+            year=str(info.get("release_year") or info.get("year") or ""),
+            url=info.get("webpage_url") or info.get("original_url") or ""
+        )
+        MetadataEngine.save_metadata(folder, payload)
+
+        self.download_cover_art(
+            folder,
+            thumbnails=thumbnails or info.get("thumbnails"),
+            track_id=track_id or info.get("id"),
+            cover_url=cover_url or info.get("thumbnail")
+        )
+
+    def fetch_youtube_subtitles(self, url: str) -> List[Dict[str, Any]]:
+        """
+        Fetches official or AI auto-generated subtitles for a given YouTube Music track/URL.
+        Returns: [{'time': float, 'text': str}, ...]
+        """
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        poop_dir = project_root / "💩"
+        poop_dir.mkdir(parents=True, exist_ok=True)
+        token = f"ytm_sub_{os.getpid()}_{int(time.time() * 1000)}"
+        sub_dir = poop_dir / token
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        out_tmpl = str(sub_dir / "sub.%(ext)s")
+
+        ytdlp_bin = shutil.which("yt-dlp") or "yt-dlp"
+        cmd = [
+            ytdlp_bin,
+            "--no-warnings", "--quiet", "--no-playlist",
+            "--write-auto-sub", "--write-sub",
+            "--sub-format", "vtt/lrc/best",
+            "--sub-langs", "en,en.*,en-orig,en-US,en-GB,hi,hi.*,hin,hi-orig,all",
+            "--skip-download",
+            "-o", out_tmpl,
+            url
+        ]
+
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+
+            def _priority(f: str) -> int:
+                fl = f.lower()
+                if fl.endswith(".en.vtt") or fl.endswith(".en.lrc"): return 0
+                if ".en-orig" in fl or ".en" in fl or "english" in fl: return 1
+                if fl.endswith(".hi.vtt") or fl.endswith(".hi.lrc"): return 2
+                if ".hi-orig" in fl or ".hi" in fl or "hindi" in fl or "hin" in fl: return 3
+                return 4
+
+            import importlib
+            parse_vtt = importlib.import_module("scrapers.1_SFW.SOCIAL_MEDIA.youtube.engine").parse_vtt
+            files = sorted([f for f in os.listdir(sub_dir) if f.startswith("sub.")], key=_priority)
+            for fname in files:
+                fpath = sub_dir / fname
+                try:
+                    content = fpath.read_text(encoding="utf-8", errors="ignore")
+                    if fname.endswith(".vtt"):
+                        parsed = parse_vtt(content)
+                        if parsed:
+                            return parsed
+                    elif fname.endswith(".lrc"):
+                        from core.lyrics_engine import parse_lrc
+                        parsed = parse_lrc(content)
+                        if parsed:
+                            return parsed
+                except Exception as e:
+                    logger.debug(f"Error reading sub file {fname}: {e}")
+        except Exception as e:
+            logger.debug(f"yt-dlp subtitle fetch error: {e}")
+        finally:
+            try:
+                shutil.rmtree(sub_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+        return []
+
+    def fetch_and_save_subtitles(self, url: str, media_path: Path) -> Optional[Path]:
+        """
+        Fetches official/AI subtitles from YouTube and saves into the appropriate location:
+        - Quick Grab: sibling file -> <media_path>.lrc
+        - Vacuum / Batch: inside lyrics/ subfolder -> <parent>/lyrics/<stem>.lrc
+        """
+        parsed = self.fetch_youtube_subtitles(url)
+        if not parsed:
+            return None
+
+        try:
+            from core.lyrics_engine import format_lrc, _lrc_save_path
+            out_lrc = _lrc_save_path(media_path)
+            out_lrc.parent.mkdir(parents=True, exist_ok=True)
+            lrc_text = format_lrc(parsed)
+            out_lrc.write_text(lrc_text, encoding="utf-8")
+            return out_lrc
+        except Exception as e:
+            logger.error(f"Failed to save subtitles as LRC: {e}")
+            return None

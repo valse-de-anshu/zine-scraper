@@ -21,7 +21,7 @@ fi
 echo "[+] Checking for OS dependencies (ffmpeg, aria2, atomicparsley, curl, unzip)..."
 if command -v brew &> /dev/null; then
     echo "[+] macOS (Homebrew) detected. Installing system packages..."
-    brew install ffmpeg aria2 atomicparsley curl unzip
+    brew install ffmpeg aria2 atomicparsley curl unzip python3
 elif command -v apt-get &> /dev/null; then
     echo "[+] Debian/Ubuntu detected. Installing system packages..."
     $SUDO apt-get update
@@ -48,7 +48,13 @@ if ! command -v deno &> /dev/null; then
     echo "[+] Installing Deno..."
     curl -fsSL https://deno.land/install.sh | sh -s -- -y
     export PATH="$HOME/.deno/bin:$PATH"
-    echo 'export PATH="$HOME/.deno/bin:$PATH"' >> ~/.bashrc
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.profile"; do
+        if [ -f "$rc" ]; then
+            if ! grep -q '\.deno/bin' "$rc" 2>/dev/null; then
+                echo 'export PATH="$HOME/.deno/bin:$PATH"' >> "$rc"
+            fi
+        fi
+    done
 else
     echo "[+] Deno is already installed."
 fi
@@ -75,5 +81,41 @@ pip install -r requirements.txt
 echo "[+] Installing Playwright browser binaries..."
 python -m playwright install chromium
 
-echo "[+] Installation complete! Booting the Zine Scraper 1-Time Setup Wizard..."
-"$ROOT_DIR/venv/bin/python" "$ROOT_DIR/wizard/setup.py"
+# Create global/user 'zine' CLI binary
+echo "[+] Linking 'zine' command to PATH..."
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$BIN_DIR"
+
+cat << EOF > "$BIN_DIR/zine"
+#!/usr/bin/env bash
+ZINE_ROOT="$ROOT_DIR"
+if [ ! -d "\$ZINE_ROOT" ]; then
+    ZINE_ROOT="\$HOME/.config/zine scraper"
+fi
+if [ -f "\$ZINE_ROOT/run me/run.sh" ]; then
+    exec "\$ZINE_ROOT/run me/run.sh" "\$@"
+elif [ -f "\$ZINE_ROOT/orchestrator.py" ]; then
+    exec "\$ZINE_ROOT/venv/bin/python" "\$ZINE_ROOT/orchestrator.py" "\$@"
+else
+    echo "[-] Error: Zine Scraper directory not found at \$ZINE_ROOT" >&2
+    exit 1
+fi
+EOF
+chmod +x "$BIN_DIR/zine"
+
+# Ensure ~/.local/bin is in user's shell rc files
+for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.profile" "$HOME/.config/fish/config.fish"; do
+    if [ -f "$rc" ]; then
+        if ! grep -q '\.local/bin' "$rc" 2>/dev/null; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
+        fi
+    fi
+done
+
+echo "[+] Installation complete!"
+if [ -t 0 ] && [ -z "$CI" ]; then
+    echo "[+] Booting the Zine Scraper 1-Time Setup Wizard..."
+    "$ROOT_DIR/venv/bin/python" "$ROOT_DIR/wizard/setup.py"
+else
+    echo "[+] Run 'zine' or 'python3 orchestrator.py' anytime to start using Zine Scraper!"
+fi

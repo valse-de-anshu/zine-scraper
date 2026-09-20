@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import List, Tuple, Any, Optional
 import logging
 
+logger = logging.getLogger("core.funnel")
+
 from core.ui import console, startup_clear, print_banner, clean_exit, Selector, get_theme_input_ansi, read_tty_key
 from rich.table import Table
 from rich.panel import Panel
@@ -49,17 +51,27 @@ def __getattr__(name: str) -> Any:
         return Path(config.get("download_base") or paths.get_downloads_root()) / "video"
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-def load_urls() -> List[str]:
+from core.paths import sanitize_user_path
+
+def load_urls(file_path: Optional[Path] = None) -> List[str]:
+    target_file = Path(file_path) if file_path else URLS_FILE
     urls = []
-    if URLS_FILE.exists():
+    if not target_file.exists():
         try:
-            content = storage.read_file(URLS_FILE)
+            storage.write_file(target_file, "# Add URLs here to download sequentially in vacuum mode.\n# Example: https://site.com/series-url --5\n")
+        except Exception:
+            pass
+    if target_file.exists():
+        try:
+            content = storage.read_file(target_file)
             for line in content.splitlines():
                 line = line.split("#")[0].strip()
-                if line and not line.startswith("="): urls.append(line)
+                if line and not line.startswith("="):
+                    urls.append(line)
         except Exception:
             pass
     return urls
+
 
 from core.site_map import get_site_folder
 
@@ -85,98 +97,312 @@ def clear_lines(num_lines: int):
         sys.stdout.write("\033[1A\033[2K")
     sys.stdout.flush()
 
-def handle_batch(hist_layer, store_layer):
-    urls = load_urls()
+def handle_vacuum_queue(
+    hist_layer,
+    store_layer,
+    custom_file: Optional[Path] = None,
+    default_only_metadata: bool = False,
+    default_flags: Optional[List[str]] = None,
+    default_chapter_limit: Optional[int] = None,
+    default_quick_grab: bool = False,
+    default_all: bool = False
+):
+    """Process a URL queue file headlessly — the successor to batch mode.
+    Each URL is routed individually using its own vacuum/quick-grab destination.
+    Completed URLs are removed from the queue file atomically for safe resume (unless running in --meta mode)."""
+    target_file = Path(custom_file) if custom_file else URLS_FILE
+    urls = load_urls(target_file)
     if not urls:
-        console.print("[warning]No URLs found in Batch URL.txt![/warning]")
+        file_label = target_file.name
+        console.print(f"[warning]No URLs found in {file_label}![/warning]")
         time.sleep(1.5)
         return
-    
+
     startup_clear()
     print_banner()
-    console.print(f"[menu]Menu:[/menu] [site]Batch Mode[/site]")
-    console.print(f"[info]Batch: {len(urls)} URLs loaded.[/info]")
-    
-    if not sys.stdin.isatty():
-        cat_mode = "ALL"
-    else:
-        cat_mode = Selector([("Apply Global", "ALL"), ("Ask Individual", "PER"), ("Back", "BACK")], "Cat Mode").select()
-    if cat_mode == "BACK":
-        return
+    mode_label = "Metadata Extractor Queue (--meta)" if default_only_metadata else "Vacuum Queue"
+    console.print(f"[menu]Menu:[/menu] [site]{mode_label}[/site]")
+    if custom_file:
+        console.print(f"[menu]Source File:[/menu] [sexy_pink]{target_file.resolve()}[/sexy_pink]")
+    console.print(f"[info]Queue: {len(urls)} URLs loaded.[/info]")
+    console.print()
 
-    global_path = None
-    if cat_mode == "ALL":
-        from core.ui import get_batch_save_path
-        global_path = get_batch_save_path(store_layer)
-        if not global_path:
-            return
-
-    from core.paths import PathAuthority
-    from core.history import BatchHistoryManager
-    batch_mgr = BatchHistoryManager(PathAuthority(), store_layer)
-
-    # Process each URL sequentially with atomic per-item persistence and resume checkpointing
+    queue_has_failures = False
+    # Process each URL sequentially — no global path override, each scraper picks its own vacuum destination
     for raw_url in list(urls):
         raw_url_clean = raw_url.strip()
         if not raw_url_clean:
             continue
 
         url = raw_url_clean
-        flags = []
-        batch_quick_grab = False
-        chapter_limit = None
-        
-        # Parse flags: --0 (Quick grab), --<N> (chapter limit e.g. --2, --4, --5)
-        flag_matches = re.findall(r"--(\d+)\b", url)
-        for num_str in flag_matches:
-            val = int(num_str)
-            if val == 0:
-                batch_quick_grab = True
-                flags.append("--0")
+        flags = list(default_flags or [])
+        batch_quick_grab = default_quick_grab
+        chapter_limit = default_chapter_limit
+        batch_all = default_all
+        only_metadata = default_only_metadata
+
+        # Parse inline flags: --0 (Quick grab), --<N> (chapter limit), --A/--a (vacuum all), --meta/--metadata
+        if re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE):
+            only_metadata = True
+            if "--meta" not in flags:
+                flags.append("--meta")
+        url = re.sub(r"\s*--(?:meta|metadata)\b", "", url, flags=re.IGNORECASE).strip()
+
+        flag_matches = re.findall(r"--(\d+|[aA])\b", url)
+        for flag_str in flag_matches:
+            if flag_str.lower() == 'a':
+                batch_all = True
+                if "--a" not in flags:
+                    flags.append("--a")
             else:
-                chapter_limit = val
-                flags.append(f"--{val}")
-        url = re.sub(r"\s*--\d+\b", "", url).strip()
+                val = int(flag_str)
+                if val == 0:
+                    batch_quick_grab = True
+                    if "--0" not in flags:
+                        flags.append("--0")
+                else:
+                    chapter_limit = val
+                    if f"--{val}" not in flags:
+                        flags.append(f"--{val}")
+        url = re.sub(r"\s*--(\d+|[aA])\b", "", url).strip()
 
-        mode = "Quick grab" if batch_quick_grab else "Vacuum"
-        canonical_url = HistoryLayer.normalize_url(url)
+        if batch_all:
+            batch_quick_grab = False
+            chapter_limit = None
 
-        # Record start in Batch History (both Logs/Batch History.json and Logs/💩/batch_history.json)
-        batch_mgr.record_start(raw_input=raw_url_clean, url=canonical_url, flags=flags, mode=mode)
-
+        # Route without a global batch_path — let each scraper decide its own vacuum/quick-grab folder
         success = route_url(
             url,
             hist_layer,
             store_layer,
-            batch_path=global_path,
+            batch_path=None,
             is_batch=True,
             batch_quick_grab=batch_quick_grab,
+            batch_all=batch_all,
             flags=flags,
-            chapter_limit=chapter_limit
+            chapter_limit=chapter_limit,
+            only_metadata=only_metadata
         )
 
         if success:
-            batch_mgr.record_finish(canonical_url, status="completed")
-            # Immediately remove completed URL from Batch URL.txt so a Revolt exit or crash can safely resume
-            try:
-                current_urls = load_urls()
-                remaining = [u for u in current_urls if u.strip() != raw_url_clean]
-                content = "\n".join(remaining) + ("\n" if remaining else "")
-                store_layer.write_file(URLS_FILE, content)
-                console.print(f"[success]✔ Completed & checked off: {raw_url_clean}[/success]")
-            except Exception as e:
-                logging.error(f"Failed to update Batch URL.txt: {e}")
+            if not only_metadata:
+                # Atomically remove completed URL from the queue file so a Revolt/crash can safely resume
+                try:
+                    current_urls = load_urls(target_file)
+                    remaining = [u for u in current_urls if u.strip() != raw_url_clean]
+                    content = "\n".join(remaining) + ("\n" if remaining else "")
+                    store_layer.write_file(target_file, content)
+                except Exception as e:
+                    logging.error(f"Failed to update {target_file.name}: {e}")
+            console.print(f"[success]✔ Done: {raw_url_clean}[/success]\n")
         else:
-            batch_mgr.record_finish(canonical_url, status="failed")
-            console.print(f"[error]✘ Incomplete or failed: {raw_url_clean}[/error]")
+            queue_has_failures = True
+            console.print(f"[error]✘ Failed: {raw_url_clean}[/error]\n")
+            if sys.stdin.isatty():
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to continue queue...", force=True)
 
         import core.ui
         if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
             core.ui.trigger_revolt_exit()
 
-    console.input("\n[info]Batch finished. Press Enter to return to menu...[/info]")
+    if sys.stdin.isatty():
+        if queue_has_failures:
+            from core.ui import wait_for_error
+            wait_for_error("Queue finished with failures. Press Enter to return...", force=True)
+        else:
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
 
-def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
+
+# Backward-compat alias so any external callers still work
+handle_batch = handle_vacuum_queue
+
+
+def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, scraper: Any, site_folder: str, batch_path: Optional[Path] = None, is_batch: bool = False) -> bool:
+    from core.paths import get_container_root
+    from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+    from rich.panel import Panel
+    from rich.syntax import Syntax
+    import json
+    import requests
+
+    console.print(f"[menu]Mode[/menu]         : [sexy_pink]Metadata Extractor (--meta)[/sexy_pink]")
+    console.print(f"[menu]URL[/menu]          : [site]{escape(url)}[/site]")
+    console.print(f"[menu]Site Engine[/menu]  : [info]{site_folder}[/info]")
+    console.print("")
+
+    info_dict = {}
+    meta_dict = {}
+    extracted_title = "Unknown"
+    cover_url = getattr(scraper, "cover_url", None) or getattr(scraper, "cover_image", None)
+
+    with console.status("[info]Extracting metadata from source...[/info]", spinner="dots"):
+        try:
+            if hasattr(scraper, "get_metadata_and_videos"):
+                meta_dict, videos, info_dict = scraper.get_metadata_and_videos()
+                extracted_title = getattr(scraper, "title", None) or meta_dict.get("Channel/Series") or meta_dict.get("title") or (info_dict.get("title") if isinstance(info_dict, dict) else None) or "Unknown"
+                if not cover_url:
+                    cover_url = meta_dict.get("Thumbnail") or (info_dict.get("thumbnail") if isinstance(info_dict, dict) else None)
+            elif hasattr(scraper, "get_metadata_and_assets"):
+                meta_dict, assets = scraper.get_metadata_and_assets()
+                extracted_title = meta_dict.get("Title") or getattr(scraper, "title", "Unknown")
+                if not cover_url:
+                    cover_url = meta_dict.get("Cover URL")
+            elif hasattr(scraper, "get_title_and_chapters"):
+                extracted_title, chapters = scraper.get_title_and_chapters()
+            elif hasattr(scraper, "get_chapters"):
+                chapters = scraper.get_chapters()
+                extracted_title = getattr(scraper, "title", "Unknown")
+            elif hasattr(scraper, "get_boards_and_pins"):
+                boards, profile = scraper.get_boards_and_pins()
+                extracted_title = profile.get("name") or getattr(scraper, "title", "Unknown")
+            else:
+                extracted_title = getattr(scraper, "title", "Unknown")
+        except Exception as e:
+            console.print(f"[error]Failed to extract metadata: {escape(str(e))}[/error]")
+            if sys.stdin.isatty():
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to return...", force=True)
+            return False
+
+    if not extracted_title or extracted_title == "Unknown":
+        extracted_title = getattr(scraper, "title", None) or getattr(scraper, "name", None) or "Unknown"
+
+    clean_title = re.sub(r'[\/\\:\*\?\"\<\>\|]', '_', str(extracted_title).strip()).strip('. ')
+
+    # Vacuum container root
+    scraper._force_vacuum = True
+    default_root = get_container_root(url, scraper, is_batch=True, batch_path=batch_path)
+    target_folder = default_root / clean_title
+    target_folder.mkdir(parents=True, exist_ok=True)
+
+    # Save metadata using scraper engine if available or MetadataEngine
+    saved = False
+    if hasattr(scraper, "engine") and hasattr(scraper.engine, "save_metadata"):
+        try:
+            import inspect
+            sig = inspect.signature(scraper.engine.save_metadata)
+            params = sig.parameters
+            call_kwargs = {}
+            if "info" in params:
+                call_kwargs["info"] = info_dict or meta_dict
+            if "source" in params:
+                call_kwargs["source"] = meta_dict.get("Source", site_folder or "Unknown")
+            if "model_name" in params:
+                call_kwargs["model_name"] = clean_title
+            if "custom_metadata" in params:
+                call_kwargs["custom_metadata"] = meta_dict
+            if "skip_cover" in params:
+                call_kwargs["skip_cover"] = False
+            if "videos" in params:
+                call_kwargs["videos"] = videos if "videos" in locals() and videos else None
+            if "avatar_url" in params:
+                call_kwargs["avatar_url"] = cover_url
+            scraper.engine.save_metadata(target_folder, **call_kwargs)
+            saved = True
+        except Exception as e:
+            logger.debug(f"Scraper engine save_metadata fallback: {e}")
+
+    if not saved:
+        title_val = extracted_title
+        alt_title_val = getattr(scraper, "alt_title", "") or meta_dict.get("alt_title", "") or meta_dict.get("Alternative Title", "")
+        author_val = getattr(scraper, "author", "") or meta_dict.get("Author", "") or meta_dict.get("Creator", "") or meta_dict.get("Uploader", "") or meta_dict.get("uploader", "")
+        artist_val = getattr(scraper, "artist", "") or meta_dict.get("Artist", "")
+        studio_val = getattr(scraper, "studio", "") or meta_dict.get("Studio", "")
+        desc_val = getattr(scraper, "description", "") or meta_dict.get("Description", "") or meta_dict.get("Summary", "") or (info_dict.get("description") if isinstance(info_dict, dict) else "")
+        status_val = getattr(scraper, "status", "") or meta_dict.get("Status", "")
+        rating_val = str(getattr(scraper, "rating", "") or meta_dict.get("Rating", "") or "")
+        year_val = str(getattr(scraper, "year", "") or meta_dict.get("Year", "") or meta_dict.get("Release Date", "") or meta_dict.get("Date", "") or meta_dict.get("date", "") or "")
+
+        tags_raw = getattr(scraper, "tags", []) or getattr(scraper, "genres", []) or meta_dict.get("Tags") or meta_dict.get("genres") or meta_dict.get("Subject") or meta_dict.get("Subjects") or []
+        tags_list = []
+        if isinstance(tags_raw, str):
+            for sub in tags_raw.replace(";", ",").split(","):
+                if sub.strip():
+                    tags_list.append(sub.strip())
+        elif isinstance(tags_raw, list):
+            for item in tags_raw:
+                if isinstance(item, str):
+                    for sub in item.replace(";", ",").split(","):
+                        if sub.strip() and sub.strip() not in tags_list:
+                            tags_list.append(sub.strip())
+
+        media_type = "Manga"
+        if "NOVEL" in site_folder.upper():
+            media_type = "Novel"
+        elif "MANHWA" in site_folder.upper():
+            media_type = "Manhwa"
+        elif "MANHUA" in site_folder.upper():
+            media_type = "Manhua"
+        elif "KNOWLEDGE" in site_folder.upper() or "STUDY" in site_folder.upper():
+            media_type = "Book"
+        elif "MUSIC" in site_folder.upper():
+            media_type = "Song"
+        elif "SOCIAL" in site_folder.upper() or "PORN" in site_folder.upper():
+            media_type = "Channel"
+        elif "ANIME" in site_folder.upper() or "SERIES" in site_folder.upper():
+            media_type = "Series"
+
+        canonical_url = getattr(scraper, "series_url", None) or getattr(scraper, "canonical_url", None) or getattr(scraper, "series_page", None) or getattr(scraper, "url", None) or url
+        payload = ZineMetadataPayload(
+            title=title_val,
+            type=media_type,
+            alt_title=alt_title_val,
+            author=author_val,
+            artist=artist_val,
+            studio=studio_val,
+            description=desc_val,
+            status=status_val,
+            rating=rating_val,
+            tags=tags_list,
+            year=year_val,
+            url=canonical_url,
+            views=str(getattr(scraper, "views", "") or meta_dict.get("Views", "") or meta_dict.get("views", "") or ""),
+            likes=str(getattr(scraper, "likes", "") or meta_dict.get("Likes", "") or meta_dict.get("likes", "") or ""),
+            hottest=getattr(scraper, "hottest", []) or meta_dict.get("hottest", []),
+            most_rated=getattr(scraper, "most_rated", []) or meta_dict.get("most_rated", [])
+        )
+        MetadataEngine.save_metadata(target_folder, payload)
+
+    # Save cover if available
+    cover_file = target_folder / "cover.png"
+    if not cover_file.exists() and cover_url:
+        try:
+            if hasattr(scraper, "save_cover"):
+                scraper.save_cover(target_folder)
+            elif cover_url:
+                headers = getattr(scraper, "headers", {"User-Agent": "Mozilla/5.0"})
+                res = requests.get(cover_url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    cover_ext = ".jpg" if "jpeg" in res.headers.get("Content-Type", "") or cover_url.endswith((".jpg", ".jpeg")) else ".png"
+                    (target_folder / f"cover{cover_ext}").write_bytes(res.content)
+        except Exception as e:
+            logger.debug(f"Cover download non-fatal error: {e}")
+
+    meta_file = target_folder / ".zine" / "metadata.json"
+    if meta_file.exists():
+        console.print(f"[success]✔ Metadata extracted and saved successfully![/success]")
+        console.print(f"[menu]Location[/menu]     : [site]{escape(str(meta_file.resolve()))}[/site]\n")
+        try:
+            raw_json = meta_file.read_text(encoding="utf-8")
+            syntax = Syntax(raw_json, "json", theme="monokai", line_numbers=True)
+            console.print(Panel(syntax, title=f"[bold cyan]📄 .zine/metadata.json — {extracted_title}[/bold cyan]", border_style="cyan"))
+        except Exception:
+            pass
+        if not is_batch and sys.stdin.isatty():
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
+        return True
+    else:
+        console.print(f"[error]Failed to write metadata.json to {target_folder}[/error]")
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...", force=True)
+        return False
+
+
+def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, batch_all: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None, only_metadata: bool = False) -> bool:
     import core.ui
     if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
         core.ui.trigger_revolt_exit()
@@ -191,6 +417,9 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         except Exception:
             pass
         
+    from core.ui import reset_error_wait
+    reset_error_wait()
+
     try:
         scraper = get_scraper_instance(url)
     except Exception as e:
@@ -201,50 +430,47 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
     if not scraper:
         logging.error(f"Unsupported URL: {url}")
-        console.print(f"[warning]Unsupported URL or command: {safe_url}[/warning]")
-        if not is_batch:
-            if sys.stdin.isatty():
-                try:
-                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                    sys.stdout.flush()
-                    input()
-                except (EOFError, KeyboardInterrupt):
-                    pass
-        else:
-            time.sleep(1.5)
+        from core.logger import record_error_log
+        from core.ui import print_failure_box, wait_for_error
+        record_error_log("Unsupported URL or command", context={"url": url})
+        print_failure_box(safe_url, reason="Domain or URL format is not supported by any active scraper in Zine.")
+        if sys.stdin.isatty():
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
     site_folder = get_site_folder(url)
     if not site_folder:
         console.print(f"[warning]Unsupported site folder for URL: {safe_url}[/warning]")
-        if not is_batch:
-            if sys.stdin.isatty():
-                try:
-                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                    sys.stdout.flush()
-                    input()
-                except (EOFError, KeyboardInterrupt):
-                    pass
-        else:
-            time.sleep(1.5)
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...", force=True)
         return False
+
+    if only_metadata:
+        return handle_only_metadata(url, hist_layer, store_layer, scraper, site_folder, batch_path=batch_path, is_batch=is_batch)
 
     try:
         tui_module = importlib.import_module(f"scrapers.{site_folder}.tui")
     except Exception as e:
         logging.error(f"Failed to import TUI module for {site_folder}: {e}")
-        console.print(f"[error]Site handler error for {site_folder}[/error]")
-        if not is_batch:
-            if sys.stdin.isatty():
-                try:
-                    sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
-                    sys.stdout.flush()
-                    input()
-                except (EOFError, KeyboardInterrupt):
-                    pass
-        else:
-            time.sleep(1.5)
+        console.print(f"[error]Site handler error for {site_folder}: {e}[/error]")
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...", force=True)
         return False
+
+    from core.journal import DownloadJournal
+    journal = DownloadJournal.get_active()
+    init_mode = "Quick grab" if batch_quick_grab else "Vacuum"
+    initial_title = getattr(scraper, "title", None) or getattr(scraper, "name", None) or "Unknown"
+    journal.start_download(
+        url=url,
+        site=site_folder,
+        title=initial_title,
+        menu_mode=init_mode,
+        destination=batch_path,
+        flags=flags
+    )
 
     try:
         logging.info(f"Passing control to TUI for site: {site_folder} with scraper: {scraper.__class__.__name__}")
@@ -278,30 +504,41 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         def check_has_downloaded() -> bool:
             if download_count > 0:
                 return True
-            dc = getattr(scraper, "downloaded_count", None)
-            if isinstance(dc, (int, float)) and dc > 0:
-                return True
-            sc = getattr(scraper, "success_count", None)
-            if isinstance(sc, (int, float)) and sc > 0:
-                return True
+            for attr in ("downloaded_count", "success_count"):
+                val = getattr(scraper, attr, None)
+                if isinstance(val, (int, float)) and val > 0:
+                    return True
+            for attr in ("verified_nums", "verified_ids"):
+                val = getattr(scraper, attr, None)
+                if isinstance(val, list) and len(val) > 0:
+                    return True
             return False
 
         def fire_notification():
             nonlocal notification_fired
             if notification_fired:
                 return
+            import core.ui
+            if getattr(core.ui, "_TRUNCATE_TRIGGERED", False) or getattr(core.ui, "_REVOLT_TRIGGERED", False):
+                notification_fired = True
+                return
             t = getattr(scraper, "title", None) or url
             has_downloaded = check_has_downloaded()
             try:
                 from butler.notify import send_os_notification
+                from core.logger import record_error_log
+                from core.ui import print_failure_box
                 if has_downloaded:
                     send_os_notification("Zine Scraper", f"Finished downloading: {t}", is_success=True)
                     notification_fired = True
-                elif last_error:
-                    send_os_notification("Zine Scraper Error", f"Download failed: {last_error}", is_success=False)
-                    notification_fired = True
                 elif already_up_to_date:
                     send_os_notification("Zine Scraper", f"Already up to date: {t}", is_success=True)
+                    notification_fired = True
+                else:
+                    err_msg = last_error or "Download incomplete / No items saved"
+                    send_os_notification("Zine Scraper Error", f"Download failed: {err_msg}", is_success=False)
+                    print_failure_box(str(t), reason=str(err_msg))
+                    record_error_log(err_msg, context={"url": url, "scraper": site_folder})
                     notification_fired = True
             except Exception as e:
                 logging.error(f"Notification failed: {e}")
@@ -310,6 +547,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         original_input = console.input
         original_print = console.print
         original_sleep = time.sleep
+        import builtins
+        original_builtin_print = builtins.print
         
         def patched_input(prompt="", **kwargs):
             import core.ui
@@ -328,11 +567,22 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             nonlocal last_error, already_up_to_date
             text = " ".join(str(a) for a in args)
             text_lower = text.lower()
-            if "[error]" in text or "failed to" in text_lower or "could not retrieve" in text_lower or "failed: no chapters" in text_lower or "download failed" in text_lower:
+
+            if "[error]" in text or "failed:" in text_lower or "error:" in text_lower or "could not" in text_lower or "no chapters saved" in text_lower or "download failed" in text_lower or "cannot download" in text_lower:
                 last_error = clean_error_text(text)
             elif "already downloaded" in text_lower or "already up to date" in text_lower:
                 already_up_to_date = True
+
+            # Direct terminal pipe to Download Journal
+            try:
+                journal.consume_terminal_line(text)
+            except Exception:
+                pass
+
             return original_print(*args, **kwargs)
+
+        def patched_builtin_print(*args, **kwargs):
+            patched_print(*args, **kwargs)
 
         def patched_sleep(secs):
             import core.ui
@@ -348,9 +598,12 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
         console.input = patched_input
         console.print = patched_print
+        builtins.print = patched_builtin_print
         time.sleep = patched_sleep
         try:
             scraper._batch_quick_grab = batch_quick_grab
+            scraper._batch_all = batch_all
+            scraper._force_vacuum = batch_all
             scraper._batch_flags = flags or []
             scraper._chapter_limit = chapter_limit
             hist_layer._active_batch_flags = flags or []
@@ -360,33 +613,80 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                 core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
             fire_notification() # In case it's batch mode and didn't call input
             try:
-                final_title = getattr(scraper, "title", None)
+                final_title = getattr(scraper, "title", None) or getattr(scraper, "name", None)
+                final_dest = getattr(scraper, "folder", None) or getattr(scraper, "target_dir", None) or getattr(scraper, "output_dir", None) or batch_path
+                if final_title or final_dest:
+                    journal.update_active(
+                        url=url,
+                        title=str(final_title).strip() if (final_title and str(final_title).strip() not in ("Unknown", "Videos", "Watch")) else None,
+                        destination=str(final_dest) if final_dest else None
+                    )
+
+                has_downloaded = check_has_downloaded()
+                final_status = "completed" if (has_downloaded or already_up_to_date) else "failed"
+                err_msg = last_error if final_status == "failed" else None
+                
+                journal.finish_download(
+                    url=url,
+                    status=final_status,
+                    error=err_msg
+                )
+
                 if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
                     target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
-                    from core.history import BatchHistoryManager
-                    has_downloaded = check_has_downloaded()
                     if has_downloaded or already_up_to_date:
                         hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
-                        if BatchHistoryManager._instance:
-                            BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
-                    elif last_error:
-                        if BatchHistoryManager._instance:
-                            BatchHistoryManager._instance.record_finish(target_url, status="failed", title=str(final_title).strip())
             except Exception:
                 pass
         finally:
+            fire_notification()
             time.sleep = original_sleep
             hist_layer._active_batch_flags = []
             console.input = original_input
             console.print = original_print
+            builtins.print = original_builtin_print
             if original_mark_downloaded:
                 hist_layer.mark_downloaded = original_mark_downloaded
             
+        has_downloaded = check_has_downloaded()
+        if not (has_downloaded or already_up_to_date) and sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...", force=True)
+
         logging.info(f"Finished TUI execution for: {url}")
+        return True
+    except core.ui.TruncateStopException as tse:
+        logging.info(f"Scrape truncated early via Ctrl+T: {tse}")
+        import core.ui
+        core.ui._TRUNCATE_TRIGGERED = False
+        final_title = getattr(scraper, "title", None) or getattr(scraper, "name", None)
+        final_dest = getattr(scraper, "folder", None) or getattr(scraper, "target_dir", None) or getattr(scraper, "output_dir", None) or batch_path
+        try:
+            journal.update_active(
+                url=url,
+                title=str(final_title).strip() if (final_title and str(final_title).strip() not in ("Unknown", "Videos", "Watch")) else None,
+                destination=str(final_dest) if final_dest else None
+            )
+            journal.finish_download(url=url, status="completed")
+            if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
+                target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
+                hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
+        except Exception:
+            pass
+        if not is_batch and sys.stdin.isatty():
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
         return True
     except Exception as e:
         logging.error(f"Failed to load/execute TUI for {site_folder}: {e}", exc_info=True)
-        
+        from core.logger import record_error_log
+        from core.ui import print_failure_box, wait_for_error
+        record_error_log(e, context={"url": url, "site_folder": site_folder, "batch_path": str(batch_path) if batch_path else None})
+        try:
+            journal.finish_download(url=url, status="failed", error=str(e))
+        except Exception:
+            pass
+        print_failure_box(getattr(scraper, "title", None) or url, reason=str(e))
         try:
             from butler.notify import send_os_notification
             send_os_notification("Zine Scraper Error", f"Scraping failed: {e}", is_success=False)
@@ -394,11 +694,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             pass
             
         console.print(f"[error]Failed to load TUI for {escape(str(site_folder))}: {escape(str(e))}[/error]")
-        if not is_batch:
-            console.print("\n[info]Press any key to return...[/info]", end="")
-            get_key_with_esc()
-        else:
-            time.sleep(1.5)
+        if sys.stdin.isatty():
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
 def _get_tui_key() -> str:
@@ -614,6 +911,11 @@ class MainPrompt:
                             self.cursor_pos -= 1
                         self._update_suggestion()
                         self.history_manager.index = len(self.history_manager.history)
+                    elif key in ('ESC', '\x1b'):
+                        self.input_text = ""
+                        self.cursor_pos = 0
+                        self.suggestion = ""
+                        self.history_manager.index = len(self.history_manager.history)
                     elif key == '\x03': # Ctrl+C
                         clean_exit(forceful=True)
                     elif len(key) >= 1:
@@ -654,7 +956,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["bake", "batch", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts"]
+        commands = ["bake", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -668,9 +970,6 @@ class MainPrompt:
         table.add_column("main", width=88)
         
         group_content = []
-        from core.ui import get_banner_renderable
-        group_content.append(get_banner_renderable())
-        group_content.append(Text(""))
         
         prompt_text = Text(no_wrap=True)
         prompt_text.append("Paste URL:\n", style="menu")
@@ -721,8 +1020,18 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
-            tip_text.append("batch", style="warning")
-            tip_text.append(" to download all from Batch URL.txt.\n", style="info")
+            tip_text.append("vacuum", style="warning")
+            tip_text.append(" to download all from vacuum.txt.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("clean", style="warning")
+            tip_text.append(" to purge temp files & cache.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("doctor", style="warning")
+            tip_text.append(" to run system diagnostics.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -768,6 +1077,11 @@ class MainPrompt:
             tip_text.append("Type ", style="info")
             tip_text.append("tts", style="warning")
             tip_text.append(" to generate Audiobooks.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("version", style="warning")
+            tip_text.append(" to show version & environment info.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Paste any supported URL to archive.\n", style="info")
@@ -861,73 +1175,207 @@ def main():
     except Exception:
         pass  # never block launch due to library scaffold errors
 
+    cli_args = sys.argv[1:]
+    if cli_args:
+        raw_arg = cli_args[0].strip()
+        first_arg = raw_arg.lower()
+        if first_arg in ["--help", "-h", "-?", "help", "?", "--h"]:
+            from core.cli_help import print_cli_help
+            print_cli_help()
+            sys.exit(0)
+        elif first_arg in ["--version", "-v", "-v", "version", "ver", "--ver", "--verson"]:
+            from core.cli_help import print_cli_version
+            print_cli_version()
+            sys.exit(0)
+        elif first_arg in ["--doctor", "-doctor", "doctor", "check"]:
+            from core.cli_help import run_cli_doctor
+            run_cli_doctor()
+            sys.exit(0)
+        elif first_arg in ["--sites", "-sites", "sites", "list"]:
+            from core.cli_help import print_cli_sites
+            print_cli_sites()
+            sys.exit(0)
+        elif first_arg in ["--clean", "-clean", "clean"]:
+            from core.cli_help import run_cli_clean
+            run_cli_clean()
+            sys.exit(0)
+        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
+            from core.cli_help import handle_unknown_flag
+            handle_unknown_flag(raw_arg)
+            if sys.stdin.isatty():
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to exit...", force=True)
+            sys.exit(2)
+
+    first_run = True
     while True:
         history.reload()
         startup_clear()
-        if not sys.stdin.isatty() or 'unittest' in sys.modules:
-            print_banner()
+        print_banner()
 
         try:
-            prompt = MainPrompt(paths, config)
-            url = prompt.get_input()
+            if first_run and cli_args:
+                first_run = False
+                url = " ".join(cli_args)
+                console.print(f"[menu]CLI Input[/menu]      : [site]{escape(url)}[/site]")
+                console.print("")
+            else:
+                prompt = MainPrompt(paths, config)
+                url = prompt.get_input()
             
             if not url:
                 continue
             
             logging.info(f"User Input: '{url}'")
-            # Match commands
-            url_lower = url.lower()
-            if url_lower in ["exit", "quit", "q", "/exit"]:
-                logging.info("User requested exit.")
-                clean_exit(forceful=False)
-            elif url_lower in ["batch", "/batch"]:
-                logging.info("User launched batch mode.")
-                handle_batch(history, storage)
+            # Extract flags from url input
+            flags = []
+            batch_quick_grab = False
+            chapter_limit = None
+            batch_all = False
+            only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE))
+            if only_metadata:
+                flags.append("--meta")
 
-            elif url_lower in ["settings", "/settings"]:
-                launch_settings_tui()
-            elif url_lower in ["help", "/help"]:
-                show_help_tui()
-            elif url_lower in ["site", "/site", "sites"]:
-                show_site_tui()
-            elif url_lower in ["slice", "/slice", "slicer"]:
-                from core.image_slicer import run_image_slicer_tui
-                run_image_slicer_tui()
-            elif url_lower in ["subs", "/subs", "subtitles"]:
-                from core.subtitle_engine import run_subtitle_tui
-                run_subtitle_tui()
-            elif url_lower in ["tts", "/tts", "audiobook"]:
-                qwen_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Qween tts")
-                if qwen_path not in sys.path:
-                    sys.path.insert(0, qwen_path)
-                import book_tts
-                book_tts.run_tts_tui()
-            elif url_lower in ["lyrs", "/lyrs", "lyrics", "/lyrics"]:
-                from core.lyrics_engine import run_lyrics_tui
-                run_lyrics_tui()
-            elif url_lower in ["bake", "/bake"]:
-                from core.bake_engine import run_bake_tui
-                run_bake_tui()
-            elif url_lower in ["sc-lyrics", "/sc-lyrics", "sc_lyrics", "sclyrs"]:
-                from core.lyrics_engine import run_batch_lyrics_tui
-                run_batch_lyrics_tui()
-            else:
-                url_input = url.strip()
-                flags = []
-                batch_quick_grab = False
-                chapter_limit = None
-                flag_matches = re.findall(r"--(\d+)\b", url_input)
-                for num_str in flag_matches:
-                    val = int(num_str)
+            flag_matches = re.findall(r"--(\d+|[aA])\b", url)
+            for flag_str in flag_matches:
+                if flag_str.lower() == 'a':
+                    batch_all = True
+                    if "--a" not in flags:
+                        flags.append("--a")
+                else:
+                    val = int(flag_str)
                     if val == 0:
                         batch_quick_grab = True
-                        flags.append("--0")
+                        if "--0" not in flags:
+                            flags.append("--0")
                     else:
                         chapter_limit = val
-                        flags.append(f"--{val}")
-                clean_url = re.sub(r"\s*--\d+\b", "", url_input).strip()
-                route_url(clean_url, history, storage, batch_quick_grab=batch_quick_grab, flags=flags, chapter_limit=chapter_limit)
-                
+                        if f"--{val}" not in flags:
+                            flags.append(f"--{val}")
+
+            # Strip all flags to get pure command / path / url candidate
+            clean_candidate = re.sub(r"(?i)\s*--(?:meta|metadata|vacuum|batch|all|\d+|[aA])\b", "", url).strip()
+            clean_lower = clean_candidate.lower()
+
+            # 1. Exit Commands
+            if clean_lower in ["exit", "quit", "q", "/exit"]:
+                logging.info("User requested exit.")
+                clean_exit(forceful=False)
+
+            # 2. Explicit Queue Commands
+            elif clean_lower in ["vacuum", "/vacuum", "batch", "/batch"] or clean_lower.startswith(("vacuum ", "/vacuum ", "batch ", "/batch ")) or re.search(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", url):
+                url_input = clean_candidate
+                if any(clean_lower.startswith(pfx) for pfx in ("vacuum ", "/vacuum ", "batch ", "/batch ")):
+                    cleaned_path = clean_candidate.split(" ", 1)[1].strip()
+                else:
+                    cleaned_path = re.sub(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", "", url_input).strip()
+
+                if cleaned_path:
+                    sanitized = sanitize_user_path(cleaned_path)
+                    custom_file = Path(sanitized).expanduser().resolve()
+                    if custom_file.exists() and custom_file.is_file():
+                        logging.info(f"User launched vacuum queue with file: {custom_file}")
+                        handle_vacuum_queue(history, storage, custom_file=custom_file, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
+                    else:
+                        console.print(f"[error]● Queue file not found:[/error] [site]{escape(str(custom_file))}[/site]")
+                        time.sleep(2)
+                else:
+                    handle_vacuum_queue(history, storage, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
+
+            # 3. Direct File Path Queue Detection (e.g. "path/to/file.txt" --meta)
+            elif (lambda p: p.exists() and p.is_file())(Path(sanitize_user_path(clean_candidate)).expanduser().resolve()):
+                custom_file = Path(sanitize_user_path(clean_candidate)).expanduser().resolve()
+                logging.info(f"User launched file queue: {custom_file} (only_metadata={only_metadata})")
+                handle_vacuum_queue(history, storage, custom_file=custom_file, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
+                if cli_args:
+                    break
+
+            # 4. Built-in Tools & Menus
+            elif clean_lower in ["settings", "/settings"]:
+                launch_settings_tui()
+            elif clean_lower in ["help", "/help", "--help", "-h"]:
+                show_help_tui()
+            elif clean_lower in ["site", "/site", "sites"]:
+                show_site_tui()
+            elif clean_lower in ["doctor", "/doctor", "--doctor"]:
+                from core.cli_help import run_cli_doctor
+                startup_clear()
+                run_cli_doctor()
+                from core.ui import prompt_return
+                prompt_return("Press Enter to return to main menu...")
+            elif clean_lower in ["clean", "/clean", "--clean"]:
+                from core.cli_help import run_cli_clean
+                startup_clear()
+                run_cli_clean()
+                from core.ui import prompt_return
+                prompt_return("Press Enter to return to main menu...")
+            elif clean_lower in ["version", "--version", "-v"]:
+                from core.cli_help import print_cli_version
+                startup_clear()
+                print_cli_version()
+                from core.ui import prompt_return
+                prompt_return("Press Enter to return to main menu...")
+            elif clean_lower in ["slice", "/slice", "slicer"]:
+                from core.image_slicer import run_image_slicer_tui
+                run_image_slicer_tui()
+            elif clean_lower in ["subs", "/subs", "subtitles"]:
+                from core.subtitle_engine import run_subtitle_tui
+                run_subtitle_tui()
+            elif clean_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
+                startup_clear()
+                print_banner()
+                tts_opts = [
+                    ("🌬️ Breeze TTS 2 (GGUF / Vulkan C++ — Voice Design & Cloning)", "breeze"),
+                    ("🎙️ Qwen3 TTS (ComfyUI Workflow Server)", "qwen")
+                ]
+                from core.ui import BoxSelector
+                selected_engine = BoxSelector(tts_opts, title="Audiobook TTS Engine", width=84).select()
+                if selected_engine == "breeze":
+                    breeze_path = str(paths.get_breeze_tts_dir())
+                    if breeze_path not in sys.path:
+                        sys.path.insert(0, breeze_path)
+                    import breeze_engine
+                    breeze_engine.run_breeze_tui()
+                elif selected_engine == "qwen":
+                    qwen_path = str(paths.get_qwen_tts_dir())
+                    if qwen_path not in sys.path:
+                        sys.path.insert(0, qwen_path)
+                    import book_tts
+                    book_tts.run_tts_tui()
+            elif clean_lower in ["lyrs", "/lyrs", "lyrics", "/lyrics"]:
+                from core.lyrics_engine import run_lyrics_tui
+                run_lyrics_tui()
+            elif clean_lower in ["bake", "/bake"]:
+                from core.bake_engine import run_bake_tui
+                run_bake_tui()
+            elif clean_lower in ["sc-lyrics", "/sc-lyrics", "sc_lyrics", "sclyrs"]:
+                from core.lyrics_engine import run_batch_lyrics_tui
+                run_batch_lyrics_tui()
+
+            # 5. Media URL Execution
+            else:
+                # Headless if launched via CLI args (no interactive TUI needed in that path)
+                is_headless = bool(cli_args)
+
+                success = route_url(
+                    clean_candidate,
+                    history,
+                    storage,
+                    batch_path=None,
+                    is_batch=is_headless,
+                    batch_quick_grab=batch_quick_grab,
+                    batch_all=batch_all,
+                    flags=flags,
+                    chapter_limit=chapter_limit,
+                    only_metadata=only_metadata
+                )
+
+                if cli_args:
+                    if not success and sys.stdin.isatty():
+                        from core.ui import wait_for_error
+                        wait_for_error("Press Enter to exit...", force=True)
+                    break
+
         except KeyboardInterrupt:
             clean_exit(forceful=True)
 

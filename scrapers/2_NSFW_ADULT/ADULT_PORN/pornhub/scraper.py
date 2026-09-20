@@ -1,0 +1,518 @@
+"""
+scrapers/pornhub/scraper.py
+---------------------------
+Scraper metadata layer for PornHub.
+
+Key fixes (v2):
+  - All names decoded with html.unescape() — no more &#039; garbage
+  - Real viewkeys extracted from video URLs (not sequential indices)
+  - Per-video metadata fetched in parallel (view_count, like_count, duration, upload_date)
+  - Avatar extracted via <img class="avatar"> pattern, matching model's own data-userid
+  - Clean model name extraction: strips HTML entities + " Porn Videos | Pornhub" suffix
+"""
+import re
+import html as html_module
+import logging
+import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, Any, List, Tuple, Optional
+from .engine import PornHubEngine
+
+logger = logging.getLogger(__name__)
+
+# How many videos to fetch individual metadata for in parallel
+_PARALLEL_META_WORKERS = 20
+
+
+def _decode(raw: str) -> str:
+    """Decode HTML entities and unescape backslash sequences."""
+    if not raw:
+        return raw
+    return html_module.unescape(raw).replace("\\/", "/").replace("\\u002F", "/")
+
+
+def _extract_viewkey(url: str) -> Optional[str]:
+    """
+    Extract the PornHub viewkey from a video URL.
+    Handles both:
+      - view_video.php?viewkey=abc123
+      - /view_video.php?viewkey=abc123
+    Returns None if not found.
+    """
+    m = re.search(r'viewkey=([a-zA-Z0-9]+)', url)
+    return m.group(1) if m else None
+
+
+def _clean_model_name(raw: str) -> str:
+    """
+    Clean a model name scraped from the page title or JSON.
+    Removes HTML entities, trailing 's (possessive from page title format
+    "ModelName's Porn Videos | Pornhub"), and surrounding whitespace.
+    """
+    name = _decode(raw)
+    # Remove common suffixes in various orders
+    suffixes = [
+        r"\s*\|\s*Pornhub.*$",
+        r"\s+'s\s+Porn\s+Videos.*$",
+        r"\s+Porn\s+Videos.*$",
+        r"\s+porn\s+videos.*$",
+        r"\s*-\s*Pornhub.*$",
+    ]
+    for suf in suffixes:
+        name = re.sub(suf, "", name, flags=re.IGNORECASE).strip()
+    # Strip a remaining trailing 's (possessive artifact)
+    name = re.sub(r"'s\s*$", "", name).strip()
+    return name.strip()
+
+
+def _safe_folder_name(name: str) -> str:
+    """
+    Converts a model name into a safe folder-name string.
+    Preserves apostrophes and common punctuation, strips truly illegal chars.
+    Uses a whitelist approach rather than stripping everything non-alnum.
+    """
+    # Only remove chars that are illegal in filenames on Linux/Windows/macOS
+    illegal = r'[<>:"/\\|?*\x00-\x1f]'
+    safe = re.sub(illegal, '', name).strip()
+    # Collapse multiple spaces
+    safe = re.sub(r'\s{2,}', ' ', safe)
+    return safe or "Unknown"
+
+
+def _parse_iso_duration(iso_str: str) -> float:
+    """Parse ISO 8601 duration string like PT00H09M44S into seconds."""
+    if not iso_str:
+        return 0.0
+    m = re.search(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', str(iso_str))
+    if not m:
+        return 0.0
+    h = int(m.group(1) or 0)
+    mins = int(m.group(2) or 0)
+    s = int(m.group(3) or 0)
+    return float(h * 3600 + mins * 60 + s)
+
+
+class PornHubScraper:
+    """
+    Scraper for PornHub model pages and individual videos.
+    Mirrors the architecture of YoutubeScraper (7-file modular structure).
+    """
+
+    def __init__(self, url: str):
+        self.url = url
+        self.scraper_type = "video"
+        self.engine = PornHubEngine()
+        self.is_playlist = False
+        self.title = None           # clean model name
+        self._folder_name = None    # safe filesystem name (may differ from title)
+
+    # ─── Link type detection ───────────────────────────────────────────────
+
+    def get_link_type(self) -> str:
+        """
+        Returns 'model' (full channel vacuum) or 'single' (quick grab).
+        Model/pornstar/channels/user pages → 'model'
+        Individual watch/viewkey URLs     → 'single'
+        """
+        url_lower = self.url.lower()
+        if (
+            "/model/" in url_lower
+            or "/pornstar/" in url_lower
+            or "/channels/" in url_lower
+            or "/user/" in url_lower
+            or "/amateur/" in url_lower
+            or url_lower.rstrip("/").endswith("/videos")
+        ):
+            return "model"
+        return "single"
+
+    # ─── URL helpers ──────────────────────────────────────────────────────
+
+    def _normalize_model_url(self) -> str:
+        """Strips trailing /videos suffix so we always start from the root."""
+        url = self.url.rstrip("/")
+        if url.endswith("/videos"):
+            url = url[: -len("/videos")]
+        return url
+
+    # ─── Model page scraping ──────────────────────────────────────────────
+
+    def _scrape_model_info(self) -> Dict[str, Any]:
+        """
+        Fetches the model page HTML to extract:
+        - Model name (HTML-entity decoded, suffix stripped)
+        - Profile picture URL (first <img class="avatar..."> on page = model's own pfp)
+        """
+        headers = dict(self.engine.headers)
+        model_url = self._normalize_model_url()
+        info: Dict[str, Any] = {
+            "model_name": "Unknown",
+            "folder_name": "Unknown",
+            "avatar_url":  None,
+            "user_id":     None,
+            "url":         model_url,
+        }
+        page = ""
+        try:
+            cmd = [
+                "curl", "-sSL", "--compressed",
+                "-A", headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+                "-e", headers.get("Referer", "https://www.pornhub.com/"),
+                "--connect-timeout", "15",
+                model_url,
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout and len(res.stdout) > 200:
+                page = res.stdout
+        except Exception as e:
+            logger.debug(f"Curl model page fetch failed: {e}")
+
+        if not page:
+            try:
+                r = requests.get(model_url, headers=headers, timeout=15)
+                if r.status_code == 200:
+                    page = r.text
+                else:
+                    logger.warning(f"PornHub model page returned {r.status_code}")
+                    return info
+            except Exception as e:
+                logger.error(f"Failed to fetch PornHub model page {model_url}: {e}")
+                return info
+
+        try:
+
+            # ── Model name from <title> ────────────────────────────────
+            m = re.search(r'<title>([^<]+)</title>', page)
+            if not m:
+                m = re.search(r'"modelName"\s*:\s*"([^"]+)"', page)
+            if m:
+                info["model_name"] = _clean_model_name(m.group(1))
+                info["folder_name"] = _safe_folder_name(info["model_name"])
+
+            # ── User ID (for logging only, not critical for avatar) ────
+            uid_match = re.search(r'data-userid=["\'](\d+)["\']', page)
+            if uid_match:
+                info["user_id"] = uid_match.group(1)
+
+            # ── Avatar / Cover extraction ─────────────────────────────
+            avatar_url = None
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(page, "html.parser")
+
+                # 1. Look for avatar img by specific ID or class
+                avatar_img = (
+                    soup.find("img", id="getAvatar")
+                    or soup.find("img", class_="jcrop-preview")
+                    or soup.find("img", id="thumb_user")
+                    or soup.find("img", class_="avatar")
+                    or soup.find("img", class_="large-avatar")
+                    or soup.find("img", id="coverPictureDefault")
+                    or soup.find("img", id="getCoverPicture")
+                )
+                if avatar_img:
+                    avatar_url = avatar_img.get("src") or avatar_img.get("data-src") or avatar_img.get("data-thumb_url")
+
+                # 2. Look for img with alt matching model name
+                if not avatar_url:
+                    clean_name_lower = info["model_name"].lower()
+                    for img in soup.find_all("img"):
+                        alt = (img.get("alt") or "").strip().lower()
+                        src = img.get("src") or img.get("data-src") or ""
+                        if alt and clean_name_lower == alt and src.startswith("http"):
+                            avatar_url = src
+                            break
+            except Exception as e:
+                logger.debug(f"BeautifulSoup avatar extraction error: {e}")
+
+            if not avatar_url:
+                # Regex fallbacks
+                m = re.search(r'<img[^>]+id=["\']getAvatar["\'][^>]+src=["\']([^"\']+)["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+src=["\']([^"\']+)["\'][^>]+id=["\']getAvatar["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+class="[^"]*jcrop-preview[^"]*"[^>]+src=["\']([^"\']+)["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+id=["\'](?:coverPictureDefault|coverPicture|getCoverPicture)["\'][^>]+src=["\']([^"\']+)["\']', page)
+                if not m:
+                    m = re.search(r'<img[^>]+class="[^"]*avatar[^"]*"[^>]+src="(https://[^"]+\.(?:jpg|jpeg|png|webp|gif))"', page)
+                if m:
+                    avatar_url = m.group(1)
+
+            if avatar_url:
+                info["avatar_url"] = avatar_url
+                self.cover_url = avatar_url
+                self.avatar_url = avatar_url
+                self.cover_image = avatar_url
+
+            # ── Views, Subscribers, Rank from .infoBox ───────────────
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(page, "html.parser")
+                for box in soup.find_all(class_="infoBox"):
+                    text_lower = box.get_text(" ", strip=True).lower()
+                    data_title = box.get("data-title", "")
+                    big_el = box.find(class_="big")
+                    big_text = big_el.get_text(strip=True) if big_el else ""
+
+                    if "video views" in text_lower:
+                        m_v = re.search(r'([\d,]+)', data_title)
+                        info["views"] = m_v.group(1) if m_v else big_text
+                    elif "subscriber" in text_lower:
+                        m_s = re.search(r'([\d,]+)', data_title)
+                        sub_val = m_s.group(1) if m_s else big_text
+                        info["likes"] = sub_val
+                        info["like"] = sub_val
+                    elif "rank" in text_lower and not info.get("rank"):
+                        clean_rank = re.sub(r'[^\d]', '', big_text)
+                        if clean_rank:
+                            info["rank"] = clean_rank
+                            info["rated"] = clean_rank
+            except Exception as e:
+                logger.debug(f"Failed to parse PornHub model info boxes: {e}")
+
+        except Exception as e:
+            logger.debug(f"PornHub model page scrape failed: {e}")
+        return info
+
+    # ─── Per-video metadata enrichment ───────────────────────────────────
+
+    def _fetch_single_video_meta(self, vid_url: str, vid_title: str) -> Dict[str, Any]:
+        """
+        Fetches metadata for one video URL.
+        First tries ultra-fast direct HTML JSON-LD parsing (0.2s).
+        Falls back to full yt-dlp extraction if HTML fetch fails.
+        """
+        from .engine import _fmt_date
+        viewkey = _extract_viewkey(vid_url)
+        base = {
+            "url":         vid_url,
+            "id":          viewkey or "",
+            "title":       _decode(vid_title),
+            "view_count":  0,
+            "like_count":  0,
+            "duration":    0,
+            "upload_date": "",
+            "thumbnail":   "",
+        }
+
+        # ── Fast HTTP JSON-LD attempt ────────────────────────────────────
+        try:
+            r = requests.get(vid_url, headers=self.engine.headers, timeout=5)
+            if r.status_code == 200:
+                ld_match = re.search(r'<script type="application/ld\+json">(.*?)</script>', r.text, re.DOTALL)
+                if ld_match:
+                    import json as json_mod
+                    d = json_mod.loads(ld_match.group(1))
+                    views = 0.0
+                    likes = 0.0
+                    for stat in d.get('interactionStatistic', []):
+                        itype = str(stat.get('interactionType', ''))
+                        count_val = stat.get('userInteractionCount', 0)
+                        try:
+                            count_num = float(str(count_val).replace(',', ''))
+                        except (ValueError, TypeError):
+                            count_num = 0.0
+                        if 'WatchAction' in itype:
+                            views = count_num
+                        elif 'LikeAction' in itype:
+                            likes = count_num
+
+                    up_date = _fmt_date(str(d.get('uploadDate', ''))[:10])
+                    duration = _parse_iso_duration(d.get('duration', ''))
+                    title = _decode(d.get('name', '') or vid_title)
+                    thumb = d.get('thumbnailUrl', '')
+
+                    base.update({
+                        "id":          viewkey or "",
+                        "title":       title,
+                        "view_count":  views,
+                        "like_count":  likes,
+                        "duration":    duration,
+                        "upload_date": up_date,
+                        "thumbnail":   thumb,
+                    })
+                    return base
+        except Exception:
+            pass
+
+        # ── Fallback: full yt-dlp extraction ────────────────────────────
+        try:
+            info = self.engine.extract_video_info(vid_url)
+            real_id = info.get("id") or viewkey or ""
+            thumb = info.get("thumbnail") or ""
+            if not thumb and info.get("thumbnails"):
+                thumb = info["thumbnails"][-1].get("url", "")
+            base.update({
+                "id":          real_id,
+                "title":       _decode(info.get("title") or vid_title),
+                "view_count":  info.get("view_count") or 0,
+                "like_count":  info.get("like_count") or 0,
+                "duration":    info.get("duration") or 0,
+                "upload_date": _fmt_date(info.get("upload_date") or ""),
+                "thumbnail":   thumb,
+                "uploader":    _decode(info.get("uploader") or info.get("channel") or ""),
+            })
+        except Exception as e:
+            logger.debug(f"Failed to fetch metadata for {vid_url}: {e}")
+        return base
+
+    # ─── Main entry point ─────────────────────────────────────────────────
+
+    def get_metadata_and_videos(
+        self,
+        playlist_limit: Optional[int] = None,
+        playlist_start: Optional[int] = None,
+        enrich_metadata: bool = True,
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+        """
+        Returns (metadata_dict, video_list, raw_info_dict).
+
+        For model pages  → flat-list all videos via yt-dlp, then optionally enrich
+                           each entry with per-video metadata (view_count, etc.)
+        For single URLs  → returns single-item list with full metadata.
+        """
+        link_type = self.get_link_type()
+
+        # ── Single video (Quick grab) ──────────────────────────────────
+        if link_type == "single":
+            info = self.engine.extract_video_info(self.url)
+            self.is_playlist = False
+
+            uploader = _decode(info.get("uploader") or info.get("channel") or "Unknown")
+            vid_title = _decode(info.get("title") or "Unknown Video")
+            self.title = vid_title if vid_title != "Unknown Video" else uploader
+            self._folder_name = _safe_folder_name(uploader)
+
+            thumb = info.get("thumbnail") or ""
+            if not thumb and info.get("thumbnails"):
+                thumb = info["thumbnails"][-1].get("url", "")
+
+            vid_id = info.get("id") or _extract_viewkey(self.url) or "unknown"
+
+            metadata = {
+                "Channel/Series": uploader,
+                "Source":         "PornHub",
+                "Total Videos":   1,
+                "ID":             vid_id,
+                "Thumbnail":      thumb,
+                "Upload Date":    info.get("upload_date") or "",
+                "View Count":     info.get("view_count") or 0,
+                "Like Count":     info.get("like_count") or 0,
+                "Duration":       info.get("duration") or 0,
+            }
+
+            video_entry = {
+                "url":         info.get("webpage_url") or self.url,
+                "title":       _decode(info.get("title") or "Unknown Video"),
+                "id":          vid_id,
+                "uploader":    uploader,
+                "thumbnail":   thumb,
+                "upload_date": info.get("upload_date") or "",
+                "view_count":  info.get("view_count") or 0,
+                "like_count":  info.get("like_count") or 0,
+                "duration":    info.get("duration") or 0,
+            }
+            return metadata, [video_entry], info
+
+        # ── Model / channel page (Vacuum mode) ────────────────────────
+        model_url = self._normalize_model_url()
+        videos_url = model_url + "/videos"
+
+        # Scrape model profile info (name, avatar) from model page HTML
+        model_info = self._scrape_model_info()
+        model_name = model_info["model_name"]
+        self.title = model_name
+        self._folder_name = model_info["folder_name"]
+        self.is_playlist = True
+
+        # yt-dlp flat-extract to get the list of video URLs + titles
+        raw_info = self.engine.extract_playlist_info(
+            videos_url,
+            playlist_limit=playlist_limit if playlist_limit is not None else 0,
+            playlist_start=playlist_start,
+        )
+
+        # Flatten nested playlist entries
+        flat_entries = []
+        for e in (raw_info.get("entries") or []):
+            if e is None:
+                continue
+            if e.get("_type") == "playlist":
+                flat_entries.extend([x for x in (e.get("entries") or []) if x])
+            else:
+                flat_entries.append(e)
+
+        # Build initial video list from flat entries
+        # The flat entry gives us: url, title (sometimes), but NO id/view_count/duration
+        initial_videos: List[Dict[str, Any]] = []
+        for idx, entry in enumerate(flat_entries):
+            if not entry:
+                continue
+            vid_url = entry.get("url") or entry.get("webpage_url") or ""
+            if vid_url and not vid_url.startswith("http"):
+                vid_url = "https://www.pornhub.com" + vid_url
+            viewkey = _extract_viewkey(vid_url)
+            raw_title = entry.get("title") or f"Video {idx + 1}"
+            initial_videos.append({
+                "url":         vid_url,
+                "title":       _decode(raw_title),
+                "id":          viewkey or f"unknown_{idx}",
+                "uploader":    model_name,
+                "thumbnail":   entry.get("thumbnail") or "",
+                "upload_date": "",
+                "view_count":  0,
+                "like_count":  0,
+                "duration":    0,
+            })
+
+        # ── Per-video metadata enrichment (parallel) ───────────────────
+        # Without this, most_viewed / top_rated / longest are all identical (all zeros).
+        # We fetch individual video pages in parallel to get real counts.
+        if enrich_metadata and initial_videos:
+            logger.info(f"Enriching metadata for {len(initial_videos)} PornHub videos (parallel)...")
+            enriched: Dict[str, Dict[str, Any]] = {}
+
+            def _enrich(v: Dict[str, Any]) -> Dict[str, Any]:
+                meta = self._fetch_single_video_meta(v["url"], v["title"])
+                meta.setdefault("uploader", v["uploader"])
+                return meta
+
+            with ThreadPoolExecutor(max_workers=_PARALLEL_META_WORKERS) as ex:
+                futures = {ex.submit(_enrich, v): i for i, v in enumerate(initial_videos)}
+                for fut in as_completed(futures):
+                    idx = futures[fut]
+                    try:
+                        result = fut.result()
+                        enriched[idx] = result
+                    except Exception as e:
+                        logger.debug(f"Enrich failed for video {idx}: {e}")
+                        enriched[idx] = initial_videos[idx]
+
+            videos = [enriched.get(i, initial_videos[i]) for i in range(len(initial_videos))]
+        else:
+            videos = initial_videos
+
+        # Build metadata dict
+        metadata = {
+            "Channel/Series": model_name,
+            "Source":         "PornHub",
+            "Total Videos":   len(videos),
+            "Avatar URL":     model_info.get("avatar_url") or "",
+            "Model URL":      model_url,
+            "ID":             model_info.get("user_id") or "Unknown",
+            "Views":          model_info.get("views") or "",
+            "Likes":          model_info.get("likes") or "",
+            "Like":           model_info.get("like") or "",
+            "Rank":           model_info.get("rank") or "",
+            "Rated":          model_info.get("rated") or "",
+        }
+
+        if raw_info is not None:
+            raw_info["views"] = model_info.get("views") or ""
+            raw_info["likes"] = model_info.get("likes") or ""
+            raw_info["like"] = model_info.get("like") or ""
+            raw_info["rank"] = model_info.get("rank") or ""
+            raw_info["rated"] = model_info.get("rated") or ""
+
+        return metadata, videos, raw_info

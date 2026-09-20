@@ -1,3 +1,636 @@
+# Progress Report - September 20, 2026 (Bugfix: Idagio Music Scraper `is_music` NameError)
+
+- **Idagio Scraper Scope Correction (`scrapers/1_SFW/MUSIC/idagio/workflow.py`):**
+  - **Identified Problem**:
+    - `scrapers/1_SFW/MUSIC/idagio/workflow.py` referenced `is_music` during audio format resolution (`audio_fmt = cfg.get(...) if is_music else ...`) and verification without defining the variable in `run_workflow()`.
+    - This resulted in `Video Extraction Failed: name 'is_music' is not defined`.
+  - **Resolution**:
+    - Explicitly defined `is_music = getattr(scraper, "scraper_type", "music") == "music"` at the entry point of `run_workflow()`.
+
+---
+
+# Progress Report - September 20, 2026 (Bugfix: Retain Error Displays & Failure Panels — Prevent Premature Screen Clearing)
+
+- **Failure Display Retention & Error Pause Control (`core/ui.py`, `core/funnel.py`, all `workflow.py` / `tui.py` files, `core/image_slicer.py`, `core/lyrics_engine.py`):**
+  - **Identified Problem**:
+    - When downloads succeeded, `wait_for_return()` was streamlined to auto-return immediately to eliminate redundant keypresses.
+    - However, because all error handlers, failure boxes (`print_failure_box`), metadata failure catch blocks, unsupported URL handlers, and unhandled exception catchers also called `wait_for_return()`, any error or failure would instantly return to the main funnel loop.
+    - The main loop immediately executed `startup_clear()`, clearing the terminal and wiping out the error traceback and failure box before the user had a chance to read it.
+  - **Resolution**:
+    - **Dedicated `wait_for_error()` with Single-Keypress Reader (`core/ui.py`)**:
+      - Implemented `wait_for_error(prompt_msg="Press Enter to return to menu...", force=False)`.
+      - Captures a single keystroke (Enter, Space, Esc, etc.) while running interactively on a TTY, keeping the failure box and traceback on screen until user dismissal.
+      - Integrated `_error_wait_consumed` flag with `reset_error_wait()` per URL cycle to prevent multiple duplicate pauses if both a workflow and the funnel trigger on the same failure.
+    - **Added `prompt_return()` for Interactive Diagnostic/Tool Screens (`core/ui.py`, `core/funnel.py`, `core/image_slicer.py`, `core/lyrics_engine.py`)**:
+      - `doctor`, `version`, `image_slicer`, and `lyrics_engine` batch sync now pause using `prompt_return()` so users can review diagnostics and results before the screen is cleared.
+    - **Universal Routing Error & Failure Guards (`core/funnel.py`)**:
+      - `route_url()` now resets error wait state at startup via `reset_error_wait()`.
+      - Failure branches (unsupported URL, missing site handler, module import error, scraper crash exception) explicitly pause via `wait_for_error()`.
+      - Post-execution check: if a scrape finishes without downloads (`not (has_downloaded or already_up_to_date)`) and is not batch, it automatically invokes `wait_for_error()` to ensure the rendered failure box stays visible.
+    - **Updated Scraper Metadata Failure Blocks (`scrapers/*/*/workflow.py`, `tui.py`)**:
+      - Updated 26 scrapers where metadata extraction fails to use `wait_for_error()`.
+
+---
+
+# Progress Report - September 20, 2026 (Refactor: Music Scrapers Zero-Friction Automation & Settings-Connected Audio Processor)
+
+- **Music Scrapers Zero-Friction & Dynamic Format Processor (`scrapers/1_SFW/MUSIC/*`, `core/config.py`, `core/settings_tui.py`, `core/video_engine.py`):**
+  - **Identified Problem**:
+    - Music scrapers had unnecessary interactive prompts for track selection, format, cover art, and save locations.
+    - Default audio format in `core/config.py` was set to MP3 rather than FLAC lossless, and scraper engines hardcoded `.flac` without reading user settings.
+  - **Resolution**:
+    - **Default Audio Format Changed to `FLAC`**:
+      - `core/config.py`: `DEFAULT_CONFIG["default_audio_format"]` is now `"FLAC"`.
+      - `core/settings_tui.py`: Added FLAC as top recommended default in Audio Download Format settings selector alongside MP3, OPUS, M4A, WAV, AAC.
+    - **Engine Connected to Settings**:
+      - `core/video_engine.py`: `download_video()` dynamically reads `default_audio_format` from user configuration (falling back to FLAC) and passes `--audio-format <ext>` to `yt-dlp`.
+      - `scrapers/1_SFW/MUSIC/yt_music/engine.py`: `download_track()` dynamically reads `default_audio_format` from configuration, produces files with the proper extension, and tags them via `_tag_audio_file()`.
+    - **Removed Interactive Blocking Prompts**:
+      - `yt_music`: `get_track_selection()` immediately returns all tracks without popping up interactive format/mode dialogs.
+      - `soundcloud`: Removed interactive custom cover prompt and folder location dialog; saves directly to default container root.
+      - `ytdlp` & `idagio`: Streamlined save location resolution without prompt loops.
+      - Workflows dynamically display the active audio format (e.g., `Song (FLAC)`) in the metadata banner.
+
+---
+
+# Progress Report - September 20, 2026 (Refactor: Batch Mode Removed — Unified Into Vacuum Queue)
+
+- **Batch → Vacuum Queue Unification (`core/funnel.py`, `core/journal.py`, `core/library.py`, `orchestrator.py`):**
+  - **Identified Problem**:
+    - "Batch mode" and "Vacuum mode" were doing the same job under different names (processing a queue of URLs headlessly). The `Batch/` download folder, `BatchHistoryManager`, and the "Apply Global / Ask Individual" TUI were unnecessary complexity.
+  - **Resolution**:
+    - **Removed `handle_batch()` → replaced with `handle_vacuum_queue()`** (`core/funnel.py`):
+      - Eliminated the interactive "Apply Global / Ask Individual" Cat Mode TUI step.
+      - Removed per-run `BatchHistoryManager` instantiation.
+      - Each URL now routes to its own vacuum/quick-grab destination via the scraper's location logic (no global `Batch/` folder override).
+      - Completed URLs still removed atomically from the queue file for safe Revolt/crash resume.
+      - `handle_batch` kept as a backward-compat alias.
+    - **`vacuum` command** now triggers the queue runner in the interactive prompt (plus `batch` kept as alias).
+    - **`--vacuum` CLI flag** recognized alongside `--batch` in orchestrator/funnel fast-path.
+    - **`Batch/` folder eliminated completely**:
+      - `container_name` in `core/paths.py` routes headless queue runs directly into `Vacuum/`.
+      - `get_default_batch_path()`, `get_batch_root()`, and `get_batch_save_path()` all redirect transparently to `Vacuum/`.
+      - Scraper workflows updated to render `[site]Vacuum Mode[/site]`.
+      - `core/cli_help.py` manuals and doctor storage checks updated to reflect `Vacuum/`.
+    - **`vacuum.txt` Queue File Auto-Generation**:
+      - `paths.get_urls_file()` now resolves to `vacuum.txt` with backward-compatible fallback/migration for existing `Batch URL.txt`.
+      - `core/library.py:scaffold_library()` and `core/funnel.py:load_urls()` automatically generate `vacuum.txt` with helpful template comments whenever missing or deleted.
+
+---
+
+# Progress Report - September 20, 2026 (Bugfix: Universal Single-Keypress Return &amp; Instant Confirmation Across All TUIs)
+
+- **Universal Single-Keypress Return (`core/ui.py:wait_for_return`, `core/funnel.py`, all `workflow.py` / `tui.py` files):**
+  - **Identified Problem**:
+    - Users were required to press `Enter` 2–3 times at the end of downloads or when returning from TUIs.
+    - **Root Causes**:
+      1. Canonical mode stdin buffer desynchronization after Rich `Live` visualizer runs and terminal mode restores (`console.input()` waiting for `\n` while terminal sends `\r` or retains buffered characters).
+      2. Duplicate `input()` prompts in some scrapers (e.g. `console.input()` followed by a secondary `input()`).
+      3. Double return prompts when returning from scrapers back into `funnel.py`.
+  - **Resolution**:
+    - **Implemented `core.ui.wait_for_return()`**:
+      - Uses cbreak TTY mode with non-blocking `select()` reading.
+      - Discards/flushes any lingering unread input characters (`termios.tcflush(fd, termios.TCIFLUSH)` on POSIX / `msvcrt.kbhit()` buffer drain on Windows).
+      - Returns instantly on the **very first keystroke** (`Enter`, `Space`, `Esc`, `q`, etc.) without requiring multiple presses.
+      - Safe in non-interactive/batch modes (`if not sys.stdin.isatty(): return`).
+    - **Global Migration Across All 48 Scrapers and Infrastructure**:
+      - Replaced all legacy `console.input(...Press Enter to return...)` and raw `input()` return prompts with `wait_for_return(...)` across all scrapers, `funnel.py`, `bake_engine.py`, `lyrics_engine.py`, `image_slicer.py`, and `setup.py`.
+      - Eliminated all duplicate `input()` calls in adult anime and media TUIs.
+
+---
+
+# Progress Report - September 20, 2026 (Feature: Zero-Friction Toon/Comic Automation & Centralized Settings Configurator)
+
+- **Zero-Friction Ingestion across 22 Comic, Manga, Manhwa, Novel, Doujinshi & Webtoon Scrapers (`core/ui.py`, 22 `location.py` files):**
+  - **Identified Problem**:
+    - Scrapers for Manga, Manhwa, Novels, Doujinshi, and Webtoons prompted the user through a redundant 3-step interactive TUI loop (`SFW vs NSFW` -> `Ongoing vs Completed` -> `Default vs Custom Location`) for every single link.
+    - Websites already provide metadata tags and status automatically, making human prompts redundant and preventing frictionless 100+ URL queue automation.
+  - **Resolution**:
+    - **Streamlined Non-Blocking Location Delegation (`core/ui.py:get_toon_save_path`)**:
+      - Completely removed the 3-step blocking loop.
+      - Resolves save path immediately to `~/Downloads/Zine/Quick grab` for Quick Grab mode or `~/Downloads/Zine/Vacuum/<Site>` for Vacuum mode.
+      - Standardized all 22 `location.py` files to cleanly delegate to `get_toon_save_path`.
+
+- **Categorized Multi-Section Settings TUI Overhaul (`core/settings_tui.py`):**
+  - **Categorized Multi-Section Layout**:
+    - Replaced flat unorganized list with 5 dedicated, styled visual sections:
+      - `📁 Storage & Directories` (Library Root, Music Quick-Grab)
+      - `⚡ Engine & Network` (Chapter Delay, Connection Check, Duplicate Handling)
+      - `🎨 Media Preferences` (Novel Format, Cover Art, Video Quality Preset, Audio Format)
+      - `🧠 AI & Audiobooks` (Whisper AI, Breeze TTS 2, Qwen TTS)
+      - `🖥️ Interface & System` (Color Theme, Quick Guide)
+    - Section headers dynamically skip during keyboard navigation (↑/↓, Home, End).
+  - **Active Cursor State Memory**:
+    - Retains cursor position on the last modified setting across submenu exits and option updates (`default_key=last_key`).
+
+---
+
+# Progress Report - September 20, 2026 (Architecture Alignment: Quick Grab Flat Access & Single-Chapter Isolation Across 22 Scrapers)
+
+- **Quick Grab vs. Vacuum Architecture Alignment (`core/ui.py`, 22 `workflow.py` files):**
+  - **Identified Architecture & Requirements**:
+    - **Quick Grab Design**: Quick Grab is designed for instant, single-item access. Downloaded chapters/files are placed directly inside `~/Downloads/Zine/Quick grab/` without nested `<Site>/<Title>` subdirectories. Metadata persistence and cover downloads are skipped for clean root operation.
+    - **Vacuum Design**: Vacuum mode archives entire series/franchises into organized taxonomy paths (`~/Downloads/Zine/Vacuum/<Site>/<Title>/`), complete with `.zine/metadata.json` and cover art.
+    - **Single Chapter vs Full Series**: Single-chapter URLs and Quick Grab mode download ONLY the requested chapter (`to_process[:1]`), preventing accidental 89+ chapter downloads when a specific chapter link is provided.
+  - **Resolution**:
+    - **Folder Resolution (`workflow.py` across 22 Scrapers)**:
+      - Quick Grab: `folder = Path(*target_path.parts[:idx+1])` (saving chapters directly into `~/Downloads/Zine/Quick grab/ChapterXXX`).
+      - Vacuum / Batch: `folder = ZineFolder(target_path) / title` (saving series in `~/Downloads/Zine/<Mode>/<Site>/<Title>/`).
+    - **Chapter Limit & Link Detection (`core/ui.py:apply_chapter_limit`)**:
+      - Automatically detects chapter endpoints (`/read/`, `/c/`, `/ch-`, `/chapter/`, `/g/`).
+      - Strictly limits `to_process` to the target chapter in Quick grab while allowing full series download in Vacuum (`--A`, `_force_vacuum`).
+    - **Metadata Guard**:
+      - MetadataEngine skips `.zine` generation when `folder` is the flat Quick grab directory.
+
+---
+
+# Progress Report - September 20, 2026 (Feature: Truncate & Graceful Early Stop Keybinding via Ctrl+T)
+
+- **Truncate & Graceful Early Stop Keybinding (`Ctrl+T`) (`core/ui.py`, `core/funnel.py`):**
+  - **Identified Goal**:
+    - Allow users/testers to press `Ctrl+T` during any active scrape across all 48 platforms to stop after a specified number of items (`0` = current file only, `N` = `N` more items), print `✦ All done! Requested files saved.`, flush telemetry logs, and return cleanly to the menu (or proceed to next batch queue item) without terminating the application.
+  - **Resolution**:
+    - **Interactive Inline Visualizer (`inject_revolt_into_renderable`)**:
+      - Pressing `Ctrl+T` (`\x14`) renders `◆ Stop Early (Ctrl+T)` with interactive prompt: `How many more downloads? (0 = current only): [N]█`.
+      - Supports inline typing, Enter confirmation, ESC cancellation, Backspace, and digit entry without interfering with live scrapers.
+    - **Non-Destructive Break Mechanism (`TruncateStopException`)**:
+      - When limit is reached, `trigger_truncate_stop()` prints completion confirmation, dispatches an OS notification, and raises `TruncateStopException`.
+      - `core/funnel.py` catches `TruncateStopException`, syncs final metadata & downloaded chapters to `latest_session.json` and `Download History.json`, and returns cleanly to the menu.
+    - **Telemetry & Log Flushing on Interruptions**:
+      - Both `Ctrl+R` (Revolt / Full Shutdown) and `Ctrl+T` (Truncate / Return to Menu) ensure `DownloadJournal` and `BatchHistoryManager` write all completed items, timestamps, and metadata before stopping.
+
+---
+
+# Progress Report - September 20, 2026 (Professional Download Journal Overhaul & Sessions Subfolder Isolation)
+
+- **Sessions Subfolder Isolation & Clean Downlode 💩 Directory Layout (`core/paths.py`, `core/journal.py`):**
+  - **Identified Problem**:
+    - `Logs/Downlode 💩/` was becoming cluttered with dozens of loose timestamped `session_YYYY-MM-DD_HH-MM-SS.json` files alongside `Download History.json` and `Batch History.json`, making navigation difficult.
+    - `consume_terminal_line` had an undefined variable (`c_lower`) when parsing downloaded items, causing terminal pipe telemetry to silently skip.
+  - **Resolution**:
+    - **Isolated `Sessions/` Subdirectory (`core/paths.py:get_sessions_dir()`, `core/journal.py`)**:
+      - Historical session transcripts are automatically archived into `Logs/Downlode 💩/Sessions/`.
+      - Stray session files at the root of `Logs/Downlode 💩/` are automatically migrated on startup.
+      - The root `Logs/Downlode 💩/` stays clean and uncluttered with only:
+        - `Download History.json` (Master enriched media download history)
+        - `Batch History.json` (Master enriched batch execution history)
+        - `latest_session.json` (Active/latest session mirror)
+        - `Sessions/` (Subfolder containing all archived individual sessions)
+    - **Clean Site & Category Metadata Mapping (`clean_site_and_category`)**:
+      - Replaced raw package slugs (e.g. `1_SFW.HYBRID_COMICS.weebcentral`) with clean human-readable site names (e.g. `WeebCentral`, `YouTube Music`, `NHentai`) and category names (`Hybrid Comics`, `Music`, `Doujinshi`, `Manhwa`, `Adult Anime`, `Video`, `Novels`).
+    - **Robust Terminal Output Pipe & Item Telemetry**:
+      - Fixed `c_lower` variable definition in `consume_terminal_line`.
+      - Expanded key-value header parsing to extract `Location`, `Source`, `Artist`, `Album`, `Author`, `Channel`, `Series`, `Menu`, `Quality`, `Format`, `Total Chapters/Tracks/Videos`, `Existing`, `Cover` in real-time.
+    - **Direct Scraper Instance Sync (`core/funnel.py`)**:
+      - Synced final scraper title, series URL, and output folder into `journal.update_active` upon completion.
+
+---
+
+# Progress Report - September 20, 2026 (Fix: Engine Temp Directory Cleanup via Try-Finally & Playwright Log Redirection)
+
+- **Chapter Temp Directory Cleanup in `try...finally` (All Comic/Manga/Webtoon/Doujin Engines):**
+  - **Identified Problem**:
+    - Temporary folders in `💩/` (e.g. `weebcentral_ch_140_...`) remained orphaned if a chapter download encountered an error or network timeout before reaching the manual `shutil.rmtree(temp_dir)` call.
+    - If `process_chapter_multi` raised an exception or was interrupted, `temp_dir` was never cleaned up.
+  - **Resolution**:
+    - Wrapped the entire download, execution, and image slicing pipeline inside `try: ... finally: shutil.rmtree(temp_dir, ignore_errors=True)` across all 16 comic/manga/manhwa/webtoon/doujin engines:
+      - `weebcentral`, `kunmanga`, `fanfox`, `mangak`, `topmanhua`, `projectsuki`, `manhuaplus`, `asurascans`, `mangadex`
+      - `asmhentai`, `nhentai`, `hentai18`, `oppai_stream_toon`, `manhwaus`, `hentai20`, `manga18fx`.
+    - Guarantees zero orphaned temporary folders remain in `💩/` under any failure or interruption condition.
+
+- **System Playwright Log Path Correction (`scrapers/3_SYSTEM/playwright_extractor.py`):**
+  - **Identified Problem**:
+    - `playwright_extractor.py` wrote `scraper_YYYY-MM-DD.log` to `paths.get_library_temp_root()` (`💩/`), polluting the temporary media processing buffer with logs.
+  - **Resolution**:
+    - Redirected `log_dir` in `playwright_extractor.py` to `paths.get_logs_root() / "💩"` (`Logs/💩/`), keeping `💩/` strictly dedicated to active in-flight media processing buffers.
+
+---
+
+# Progress Report - September 20, 2026 (Fix: Module-Level PathAuthority Import & Universal Failure Box & Error Log Propagation)
+
+- **Universal Failure Box & Forensic Error Log Triggering across All Scraper Workflows (`core/funnel.py`, all `workflow.py`):**
+  - **Identified Problem**:
+    - When scraper workflows caught internal exceptions or saved 0 chapters/items, they previously printed a plain terminal line (`✘ Failed: No chapters saved`) without calling `record_error_log` or `print_failure_box`.
+    - `funnel.py`'s `fire_notification` only triggered when `has_downloaded` or `already_up_to_date` was true or if an unhandled exception reached the top level, skipping the visual failure card when a workflow exited cleanly with 0 items.
+  - **Resolution**:
+    - **`core/funnel.py`**:
+      - Updated `fire_notification` to guarantee that whenever a scrape completes without downloads (`not has_downloaded and not already_up_to_date`), it automatically dispatches an OS failure notification, writes the contextual traceback to `Logs/💩/latest_error.log` / `Logs/💩/error_YYYY-MM-DD_HH-MM-SS.log`, and renders the visual `print_failure_box`.
+      - Expanded `patched_print` to catch all variations of error and failure output.
+    - **All Scraper Workflows (17 workflows across Manga, Manhwa, Comics, Webtoons, Novels, Doujinshi)**:
+      - Updated failure blocks to set `scraper.success_count = success_count`, record context with `record_error_log`, and directly render `print_failure_box(title or url, reason=str(err_msg))`.
+    - **Auto-generation of `Logs/Downlode 💩/` (`core/paths.py`, `core/journal.py`)**:
+      - `PathAuthority` and `DownloadJournal` guarantee that on every single run, `Logs/Downlode 💩/` is autogenerated along with `session_YYYY-MM-DD_HH-MM-SS.json`, `latest_session.json`, `Download History.json`, and `Batch History.json`.
+
+---
+
+# Progress Report - September 20, 2026 (Structured Session Telemetry, Download Journal & Rich Metadata Logging in Logs/Downlode 💩)
+
+- **Download Journal Subsystem (`core/journal.py`, `orchestrator.py`, `core/paths.py`):**
+  - **Identified Problem**:
+    - Users needed a detailed, human-readable record for every download session reflecting exactly what link was downloaded, what choices were made in the interactive TUI (or CLI flags: format, quality, mode, selection range), and rich metadata (artist, album, channel, author, total items, cover status, destination).
+    - Session records needed to be unique and isolated (new session JSON per run, never appending to or reusing prior session files) stored directly in `Logs/Downlode 💩/` alongside `Download History.json` and `Batch History.json`.
+  - **Resolution**:
+    - **`DownloadJournal` Class (`core/journal.py`)**:
+      - Manages session lifecycle (`session_YYYY-MM-DD_HH-MM-SS.json` and mirrored `latest_session.json`) inside `Logs/Downlode 💩/`.
+      - Tracks session types (`Batch`, `CLI`, `Interactive TUI`), CLI arguments, start/finish timestamps, and structured per-link downloads.
+      - Dual-layer telemetry capture:
+        1. **Programmatic hooks**: Direct bindings in `core/ui.py` (`Selector.select`, `MultiSelector.select`) recording prompts, choices, and counts; direct hooks in `core/history.py` (`mark_downloaded`, `set_title`, `resolve_download_path`, `BatchHistoryManager`).
+        2. **Terminal pipe**: `consume_terminal_line` regex parser tapping directly into console output to extract headers (`Location`, `Artist`, `Album`, `Menu`, `Quality`), file status (`File exists:`), and downloaded items (`●`) in real time, while gracefully filtering out non-media notices (subtitles, lyrics searches).
+    - **Session Lifecycle Hooks (`orchestrator.py`, `core/funnel.py`)**:
+      - `DownloadJournal.init_session(sys.argv[1:])` initialized on orchestrator entry.
+      - Guaranteed session closure via `finally: DownloadJournal.get_active().finish_session()`.
+      - Funnel hooks `journal.start_download()` and `journal.finish_download()` across both success and failure pathways.
+
+- **Enriched History Synchronization (`core/history.py`, `core/journal.py`):**
+  - Updated `HistoryLayer` and `BatchHistoryManager` to preserve extra metadata keys (`site`, `mode`, `destination`, `chosen_options`, `metadata`, `status`) on disk and in memory without destructive stripping.
+  - Automatically synchronizes rich metadata and choices from `DownloadJournal` into `Logs/Downlode 💩/Download History.json` and `Logs/Downlode 💩/Batch History.json`.
+
+---
+
+# Progress Report - September 20, 2026 (Music & Video Subfolder Organization and Lyrics/Subtitle Verification)
+
+- **Music Album & Discography Clean Subfolder Layout (`scrapers/1_SFW/MUSIC/*`):**
+  - Standardized album and playlist downloads to store audio files in `<Artist>/<Album>/music/` and companion lyrics in `<Artist>/<Album>/music/lyrics/`.
+  - Kept root album folder pristine with only `cover.jpg`/`cover.png`, `.zine/metadata.json`, and the `music/` directory.
+  - Resolved false "No subtitles or lyrics found" warning in `yt_music` workflow by searching `lyrics/<stem>.lrc` and `<artist> - <title>.lrc`.
+
+- **Video Platform Subfolder Structure (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*`, `pornhub`, `youtube`):**
+  - Updated all adult and social video scrapers (`hanime`, `hanime_red`, `hentaihaven`, `hentaihaven_co`, `hentaicity`, `hstream`, `oppai_stream`, `hentaimama`, `ohentai`, `pornhub`, `youtube`) to place video files inside `creator_root / "video"` and subtitles inside `creator_root / "video" / "subtitle"` when in vacuum mode.
+  - Quick Grab single file downloads remain clean without unnecessary nesting.
+
+- **Unified History & Verification Layer (`core/history.py`, `core/library.py`):**
+  - Enhanced `sync_local_history` and `resolve_download_path` to locate files across `video/`, `music/`, `song/`, and `short/` subfolders while resolving canonical `.zine/` history from parent directories.
+  - Updated `verify_item_two_step` in `core/library.py` to support dictionary history schemas and media resolution in subfolders.
+
+---
+
+# Progress Report - September 19, 2026 (CLI Overhaul, Unified Session Logging, Batch Folder Isolation & Comprehensive Hentai Platform Verification)
+
+- **Unified Per-Session & Error Logging Engine (`core/logger.py`, `orchestrator.py`):**
+  - Implemented session-level logging writing to `Logs/💩/session_YYYY-MM-DD_HH-MM-SS.log` with symlink/pointer to `latest_session.log`.
+  - Implemented dedicated error reporting writing to `Logs/💩/error_YYYY-MM-DD_HH-MM-SS.log` and `latest_error.log` upon failure.
+  - Formatted error reports with full execution context, timestamps, Python environment info, and clean stack traces (ANSI color stripped).
+
+- **Industry-Grade CLI Suite & Developer Diagnostics (`core/cli_help.py`, `orchestrator.py`, `core/funnel.py`):**
+  - Implemented `print_cli_help()`: Master CLI manual covering all smart flags (`--0`, `--a`/`--A`, `--<N>`, `--batch`), subcommands, and real-world copy-paste examples.
+  - Implemented `print_cli_version()`: Detailed runtime and system telemetry displaying Zine version, Python executable, OS kernel architecture, and installed binary status (`ffmpeg`, `aria2c`, `atomicparsley`, `deno`, `playwright`).
+  - Implemented `run_cli_doctor()`: Diagnostic health-check evaluating Python versions, external binaries, write permissions across download/batch/log roots, and credential presence.
+  - Implemented `print_cli_sites()`: Non-interactive terminal catalog listing all supported scrapers, categories, and domains without forcing an interactive TUI.
+  - Implemented `run_cli_clean()`: One-command purge for temporary intermediate buffers and video fragments in `💩/`.
+  - Added fast-path argument interception in `orchestrator.py` and `core/funnel.py` so standard developer flags (`-h`, `--help`, `-v`, `--version`, `doctor`, `sites`, `clean`) respond instantly (<0.1s) and exit cleanly with code 0 without creating empty log sessions.
+
+- **Standardized Batch / CLI Folder Isolation & Deep Subfolder Elimination (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*/workflow.py`, `scrapers/2_NSFW_ADULT/ADULT_PORN/pornhub/workflow.py`, `scrapers/1_SFW/NOVELS/*/workflow.py`):**
+  - **Identified Problem**: In adult video scrapers, single-episode quick grabs dumped loose `.mp4` video files, `subtitle/` folders, and `.zine/` tracker caches directly into `~/Downloads/Zine/Batch/`. Additionally, vacuum modes created an unnecessary nested `video/` subfolder.
+  - **Resolution**: Standardized `creator_root = resolve_folder_collision(target_root, clean_series, platform_id)` and `sub_folder = creator_root`. All downloaded video files, subtitles (`subtitle/`), metadata (`metadata.json`, `cover.jpg/png`), and trackers (`.zine/`) are cleanly self-contained within `~/Downloads/Zine/Batch/<Media Title>/` without loose root pollution or deep nested subfolders.
+  - Fixed single-chapter novel downloads to save into `~/Downloads/Zine/Batch/<Book Title>/novel chapter/`.
+
+- **Enhanced CLI & TUI Visuals (`core/funnel.py`, `core/ui.py`, `core/site_tui.py`):**
+  - Zine banner renders on all CLI launches alongside formatted CLI input parameters.
+  - Added failure indicator box `╭─ 🔴 Download Incomplete / Failed ──╮` with `🔴 [failed]` red ball styling for failed scrapes.
+  - Updated `[6] Torrents & DDL` in site catalog to clarify direct downloading is not supported by Zine (informational/reference catalog only; recommend external client like qBittorrent). Fixed badge widths and text wrapping to prevent truncated site descriptions.
+  - Debounced notification dispatch via `butler/notify.py` to prevent duplicate notifications during headless CLI operations.
+
+- **Complete Live Verification Across All Adult / Hentai Scrapers (`test the scrapper/`):**
+  - Verified and confirmed live download behavior, folder hierarchy, metadata, and logging across all adult platforms:
+    - **HanimeRed** (`hanime.red`): ✅ PASS. Single episode and series video streams + English subtitles saved to `Batch/<Title>/`.
+    - **HentaiHaven** (`hentaihaven.xxx` / `hentaihaven.red`): ✅ PASS. Dead CDN on expired mirror cleanly caught and reported in `latest_error.log` with `🔴 [failed]` failure box; `hentaihaven.red` verified downloading HLS chunks into `Batch/<Title>/`.
+    - **HentaiHavenCo** (`hentaihaven.co`): ✅ PASS. Playwright Turnstile solver bypasses nhplayer challenge, sniffs stream, and downloads via aria2c into `Batch/<Title>/`.
+    - **HStream** (`hstream.moe`): ✅ PASS. High-res 4K/2160p stream extraction downloading via yt-dlp/aria2c to `Batch/<Title>/`.
+    - **OppaiStream Video** (`oppai.stream`): ✅ PASS. 1080p stream extraction downloading via aria2c to `Batch/<Title>/`.
+    - **OppaiStream Toon** (`read.oppai.stream`): ✅ PASS. Downloaded and stitched all 54 pages to `Batch/<Title>/Chapter60/`.
+    - **HentaiMama** (`hentaimama.io`): ✅ PASS. Direct stream download via aria2c to `Batch/<Title>/`.
+    - **OHentai** (`ohentai.org`): ✅ PASS. Classic OVA stream extraction from BunnyCDN via aria2c to `Batch/<Title>/`.
+    - **HentaiCity** (`hentaicity.com`): ✅ PASS. Multi-resolution HLS extraction via `hls_extractor.py` to `Batch/<Title>/`.
+    - **NHentai** (`nhentai.net`): ✅ PASS. Fixed missing `session` property on `BaseScraper`; downloaded and assembled all 44 pages to `Batch/<Title>/Chapter1/`.
+    - **AsmHentai** (`asmhentai.com`): ✅ PASS. Downloaded all 20 pages to `Batch/<Title>/Chapter1/`.
+    - **OmegaScans** (`omegascans.org`): ✅ PASS. Downloaded and stitched all 95 pages to `Batch/<Title>/Chapter10/`.
+    - **Hentai18** (`hentai18.net`): ✅ PASS. Downloaded and stitched all 29 pages to `Batch/<Title>/Chapter9/`.
+    - **Hentai20** (`hentai20.io`): ✅ PASS. Downloaded and stitched all 16 pages to `Batch/<Title>/Chapter17/`.
+    - **ManhwaUs** (`manhwaus.net`): ✅ PASS. Downloaded and stitched all 22 pages to `Batch/<Title>/Chapter23/`.
+    - **Manga18fx** (`manga18fx.com`): ✅ PASS. Downloaded and stitched all 55 pages to `Batch/<Title>/Chapter55/`.
+
+---
+
+# Progress Report - September 19, 2026 (Fix: Anime Stream Recovery, CLI Flag Non-Blocking Execution & Alternative Platform Recommendation Engine)
+
+- **Anime & HLS Stream Download Overhaul (`scrapers/3_SYSTEM/hls_extractor.py`, `scrapers/3_SYSTEM/playwright_extractor.py`):**
+  - **Fail-Fast on Dead Stream Pieces (HTTP 404/410)**: Updated `hls_extractor.py` to immediately detect dead CDN segments and missing server chunks. Eliminates multi-minute / multi-hour stuck retry loops by capping segment retries to 3 with exponential backoff and exiting cleanly when segments are unplayable on the host server.
+  - **High-Concurrency Downloading**: Scaled custom HLS segment downloader thread pool from 3 to 16 concurrent workers with `curl_cffi` browser impersonation (`chrome124`).
+  - **Playwright Stream Sniffer Optimization**: Streamlined page timeouts, poll intervals, and subtitle discovery in `playwright_extractor.py` and `miruro/scraper.py`.
+
+- **Cross-Platform Alternative Anime Recommendation System (`core/ui.py`, `scrapers/1_SFW/ANIME/*/workflow.py`, `scrapers/2_NSFW_ADULT/ADULT_ANIME/*/workflow.py`):**
+  - **Architectural Cleanup**: Removed brittle cross-scraper dependencies (`scrapers.1_SFW.ANIME.anikoto.cross_scraper.fallback_cross_scraper`) from `miruro/workflow.py` to uphold AGENTS.md scraper isolation.
+  - **Clean Source Recommendation Engine**: Implemented `print_alternative_anime_sources` and `print_alternative_adult_anime_sources` in `core/ui.py`. When an anime stream is dead or CDN segments are missing, the scraper fails fast, finishes gracefully, and displays a Rich UI tree recommending alternative supported platforms (HiAnime, Anikoto, Anitaku, AniNeko, AniKai for SFW anime; Hanime, HentaiHaven, HentaiMama, HStream, Oppai Stream for adult anime).
+
+- **CLI Flag Headless Batch Execution (`core/funnel.py`):**
+  - Enabled direct CLI command execution (`python3 orchestrator.py "<URL>" --0 / --<N> / --a`) to process without hanging on interactive TUI prompts.
+  - Added non-blocking automated flag evaluation (`is_auto_batch = bool(batch_quick_grab or chapter_limit is not None)`) ensuring flags bypass interactive single vs whole series selectors.
+
+---
+
+# Progress Report - September 19, 2026 (Fix: Hentai 1-Episode Franchise Prompt & Standardized Subtitle /video/subtitle/.srt Storage)
+
+- **Hentai 1-Episode Interactive Prompt Fix (`scrapers/2_NSFW_ADULT/ADULT_ANIME/*/tui.py`):**
+  - **Identified Problem**: When a hentai title had only 1 episode (e.g. standalone OVA, movie, or single-episode release), `tui.py` across adult anime portals had an `elif len(videos) == 1:` condition that immediately bypassed the user prompt and forced Quick Grab (`is_vacuum = False`). This prevented users from archiving the title with its proper creator/series folder, cover image, and metadata into Vacuum/Batch.
+  - **Resolution**: Removed the hardcoded 1-episode Quick Grab bypass across all hentai portals (`hanime`, `hanime_red`, `hentaicity`, `hentaihaven`, `hentaihaven_co`, `hentaimama`, `hstream`, `ohentai`, `oppai_stream`). Interactive runs now consistently prompt the user to choose between **Whole Franchise** (Vacuum) and **Single Episode** (Quick Grab). If Single Episode is selected with 1 episode, it downloads that episode without redundant episode-list prompts; if Whole Franchise is selected, it archives cleanly with complete metadata and proper folder hierarchy. In headless Batch mode, `--0`, `--A`/`--a`, and series vs episode URLs continue to automatically decide without interactive prompts.
+
+- **Standardized Subtitle Storage & WebVTT to SRT Conversion (`core/video_engine.py`, `scrapers/2_NSFW_ADULT/ADULT_ANIME/*/`):**
+  - **Identified Problem**: Subtitles on several hentai platforms were being dumped loose directly in the `video/` directory alongside video files (e.g. `hentaihaven_co` writing `.vtt` into `output_dir`), or retaining `.vtt` extension instead of clean SubRip `.srt` format.
+  - **Resolution**:
+    - Implemented `vtt_to_srt()`, `save_subtitle_as_srt()`, and `migrate_and_clean_subtitles()` in `core/video_engine.py`.
+    - Automatically normalizes WebVTT timestamps (period to comma), strips WebVTT headers/styling cues, and emits standard 1-based `.srt` cues.
+    - Standardized subtitle directory across all hentai platforms to `<media_root>/video/subtitle/<clean_title>.srt`.
+    - Added pre-run and post-download automated migration ensuring that any legacy loose subtitles in `video/` or creator root are moved to `video/subtitle/`, converted to `.srt`, and temporary/loose `.vtt` files removed.
+
+---
+
+# Progress Report - September 19, 2026 (Refactor: Scraper Categorization, Taxonomy Reorganization & Architecture Guides)
+
+- **Categorized Scraper Taxonomy Reorganization (`scrapers/1_SFW/`, `scrapers/2_NSFW_ADULT/`, `scrapers/3_SYSTEM/`):**
+  - **Structure Reorganization**:
+    - Reorganized all 48 scrapers into standard categorical taxonomy: `1_SFW/` (9 categories: ANIME, MANGA, MANHWA, HYBRID_COMICS, NOVELS, WEBTOONS, MUSIC, WESTERN_COMICS, BOOKS), `2_NSFW_ADULT/` (3 categories: HENTAI, ADULT_DOUJIN_MANGA, ADULT_NOVELS), and `3_SYSTEM/` (shared system extractors: `hls_extractor.py`, `playwright_extractor.py`).
+  - **Core Routing & Discovery Updates (`core/paths.py`, `core/domain_manager.py`, `core/site_map.py`, `core/site_tui.py`, `scrapers/__init__.py`):**
+    - `core/paths.py`: Centralized system script resolution (`get_system_script`).
+    - `core/domain_manager.py`: Implemented dynamic recursive discovery (`rglob("site_config.json")`) across categories.
+    - `core/site_map.py`: Length-descending subdomain-prioritized router matching and updated all categorized import targets.
+    - `core/site_tui.py`: Completely overhauled interactive UI to support 12 categories, 47 user-facing platforms, dual-line SFW/NSFW category bar, and category hotkeys.
+    - `scrapers/__init__.py`: Added backwards-compatible aliases for `hls_extractor` and `playwright_extractor`.
+  - **Documentation & Agent Guidelines (`scrapers/README.md`, `README.md`, `.agents/AGENTS.md`):**
+    - Created `scrapers/README.md` as the complete catalog detailing capabilities, URL patterns, flags, and destination paths for all 48 platforms.
+    - Updated `README.md` with the new categorized tree and updated category guides.
+    - Updated `.agents/AGENTS.md` with categorized architecture standards, essential file references, and removed duplicate blocks.
+
+---
+
+# Progress Report - September 19, 2026 (Feature: Smart URL Flag --A / --a for Forced Vacuum All into Batch)
+
+- **Smart URL Flag `--A` / `--a` Implementation (`core/paths.py`, `core/funnel.py`, `core/ui.py`, `scrapers/*/`):**
+  - **Concept & Purpose**:
+    - Created `--A` / `--a` flag: allows any URL (whether series, episode, chapter, gallery, or profile) to be immediately vacuumed as a complete set.
+    - Eliminates interactive single vs franchise prompts and manual save location selection.
+    - Automatically routes downloads directly to the `Batch/` destination folder (`<library_root>/Batch/`), creating proper series/creator folders, scraping all metadata (`.zine/metadata.json`), saving cover art, and processing all episodes, chapters, and materials.
+  - **Funnel & Route Integration (`core/funnel.py`, `core/paths.py`):**
+    - Updated URL flag parsing in both `handle_batch()` (for batch files) and `main()` (for main CLI prompt) with `re.findall(r"--(\d+|[aA])\b", url)`.
+    - Added `get_default_batch_path()` to dynamically resolve `<downloads_root>/Batch` (respecting `download_base` settings).
+    - When `--A` or `--a` is passed, `route_url` is called with `is_batch=True`, `batch_path=get_default_batch_path()`, `batch_all=True`, `flags=["--a"]`, and `chapter_limit=None`.
+    - Automatically initializes atomic tracking in `BatchHistoryManager` (`mode="Vacuum"`, `flags=["--a"]`).
+  - **UI & Scraper Execution Alignment (`core/ui.py`, `scrapers/*/tui.py`, `scrapers/*/workflow.py`):**
+    - Updated `apply_chapter_limit()` and `filter_subchapters()` in `core/ui.py` to bypass chapter limits and sub-chapter prompts when `_force_vacuum` or `_batch_all` is set.
+    - Updated `scrapers/ohentai/tui.py`, `scrapers/hentaihaven/tui.py`, `scrapers/hanime_red/tui.py`, `scrapers/hentaicity/tui.py`, `scrapers/pornhub/tui.py`, `scrapers/youtube/tui.py`, `scrapers/facebook/tui.py`, `scrapers/instagram/tui.py`, `scrapers/pinterest/tui.py`, `scrapers/hianime/workflow.py`, `scrapers/anitaku/workflow.py`, `scrapers/anineko/workflow.py`, `scrapers/anikai/workflow.py`, `scrapers/anikoto/workflow.py`, `scrapers/archive/workflow.py`, and `scrapers/gutenberg/workflow.py` to recognize `_force_vacuum` / `_batch_all` and download all materials into the batch directory.
+  - **Documentation**:
+    - Documented `--A` / `--a` in [`README.md`](file:///home/valse-de-anshu/.config/zine%20scraper/README.md) and [`docs/help.md`](file:///home/valse-de-anshu/.config/zine%20scraper/docs/help.md).
+
+---
+
+# Progress Report - September 19, 2026 (Ohentai Series Overview & Quick Grab Link Recognition)
+
+- **Ohentai Link Recognition & Batch/Interactive Routing (`scrapers/ohentai/`):**
+  - **Series Overview (`sery_video.php`) & Single Episode (`detail.php`) Support (`scraper.py`):**
+    - Enabled fast direct extraction using `curl_cffi` session (`impersonate="chrome124"`), bypassing Cloudflare in ~1-2 seconds with automatic headless Playwright fallback if challenged.
+    - Added parsing for series overview URLs (`sery_video.php`): extracts clean series title, official series cover (`video_data/.../cover.png`), tags, and discovers all franchise episode links (`detail.php?vid=...`).
+    - Added bi-directional franchise discovery for episode URLs (`detail.php`): automatically locates the `sery_video.php` parent link, retrieves sibling episodes, clean series title, and cover artwork.
+  - **Batch & Interactive Routing (`tui.py`):**
+    - Enforced link-type detection (`is_serie_url = "sery_video.php" in url`).
+    - In Batch Mode: series links (`sery_video.php`) vacuum all franchise episodes, while single episode links (`detail.php`) quick grab only the specified episode. Strictly respects `--0` quick grab and chapter limit flags.
+    - In Interactive Mode: series links prioritize "Whole Franchise" as the default option, while episode links prioritize "Single Episode" with pre-selected episode cursor.
+    - Removed redundant double `input()` prompt on download completion.
+  - **Workflow Title & Folder Resolution (`workflow.py`):**
+    - Preserves clean series name for vacuum subfolders (`<creator_root>/video/Episode <N>.mp4`).
+    - Formats Quick Grab downloads as `<Series Name> - Episode <N>.mp4`.
+
+---
+
+# Progress Report - September 19, 2026 (Fix: Hentaimama Video Stream Extraction vs Thumbnail VTT)
+
+- **Hentaimama Video Stream Extraction Fix (`scrapers/hentaimama/engine.py`, `scrapers/hentaimama/workflow.py`):**
+  - **Identified Root Cause:** The previous regex `re.search(r"file:\s*['\"]([^'\"]+)['\"]", r_ifr.text)` failed on JWPlayer JSON keys (`"file": "https://..."`), missing Option 1/Option 2 direct MP4 video streams, while incorrectly matching player scrubbing thumbnail sprites (`tracks: [{file: ".../thumbnail.vtt", kind: "thumbnails"}]`). As a result, yt-dlp was downloading the `.vtt` thumbnail coordinate file instead of the actual video stream.
+  - **Robust Video Stream Extraction:**
+    - Implemented `_extract_video_from_html()` with strict video URL validation (`_is_valid_video_url`).
+    - Explicitly parses JWPlayer `sources: [...]` blocks and video URLs (`.mp4`, `.m3u8`), while strictly rejecting `.vtt`, `.srt`, `.ass`, image formats, and scrubbing thumbnail sprites (`/images/thumbnail/`, `thumbnail.vtt`).
+    - Successfully resolves high-speed direct MP4 streams (e.g. `https://gdvid.info/...mp4`) across all episodes.
+  - **Companion Subtitle Handling:**
+    - Added `extract_subtitles_candidates()` and `download_subtitle()` to save genuine captions/subtitles (excluding thumbnail scrubbers) into `video/subtitle/`.
+    - Removed corrupt `.vtt` file previously generated by the bug.
+
+---
+
+# Progress Report - September 18, 2026 (Fix: Interactive Single Episode Selection & Selector Default Index Across Hentai Scrapers)
+
+- **Interactive Episode Selection Across Hentai Scrapers (`scrapers/*/tui.py`, `core/ui.py`):**
+  - **Selector `default_index` Support (`core/ui.py`):** Added `default_index: int = 0` parameter with bounds validation to `Selector` so interactive menus and episode pickers can start with the matching episode pre-selected.
+  - **HentaiCity Single Episode Picker (`scrapers/hentaicity/tui.py`):**
+    - Fixed bug where picking "Single Episode" on an episode URL bypassed the episode selector because `filtered` matched the current page URL.
+    - When `len(videos) > 1 and sys.stdin.isatty()`, the TUI now always displays the episode selection list with the active episode pre-selected as the default cursor position, allowing the user to pick any other episode or press Enter for the current one.
+    - Added batch mode flag compliance (`_quick_grab`, `_batch_quick_grab`, `_chapter_limit`) to hentaicity TUI.
+  - **HentaiCity Workflow Title Polish (`scrapers/hentaicity/workflow.py`):**
+    - Preserved real series name for quick grab single episode downloads (`<Series Name> - Episode <N>`) instead of collapsing the title down to just `Episode <N>`.
+  - **Universal Hentai Scraper Alignment:**
+    - Applied the same seamless episode selector and `default_index` behavior to all hentai scrapers (`hanime_red`, `hentaihaven`, `hentaihaven_co`, `hentaimama`, `ohentai`, `hstream`, `oppai_stream`).
+
+---
+
+# Progress Report - September 18, 2026 (HentaiHaven Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Minimal Blinking Progress)
+
+- **HentaiHaven Scraper & Engine Upgrades (`scrapers/hentaihaven/`):**
+  - **Minimal Blinking Progress Indicator (`workflow.py`, `progress.py`):**
+    - Ported the minimal, glitch-free Tokyo Night progress indicator from `hanime_red`: eliminated the bulky progress bar that caused layout jittering and jumping ETAs during fragment downloads.
+    - Added clean multi-phase blinking dot state machine (`● Downloading...`, `● Downloading (Almost done)...` at >=90%, `● Almost done with baking...`, and `● Complete` / `● Failed`).
+    - Dedicated 10Hz background `refresh_loop()` thread guarantees smooth blinking animation during downloads.
+    - Integrated TUI reconstructor (`set_tui_callback`) and `completed_history` log replay for clean recovery when internet connection drops and restores.
+    - Render metadata tree shows clean status with fast glob-based cover detection (`any(creator_root.glob("cover.*"))`).
+  - **Rich Metadata & Full JSON-LD Extraction (`scraper.py`):**
+    - Deep extraction from JSON-LD schemas (`BreadcrumbList`, `WebPage`, `ImageObject`, `VideoObject`) across both series catalog pages and episode watch pages.
+    - Captures complete series metadata: Clean Series Title, Animation Studio/Brand (`/studio/<name>/`), Release Year (`/release/<year>/`), ISO Release Date (`uploadDate`/`datePublished`), Genres/Tags (`/series/<tag>/` and `/genre/<tag>/`), and full work content synopsis.
+    - Franchise episode discovery: naturally sorts all episodes (`Episode 1`, `Episode 2`, ...) and populates full per-episode metadata (URL, clean title, numeric ID, studio uploader, thumbnail, release date, tags, 1080p quality).
+  - **2-Step Magic Byte Verified Cover Art & Metadata Engine (`engine.py`):**
+    - Discovers full-resolution series posters by stripping thumbnail `/s_` prefixes from `img.hentaihaven.xxx` image sources.
+    - Implemented binary magic-byte inspection (`RIFF...WEBP`, `JPEG`, etc.) via `core.cover_utils.save_verified_cover` with Cloudflare-impersonated session.
+    - Writes standard `.zine/metadata.json` using `core.metadata_engine.MetadataEngine` and `ZineMetadataPayload`.
+  - **Batch Mode Compliance & TUI Polish (`tui.py`):**
+    - Enforced zero-prompt batch mode rules: series links vacuum the full franchise; single episode links quick-grab without prompt; strictly honors `--0` quick grab and `--<N>` chapter flags.
+    - Default interactive prompt adapts based on link type: series links default to "Whole Franchise", episode links default to "Single Episode".
+
+---
+
+# Progress Report - September 18, 2026 (Fix: TUI Episode Selector Validation Across Hentai Scrapers)
+
+- **Interactive TUI Episode Selector Robustness (`scrapers/*/tui.py`):**
+  - Resolved `TypeError: list indices must be integers or slices, not str` when selecting episodes or cancelling (ESC/Back/Quit) across all hentai video scrapers:
+    - `scrapers/hentaihaven/tui.py`
+    - `scrapers/hentaihaven_co/tui.py`
+    - `scrapers/hentaimama/tui.py`
+    - `scrapers/hstream/tui.py`
+    - `scrapers/hentaicity/tui.py`
+    - `scrapers/ohentai/tui.py`
+    - `scrapers/oppai_stream/tui.py`
+  - Replaced ambiguous truthiness checks (`if selected_idx is not None and selected_idx != "toggle"`) with explicit integer type and range validation (`if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos)`).
+  - Cleanly exits/returns without crashing when the user presses ESC, Q, or cancels episode selection.
+
+---
+
+# Progress Report - September 18, 2026 (HanimeRed Overhaul: Rich Metadata, 2-Step Magic Byte Cover & Progress Bar)
+
+- **HanimeRed Scraper & Engine Upgrades (`scrapers/hanime_red/`):**
+  - **High-Speed Direct Video Downloading & Pure-Python Subtitle Extraction (`engine.py`, `plugins/yt_dlp_plugins/`):**
+    - Eliminated slow Playwright/Chromium headless extraction subprocess that previously caused 30-90s timeouts and freezes before every download.
+    - Video extraction is handled directly by yt-dlp's native `HanimeRedIE` plugin in seconds with aria2c multi-connection acceleration.
+    - Added fast pure-Python English-first subtitle extraction and download from `nhplayer` iframes and streaming CDNs (`cdn.htstreaming.com`). Prioritizes English (`.en.srt`), and if English is not found or fails, automatically falls back to any available subtitle language (e.g. Spanish, French, Japanese, etc.), saving both `<Title>.<lang>.srt` and `<Title>.srt` directly into the `video/subtitle/` folder.
+    - **Concurrent Parallel Downloading**: Subtitle extraction and download runs asynchronously in parallel *alongside* the video download, ensuring subtitles are retrieved immediately without waiting for the multi-minute video stream to finish.
+    - Built network resilience with HTTPAdapter retry backoff and extended read timeouts `(10, 25)` to prevent read timeouts on slow origin servers.
+    - Implemented dual-phase subtitle verification (concurrent pre-download fetch + post-video completion retry) and automated self-healing for existing videos without subtitles.
+    - Upgraded `core/video_engine.py` to automatically preserve and migrate all companion subtitle files (`.srt`, `.vtt`, `.ass`) from `💩/` directly into the `video/subtitle/` folder.
+  - **Rich Metadata & Full JSON-LD Extraction (`scraper.py`)**:
+    - Implemented deep JSON-LD parsing (`CollectionPage` and `VideoObject` schemas) on series and episode pages.
+    - Extracts complete metadata: Series Title, Alternative Title (`alternateName`), Studio (`productionCompany`), Release Date (`uploadDate`), Views (`WatchAction`), Likes (`LikeAction`), Tags/Genres (merged from schema and HTML links), and detailed episode synopsis/description.
+    - Discovers all sibling franchise episodes automatically from episode links or series catalog pages.
+  - **2-Step Magic Byte Verified Cover Art (`engine.py`, `scraper.py`, `progress.py`)**:
+    - Prioritized official high-resolution WebP posters (`/media/posters/...` and Tailwind aspect-[2/3] selectors).
+    - Integrated dual-layer verification via `core.cover_utils.download_verified_cover`: binary magic-byte inspection (`RIFF...WEBP`, `JPEG`, etc.) + PIL preview validation.
+    - Updated progress tree status check to recognize all valid image formats (`cover.*`).
+  - **Minimal Blinking Progress Indicator (`workflow.py`)**:
+    - Retained the clean, minimal `● Downloading...` blinking state machine to maintain full compatibility with aria2c multi-chunk downloading without layout glitching or jumping ETAs.
+  - **Batch Mode Compliance & TUI Polish (`tui.py`)**:
+    - Enforced zero-prompt batch mode rules: `/serie/` links automatically vacuum the full series; episode links default to single-episode quick grab; `--0` and `--<N>` chapter flags are strictly honored without interactive prompts.
+    - Fixed duplicate return prompt (`input()`) in interactive mode.
+
+---
+
+# Progress Report - September 18, 2026 (Custom File Batch Mode & URL Input Flag Resolution)
+
+- **Custom File Batch Mode (`core/funnel.py`, `README.md`):**
+  - **Overview**:
+    - Added ability to run batch mode directly from custom text file paths supplied at the main prompt with `--batch` (or `batch <file>` / `/batch <file>`).
+    - Enables users to paste file locations (e.g. `"/path/to/my_queue.txt" --batch`, `urls.txt --batch`) without editing the default `Batch URL.txt`.
+  - **Automated Workflow & Checkoff**:
+    - Parses and loads all URLs, ignoring blank lines and comments.
+    - Full batch automation: honors per-item `--0` (Quick grab) and `--<N>` (Chapter continuation) flags.
+    - Synchronously removes/checks off completed URLs from the active custom file upon successful completion so resumes after interrupts/revolts work seamlessly.
+    - Guarantees custom batch files and batch-downloaded links are never recorded or cluttered into `Logs/URL History.txt`.
+
+---
+
+# Progress Report - September 18, 2026 (Breeze-TTS-2 C++ / GGUF Neural Speech Integration)
+
+- **Breeze-TTS-2 Integration (`Breeze tts/`, `core/funnel.py`, `core/settings_tui.py`, `docs/`):**
+  - **Overview & High-Performance Synthesis**:
+    - Integrated the Breeze-TTS-2 C++/GGUF neural text-to-speech engine with native Vulkan GPU acceleration and CPU fallback into the Zine Scraper Suite.
+    - Added dedicated package `Breeze tts/` containing `breeze_engine.py`, `README.md`, `TTS prompt.txt`, and `voices/` directory for saved `.breeze` voice container profiles.
+  - **Core Voice Modes**:
+    - **Voice Design**: Shapes custom narrator identity purely from natural language descriptions (e.g. *"A deep, authoritative male narrator with dramatic gravitas"*).
+    - **Voice Cloning**: Replicates speaker timbre and pronunciation from 5-15s clean reference audio (`.wav`) and exact transcript.
+    - **Voice Direction**: Steers pitch, tone, pace, and delivery emotion on top of reference voice profiles.
+    - **Saved Voices (`.breeze`)**: Bakes reference voice once into an ultra-compact binary cache file (`voices/<name>.breeze`), slashing time-to-first-audio from ~900ms to ~280ms.
+    - **Voice Conversion (`breeze-convert`)**: Respeaks existing audio recordings in another speaker's voice with selectable melody retention (`keep-acoustic`).
+  - **Vocal Event Enhancer & Dynamic CFG Scaling**:
+    - Implemented real-time regex parsing for vocal tags (`(laugh)`, `(sigh)`, `(cough)`, `(clears throat)`, `(whispering)`, `(gasp)`, `(nervous chuckle)`).
+    - Added dynamic guidance scaling: automatically elevates CFG scale to 2.5 on chunks containing vocal tags to ensure they fire with high fidelity, while keeping base CFG at 1.0 for standard narrative prose.
+  - **Interactive TUI & Workflow**:
+    - Tokyo Night / Sexy Pink split panel Live interface with highlighted vocal event tokens, braille progress spinners, duration counters, and dev logging.
+    - Global `Ctrl+R` revolt handler: gracefully aborts generation after active chunk, executes FFmpeg concatenation (24 kHz mono signed 16-bit PCM WAV), saves microsecond-accurate `.srt` subtitles, and cleans up temporary chunk files.
+  - **Core Funnel & Settings Wiring**:
+    - Added `breeze` and `/breeze` commands directly to the main prompt.
+    - Added universal `tts` selector allowing instant selection between Breeze-TTS-2 and Qwen3-TTS.
+    - Configured dedicated "Breeze TTS 2 (GGUF / C++)" settings submenu in `core/settings_tui.py`.
+
+---
+
+# Progress Report - September 18, 2026 (2-Step Magic-Byte Cover Verification & Universal Image Sniffing)
+
+- **2-Step Magic-Byte Cover Verification & Universal Preview Compatibility (`core/cover_utils.py` & Scraper Suite):**
+  - **Overview & Dual-Layer Verification**:
+    - Architected and integrated robust 2-step image verification across all scrapers to solve corrupted, un-previewable, and misidentified cover images across desktop file managers (Thunar, Dolphin, Nautilus) and Android galleries (Hwaran).
+    - **Step 1: Network & Format Extraction**: Fetches image payloads with anti-hotlink referers, browser headers, and retry backoff.
+    - **Step 2: Binary Magic-Byte Inspection & Normalization**: Sniffs the actual raw file header bytes (`\xff\xd8\xff` for JPEG, `\x89PNG\r\n\x1a\n` for PNG, `RIFF...WEBP` for WebP, `GIF8` for GIF, `ftyp` for AVIF).
+    - Rejects HTML/XML/Cloudflare challenge error responses masquerading with image status/names.
+    - Normalizes non-standard, large (>1.5MB), or PNG formats to clean RGB JPEG (with alpha matte compositing) to guarantee flawless thumbnail rendering.
+    - Preserves native WebP and JPEG extensions (`cover.webp`, `cover.jpg`) dynamically matching binary reality.
+  - **Suite-Wide Integration**:
+    - Unified utility functions in `core/cover_utils.py`: `detect_image_format_from_bytes`, `save_verified_cover`, and `download_verified_cover`.
+    - Applied across all manga/manhwa/manhua scrapers (`projectsuki`, `omegascans`, `kunmanga`, `mangak`, `fanfox`, `weebcentral`, `mangadex`, `asmhentai`, `nhentai`, `oppai_stream_toon`, `manga18fx`, `asurascans`, `manhwaus`, `manhuaplus`, `topmanhua`).
+    - Applied across anime scrapers (`anikai`, `anikoto`, `anineko`, `anitaku`, `hianime`, `miruro`).
+    - Applied across adult video series/channel scrapers (`hanime`, `hanime_red`, `hentai18`, `hentai20`, `hentaicity`, `hentaihaven`, `hentaihaven_co`, `hentaimama`, `hstream`, `oppai_stream`, `pornhub`, `ohentai`).
+    - Applied across light novels, books & archives (`novelarchive`, `gutenberg`, `archive`).
+    - Applied across social, video, and audio engines (`instagram`, `pinterest`, `youtube`, `youtube/yt_music`, `core/video_engine.py` covering `soundcloud`, `idagio`, `ytdlp`).
+- **Projectsuki Scraper Upgrades (`scrapers/projectsuki/`):**
+  - Upgraded metadata extraction to fully capture missing author, artist, type/format, score/rating, release year, origin, and extended synopsis/genres.
+  - Fixed cover and page stream downloading to handle binary headers and custom image endpoints.
+- **Terminal ESC Key Handling (`core/prompt.py` / `core/history_links.py`):**
+  - Enhanced URL prompt input buffer to cleanly consume and clear escape sequences when ESC is pressed rather than printing `ESCESCESC` into the prompt buffer.
+
+---
+
+# Progress Report - September 18, 2026 (Unified Metadata Engine & Hwaran Symbiosis Architecture)
+
+- **Unified Metadata Engine Integration (`core/metadata_engine.py` & Scraper Suite):**
+  - **Overview & Symbiosis Alignment**:
+    - Architected and integrated a centralized, lightweight `MetadataEngine` across all scrapers in Zine to establish seamless 100% atomic compatibility with Hwaran Android's `ZineMetadataExtractor.kt` and `DescriptionScreen.kt`.
+    - Guarantees standard `.zine/metadata.json` (Hwaran preferred) and `.zine/meta.json` (legacy backwards compatibility) emission across all supported media categories: Manga, Manhwa, Manhua, Anime Series, Novels, Books, Songs, and Channels/Creators.
+    - Strictly implements both `type` and lowercase `box_purpose` to ensure flawless native routing in Hwaran (`channel` -> `ChannelDescriptionView`, `series` -> `SeriesDescriptionView`, `novel` -> `NovelReader`, `book` -> `BookDescriptionView`, `manga`/`manhwa`/`manhua` -> `ToonDescriptionView`).
+  - **Payload Constraints & User Directives**:
+    - Stripped all redundant bloat fields: removed raw video lists (`videos: List[Dict]`), comments, cover art URLs, hardcoded language defaults, total_chapters, page counts, and serialization metadata.
+    - For video channels and adult creators (YouTube, Pornhub, Hanime, HentaiHaven), prioritized and preserved strictly: `views`, `likes`, `hottest` (`most_viewed`), and `most_rated` (`top_rated`).
+  - **Quick Grab Total Immunity**:
+    - Built strict path-based immunity (`is_quick_grab`) in `core/metadata_engine.py` and `core/history.py: _is_quick_grab_dir` ensuring downloads routed to any variation of Quick Grab (`Quick grab`, `quick_grab`, `quick grab`, etc.) never generate `.zine` folders or metadata files, preserving zero-overhead grab-and-go speed.
+  - **Suite-Wide Migration (45 Scrapers & Engines)**:
+    - Migrated all manga/manhwa/manhua scrapers (`asurascans`, `topmanhua`, `manhuaplus`, `manhwaus`, `weebcentral`, `mangadex`, `projectsuki`, `mangak`, `kunmanga`, `fanfox`, `omegascans`, `nhentai`, `asmhentai`, `hentai20`, `manga18fx`, `oppai_stream_toon`).
+    - Migrated all anime series scrapers (`hianime`, `anitaku`, `miruro`, `anikoto`, `anineko`, `anikai`).
+    - Migrated all adult video series/channel scrapers (`hanime`, `hanime_red`, `hstream`, `hentaihaven_co`, `ohentai`, `oppai_stream`, `hentaicity`, `hentaihaven`, `hentaimama`, `hentai18`).
+    - Migrated all light novel scrapers (`chikari`, `novelbuddy`, `novelfire`, `novelphoenix`, `novelarchive`).
+    - Migrated books & archives (`gutenberg`, `archive`).
+    - Migrated video platforms and channels (`youtube`, `pornhub`, `pinterest`, `facebook`, `instagram`, `ytdlp`, `youtube/yt_music`, `core/video_engine.py`).
+  - **Verification**:
+    - Validated all 45 scraper modules via automated import and serialization test suite against Hwaran metadata parsing rules.
+
+---
+
+# Progress Report - September 18, 2026 (Topmanhua Scraper Suite Addition & Isolation)
+
+- **Topmanhua Self-Contained Scraper Suite Addition (`scrapers/topmanhua/`):**
+  - **Overview**:
+    - Added full support for `https://www.topmanhua.fan/` with deep metadata extraction and continuous vertical strip stitching/slicing.
+    - Implemented strictly across the 8 canonical, self-contained files specified in `AGENTS.md` with zero parasite files and zero cross-scraper dependencies:
+      - `__init__.py`: Package exports (`TopmanhuaScraper`, `run_workflow`, `get_save_path`, `handle_tui`).
+      - `engine.py`: HTTP session with anti-hotlink referer (`https://www.topmanhua.fan/`), concurrency thread pool, vertical strip stitching and 2000px chunk slicing inside centralized `💩/` buffer (`PathAuthority().get_temp_root()`).
+      - `scraper.py`: `TopmanhuaScraper` class with comprehensive metadata parsing (title, authors, artists, description, genres, status, rating, release year, cover URL) and ascending chapter discovery for series and direct chapter URLs.
+      - `location.py`: Interactive directory routing supporting SFW vs NSFW selection, Ongoing vs Completed, Default vs Custom locations, and `=` toggle for Quick grab. Headless/batch mode auto-detects NSFW classification via genre tags.
+      - `verification.py`: Local disk image verification (`Chapter<n>`) and history tracker synchronization.
+      - `progress.py`: Tokyo Night Storm pre-flight completion tree (`render_completion_tree`).
+      - `workflow.py`: Multi-track Live progress tree, `MinimalPulseBar` for chunk downloading, braille spinner (`almost done with baking...`) for vertical slicing, Whistleblower recovery callback, and network loss resilience.
+      - `tui.py`: Site TUI entrypoint delegating to `run_workflow`.
+  - **Core Integration**:
+    - Registered `"topmanhua.fan": "topmanhua"` in `core/site_map.py`.
+    - Added `"topmanhua"` to `_LEGACY_TOON_SITES` in `core/paths.py`.
+    - Added Topmanhua metadata entry to Category 2 (Manga & Manhwa) in `core/site_tui.py` and `README.md`.
+
+---
+
+# Progress Report - September 18, 2026 (Global Cross-Platform 'zine' CLI Command)
+
+- **Universal Terminal Command (`zine`) Integration across Linux, macOS, and Windows:**
+  - **Identified Problem**: Launching Zine previously required navigating to the installation directory (`cd ~/.config/zine\ scraper/`) and invoking `python3 orchestrator.py`.
+  - **Linux & macOS**: Linked `zine` executable launcher into `~/.local/bin/zine` (with automatic shell rc PATH persistence in `install.sh` and `wizard/setup.py`), delegating to isolated `run.sh`/`venv`.
+  - **Windows**: Added `zine.cmd` generation into `%USERPROFILE%\bin` in `install.bat` and `wizard/setup.py`, updating user PATH via `setx`.
+  - **Argument Forwarding & Venv Safety**: Upgraded `orchestrator.py` with cross-platform venv resolution (`venv/Scripts/python.exe` on Windows vs `venv/bin/python` on POSIX) and forwarded CLI flags/arguments (`$@` and `%*`) seamlessly through `run.sh`, `run.bat`, and `zine`.
+
+---
+
+# Progress Report - September 15, 2026 (Light Novel Scrapers Resilience & Metadata Hardening)
+
+- **NovelBuddy Metadata & NoneType Crash Fix (`scrapers/light_novel/novelbuddy/scraper.py`, `engine.py`):**
+  - **Identified Problem**: Encountered `TypeError: 'NoneType' object is not iterable` when scraping novels such as `https://novelbuddy.me/i-can-devour-monsters-sss-talents` because Next.js `initialManga` returned `altNames: null` or missing `genres`/`tags`.
+  - **Solution**: Added defensive fallback defaulting (`or []`) for `genres`, `tags`, and `altNames`.
+  - **Cover Signature Compatibility**: Updated `download_cover` in `engine.py` to support both `download_cover(folder)` and `download_cover(cover_url, folder)` across novel engines.
+
+- **NovelArchive Multi-Source & Illustration Chapter Fallback (`scrapers/light_novel/novelarchive/scraper.py`, `engine.py`):**
+  - **Identified Problem**: Many novels on `novelarchive.cc` (e.g. *Skeleton Knight in Another World*, *Strike the Blood*) failed on chapter fetching with 404s on the primary `/api/novels/{id}/chapters/{ch}` endpoint, because chapters were hosted on MinIO source mirrors (e.g. `fucknovelpia`), and prologue/cover chapters contained pure illustration HTML without textual `<p>` tags.
+  - **Solution**: Added automatic source resolution falling back to `/novels/{id}/sources/{source}/chapters/{ch}`. Added illustration image detection and downloading to save illustration plates (`chapter_0001_img_01.jpg`) into the chapter folder and tag them in `.txt`.
+
+- **NovelFire Interstitial Retries & 404 Fast-Fail (`scrapers/light_novel/novelfire/engine.py`):**
+  - **Identified Problem**: Encountered intermittent `Loading...` challenge pages when paginating chapters on `novelfire.net`, causing false-positive "No content found" errors.
+  - **Solution**: Added interstitial challenge detection (`<title>Loading...</title>`) in `get_soup` with backoff retry, and fast-failed 404 responses without wasting retry attempts.
+
+---
+
 # Progress Report - September 07, 2026 (Manga18fx Scraper Suite Addition & Isolation)
 
 - **Manga18fx Self-Contained Scraper Suite Addition (`scrapers/manga18fx/`):**
@@ -1984,3 +2617,49 @@ The scraper architecture is split into 3 distinct stages:
   - Implemented dynamic dimension querying (`_get_dimensions()`) using `console.size` to dynamically constrain height (between 10 and 20 lines) and width (between 64 and 120 columns).
   - Dynamically calculated left/right panel padding and right-panel text wrapping to guarantee render frames remain strictly within terminal bounds with zero flicker.
   - Verified batch mode isolation: when `is_batch=True` or `not sys.stdin.isatty()`, all interactive selectors and the wizard are completely bypassed.
+
+***
+
+# Progress Report - September 2026 (Scrapers Taxonomy Reorganization & Catalog TUI Modernization)
+
+## 1. Categorized Taxonomy Architecture
+- **Reorganization**:
+  - Reorganized all 48 scrapers and system extractors into a structured directory hierarchy via `git mv`:
+    - `scrapers/1_SFW/`: `ANIME`, `MANGA`, `MANHWA`, `HYBRID_COMICS`, `NOVELS`, `KNOWLEDGE_STUDY`, `MUSIC`, `SOCIAL_MEDIA`
+    - `scrapers/2_NSFW_ADULT/`: `ADULT_ANIME`, `ADULT_PORN`, `Doujinshi`, `ADULT_Webtoons`
+    - `scrapers/3_SYSTEM/`: `hls_extractor.py`, `playwright_extractor.py`, `ytdlp/`
+  - Created `__init__.py` markers in every directory level to enable dynamic dotted package resolution via Python `importlib`.
+  - Added `get_system_script(script_name)` and `get_project_root()` to `core/paths.py` for centralized, path-independent discovery of `3_SYSTEM` helper scripts.
+  - Updated `core/domain_manager.py` to recursively discover `site_config.json` via `rglob()` and map dotted paths.
+  - Updated `core/site_map.py` to map all domains to their categorized dotted modules with length-descending sorting for prioritized subdomain resolution.
+  - Added fallback module aliasing in `scrapers/__init__.py` ensuring backward compatibility for legacy imports.
+
+## 2. Site Database TUI (`core/site_tui.py`) Catalog Overhaul
+- Updated catalog dataset to match the 12 taxonomy categories with all 47 user-facing platforms.
+- Fixed placement of `hentaicity` (moved from Doujinshi to `ADULT_ANIME`), `hentai18` (moved from Video to `ADULT_Webtoons`), and added missing scrapers (`anikai`, `hanime`, `hentaihaven_co`, `oppai_stream_toon`).
+- Designed a dual-line category bar (`SFW` and `NSFW`) fitting cleanly within the 144-character panel frame.
+- Implemented expanded hotkeys: `1-8` for SFW categories, `9`, `0`, `-`, `=` for NSFW categories, and `[` / `]` for category cycling.
+
+## 3. Documentation & Verification
+- Updated `README.md` and `scrapers/README.md` with the new categorized tree and updated platform tables.
+- Executed empirical verification confirming 100% test pass rate across all 47 scrapers, dynamic imports, and URL routing.
+
+***
+
+# Progress Report - September 2026 (Anime TUI Episode Selection & Batch Flag Harmonization)
+
+## 1. Episode Selection Fix & Type Safety Across All Anime Scrapers
+- **Root Cause**:
+  - In `scrapers/1_SFW/ANIME/miruro/workflow.py` (and counterparts `anikai`, `anikoto`, `anineko`, `anitaku`, `hianime`), selecting "Download single episode" prompted the user with `selected_vid = Selector(options, title="Select Episode", vertical=True).select()`.
+  - When the user pressed `ESC` (or `=` or if escape sequence reading timed out), `Selector.select()` returned a string (`"ESC"` or `"="`). Because the code used `if selected_vid: videos = [selected_vid]`, the string was treated as truthy and assigned to `videos = ["ESC"]`.
+  - At the download loop, `video.get("id")` failed with `AttributeError: 'str' object has no attribute 'get'`.
+- **Resolution**:
+  - Updated all 6 SFW anime scrapers (`miruro`, `anikai`, `anikoto`, `anineko`, `anitaku`, `hianime`) to use index-based `ep_options = [(title, i) ...]` with `default_index=default_idx` resolving matching episode from URL.
+  - Added strict type checking: `if isinstance(selected_idx, int) and 0 <= selected_idx < len(videos): videos = [videos[selected_idx]] else: return`.
+  - Added defensive check in download loops: `if not isinstance(video, dict): continue`.
+  - In `core/ui.py`, increased `_get_key` escape sequence read timeout from 50ms to 100ms to eliminate false `ESC` detections from terminal arrow keys under load.
+
+## 2. Batch Flags & Chapter Limit Harmonization Across Anime & Adult Anime
+- Added missing `_chapter_limit` (`--<N>`), `_batch_quick_grab` (`--0`), and `_force_vacuum` (`--a` / `--A`) support across all 6 SFW anime scrapers and adult anime scrapers `hentaimama` and `hentaihaven_co`.
+- In both interactive whole-franchise mode and batch mode, active chapter limits automatically restrict downloaded episodes systematically.
+

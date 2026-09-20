@@ -5,71 +5,81 @@ from pathlib import Path
 domain_manager = DomainManager(Path(__file__).parent.parent / "scrapers")
 
 SITE_MAP = {
-    "anikoto.cz": "anikoto",
-    "anikototv.to": "anikoto",
-    "anikoto.me": "anikoto",
-    "anikoto.net": "anikoto",
-    "anikototv.se": "anikoto",
-    "miruro.to": "miruro",
-    "miruro.ru": "miruro",
-    "miruro.tv": "miruro",
-    "miruro.bz": "miruro",
-    "manhuaplus.org": "manhuaplus",
-    "manhwaus.net": "manhwaus",
-    "hentai18.net": "hentai18",
-    "hentai20.io": "hentai20",
-    "asurascans.com": "asurascans",
-    "asuracomic.net": "asurascans",
-    "asuratoon.com": "asurascans",
-    "omegascans.org": "omegascans",
-    "kunmanga.co.uk": "kunmanga",
-    "fanfox.net": "fanfox",
-    "nhentai.net": "nhentai",
-    "weebcentral.com": "weebcentral",
-    "mangadex.org": "mangadex",
-    "mangak.io": "mangak",
-    "manga18fx.com": "manga18fx",
-    "projectsuki.com": "projectsuki",
-    "gutenberg.org": "gutenberg",
-    "archive.org": "archive",
-    "music.youtube.com": "youtube.yt_music",
-    "youtube.com": "youtube",
-    "youtu.be": "youtube",
-    "pornhub.com": "pornhub",
-    "phncdn.com": "pornhub",
-    "pinterest.com": "pinterest",
-    "pin.it": "pinterest",
-    "instagram.com": "instagram",
-    "facebook.com": "facebook",
-    "fb.watch": "facebook",
-    "soundcloud.com": "soundcloud",
+    # ── 1_SFW / MANGA ──
+    "mangadex.org": "1_SFW.MANGA.mangadex",
 
-    "idagio.com": "idagio",
-    "anitaku.online": "anitaku",
-    "anitaku.to": "anitaku",
-    "anitaku.me": "anitaku",
-    "hianime.to": "hianime",
-    "hianime.sx": "hianime",
-    "hianime.mn": "hianime",
-    "hianime.nz": "hianime",
-    "hianime.ad": "hianime",
-    "hianime.re": "hianime",
-    "hianime.pm": "hianime",
-    "anineko.to": "anineko",
-    "hentaicity.com": "hentaicity",
-    "hstream.moe": "hstream",
-    "read.oppai.stream": "oppai_stream.oppai_stream_toon",
-    "oppai.stream": "oppai_stream",
-    "hentaimama.io": "hentaimama",
-    "ohentai.org": "ohentai",
-    "asmhentai.com": "asmhentai",
-    "novelarchive.cc": "light_novel.novelarchive",
-    "chikari.moe": "light_novel.chikari",
-    "novelphoenix.com": "light_novel.novelphoenix",
-    "novelfire.net": "light_novel.novelfire",
-    "novelfire.docs": "light_novel.novelfire",
-    "novelbuddy.me": "light_novel.novelbuddy",
-    "novelbuddy.com": "light_novel.novelbuddy",
+    # ── 1_SFW / MANHWA ──
+    "asurascans.com": "1_SFW.MANHWA.asurascans",
+    "asuracomic.net": "1_SFW.MANHWA.asurascans",
+    "asuratoon.com": "1_SFW.MANHWA.asurascans",
+    "projectsuki.com": "1_SFW.MANHWA.projectsuki",
+    "manhuaplus.org": "1_SFW.MANHWA.manhuaplus",
+
+    # ── 1_SFW / HYBRID_COMICS ──
+    "kunmanga.co.uk": "1_SFW.HYBRID_COMICS.kunmanga",
+    "kunmanga.com": "1_SFW.HYBRID_COMICS.kunmanga",
+    "topmanhua.fan": "1_SFW.HYBRID_COMICS.topmanhua",
+    "weebcentral.com": "1_SFW.HYBRID_COMICS.weebcentral",
+    "fanfox.net": "1_SFW.HYBRID_COMICS.fanfox",
+    "mangak.io": "1_SFW.HYBRID_COMICS.mangak",
+
+    # ── 1_SFW / NOVELS ──
+    "chikari.moe": "1_SFW.NOVELS.chikari",
+    "novelarchive.cc": "1_SFW.NOVELS.novelarchive",
+    "novelbuddy.me": "1_SFW.NOVELS.novelbuddy",
+    "novelbuddy.com": "1_SFW.NOVELS.novelbuddy",
+    "novelfire.net": "1_SFW.NOVELS.novelfire",
+    "novelfire.docs": "1_SFW.NOVELS.novelfire",
+    "novelphoenix.com": "1_SFW.NOVELS.novelphoenix",
+
+    # ── 1_SFW / KNOWLEDGE_STUDY ──
+    "archive.org": "1_SFW.KNOWLEDGE_STUDY.archive",
+    "gutenberg.org": "1_SFW.KNOWLEDGE_STUDY.gutenberg",
+
+    # ── 1_SFW / MUSIC ──
+    "idagio.com": "1_SFW.MUSIC.idagio",
+    "soundcloud.com": "1_SFW.MUSIC.soundcloud",
+    "music.youtube.com": "1_SFW.MUSIC.yt_music",
+
+    # ── 1_SFW / SOCIAL_MEDIA ──
+    "facebook.com": "1_SFW.SOCIAL_MEDIA.facebook",
+    "fb.watch": "1_SFW.SOCIAL_MEDIA.facebook",
+    "instagram.com": "1_SFW.SOCIAL_MEDIA.instagram",
+    "pinterest.com": "1_SFW.SOCIAL_MEDIA.pinterest",
+    "pin.it": "1_SFW.SOCIAL_MEDIA.pinterest",
+    "youtube.com": "1_SFW.SOCIAL_MEDIA.youtube",
+    "youtu.be": "1_SFW.SOCIAL_MEDIA.youtube",
+
+    # ── 2_NSFW_ADULT / ADULT_ANIME ──
+    "hanime1.me": "2_NSFW_ADULT.ADULT_ANIME.hanime",
+    "hanime.tv": "2_NSFW_ADULT.ADULT_ANIME.hanime",
+    "hanime.red": "2_NSFW_ADULT.ADULT_ANIME.hanime_red",
+    "hentaihaven.xxx": "2_NSFW_ADULT.ADULT_ANIME.hentaihaven",
+    "hentaihaven.red": "2_NSFW_ADULT.ADULT_ANIME.hentaihaven",
+    "hentaihaven.online": "2_NSFW_ADULT.ADULT_ANIME.hentaihaven",
+    "hentaihaven.club": "2_NSFW_ADULT.ADULT_ANIME.hentaihaven",
+    "hentaihaven.co": "2_NSFW_ADULT.ADULT_ANIME.hentaihaven_co",
+    "hentaimama.io": "2_NSFW_ADULT.ADULT_ANIME.hentaimama",
+    "hstream.moe": "2_NSFW_ADULT.ADULT_ANIME.hstream",
+    "ohentai.org": "2_NSFW_ADULT.ADULT_ANIME.ohentai",
+    "hentaicity.com": "2_NSFW_ADULT.ADULT_ANIME.hentaicity",
+    "oppai.stream": "2_NSFW_ADULT.ADULT_ANIME.oppai_stream",
+
+    # ── 2_NSFW_ADULT / ADULT_PORN ──
+    "pornhub.com": "2_NSFW_ADULT.ADULT_PORN.pornhub",
+    "phncdn.com": "2_NSFW_ADULT.ADULT_PORN.pornhub",
+
+    # ── 2_NSFW_ADULT / Doujinshi ──
+    "asmhentai.com": "2_NSFW_ADULT.Doujinshi.asmhentai",
+    "nhentai.net": "2_NSFW_ADULT.Doujinshi.nhentai",
+
+    # ── 2_NSFW_ADULT / ADULT_Webtoons ──
+    "manhwaus.net": "2_NSFW_ADULT.ADULT_Webtoons.manhwaus",
+    "omegascans.org": "2_NSFW_ADULT.ADULT_Webtoons.omegascans",
+    "hentai20.io": "2_NSFW_ADULT.ADULT_Webtoons.hentai20",
+    "manga18fx.com": "2_NSFW_ADULT.ADULT_Webtoons.manga18fx",
+    "hentai18.net": "2_NSFW_ADULT.ADULT_Webtoons.hentai18",
+    "read.oppai.stream": "2_NSFW_ADULT.ADULT_Webtoons.oppai_stream_toon",
 }
 
 # Dynamically add domains from scraper configs
@@ -78,4 +88,7 @@ SITE_MAP.update(domain_manager.get_dynamic_site_map())
 
 def get_site_folder(url: str) -> Optional[str]:
     url_lower = url.lower()
-    return next((folder for domain, folder in SITE_MAP.items() if domain in url_lower), None)
+    for domain in sorted(SITE_MAP.keys(), key=len, reverse=True):
+        if domain in url_lower:
+            return SITE_MAP[domain]
+    return None

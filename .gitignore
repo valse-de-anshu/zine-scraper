@@ -57,10 +57,25 @@ cache/
 *.ytdl
 *.crdownload
 *.aria2
+test the scrapper/
+test*/
 
-# AI Models Directory (Strictly exclude multi-gigabyte binary weights)
-Models/*
-!Models/README to downlode ai model.md
+# Audio / TTS Output Directories & Temp Buffers
+_temp_/
+*/_temp_/*
+zine tts/
+*/zine tts/*
+zine breeze/
+*.raw_pcm
+*.pcm
+*.breeze
+
+# AI Models & Multi-Gigabyte Binary Weights (Strictly Ignored)
+Models/STT/*
+!Models/STT/.gitkeep
+Models/TTS/*.gguf
+Models/TTS/*.bin
+Models/TTS/Breeze-TTS-2.cpp/
 *.bin
 *.safetensors
 *.pt
@@ -68,3 +83,15 @@ Models/*
 *.onnx
 *.gguf
 *.weights
+*.ckpt
+*.tflite
+*.engine
+*.h5
+*.model
+*.pb
+*.llamacpp
+Breeze-TTS-2.cpp/build/
+Breeze-TTS-2.cpp/*.gguf
+Breeze-TTS-2.cpp/*.so
+Breeze-TTS-2.cpp/*.dylib
+Breeze-TTS-2.cpp/*.dll

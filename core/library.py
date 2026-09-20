@@ -47,13 +47,17 @@ def scaffold_library(root: Path, storage) -> None:
 
     # Vacuum
     storage.create_directory(root / "Vacuum")
-
-    # Batch
-    batch_dir = root / "Batch"
-    storage.create_directory(batch_dir)
-    batch_file = batch_dir / "Batch URL.txt"
-    if not batch_file.exists():
-        storage.write_file(batch_file, "")
+    vacuum_file = root / "vacuum.txt"
+    legacy_file = root / "Batch URL.txt"
+    if legacy_file.exists() and not vacuum_file.exists():
+        try:
+            content = legacy_file.read_text(encoding="utf-8")
+            storage.write_file(vacuum_file, content)
+            legacy_file.unlink()
+        except Exception:
+            pass
+    if not vacuum_file.exists():
+        storage.write_file(vacuum_file, "# Add URLs here to download sequentially in vacuum mode.\n# Example: https://site.com/series-url --5\n")
 
     # temp (centralized in 💩)
     from core.paths import PathAuthority
@@ -63,7 +67,11 @@ def scaffold_library(root: Path, storage) -> None:
     # Models directory & download guide
     project_root = Path(__file__).resolve().parent.parent
     models_dir = project_root / "Models"
+    stt_dir = models_dir / "STT"
+    tts_dir = models_dir / "TTS"
     storage.create_directory(models_dir)
+    storage.create_directory(stt_dir)
+    storage.create_directory(tts_dir)
 
     models_guide = models_dir / "README to downlode ai model.md"
     models_main = models_dir / "README.md"
@@ -73,9 +81,13 @@ def scaffold_library(root: Path, storage) -> None:
         except Exception:
             pass
 
-    # Qwen TTS directory & default templates
-    qwen_dir = project_root / "Qween tts"
+    # Qwen TTS directory & default templates (inside Models/TTS/Qween tts)
+    qwen_dir = tts_dir / "Qween tts"
     storage.create_directory(qwen_dir)
+
+    # Breeze TTS directory (inside Models/TTS/Breeze tts)
+    breeze_dir = tts_dir / "Breeze tts"
+    storage.create_directory(breeze_dir)
 
     word_file = qwen_dir / "word.txt"
     if not word_file.exists():
@@ -95,14 +107,18 @@ def scaffold_library(root: Path, storage) -> None:
         storage.write_file(prompt_file, "")
 
     # Logs directory
-    logs_dir = project_root / "Logs"
-    storage.create_directory(logs_dir)
-    storage.create_directory(logs_dir / "💩")
-    history_file = logs_dir / "Download History.json"
+    from core.paths import PathAuthority
+    pa = PathAuthority()
+    storage.create_directory(pa.get_logs_root())
+    storage.create_directory(pa.get_logs_root() / "💩")
+    
+    down_logs_dir = pa.get_download_logs_root()
+    storage.create_directory(down_logs_dir)
+    history_file = pa.get_history_file()
     if not history_file.exists():
         storage.write_file(history_file, "{}")
 
-    batch_history_file = logs_dir / "Batch History.json"
+    batch_history_file = pa.get_batch_history_file()
     if not batch_history_file.exists():
         storage.write_file(batch_history_file, "{}")
 
@@ -144,7 +160,8 @@ def get_vacuum_path(root: Path, site: str, creator: Optional[str] = None) -> Pat
     return Path(root) / "Vacuum" / site
 
 def get_batch_path(root: Path) -> Path:
-    return Path(root) / "Batch"
+    """Redirected to Vacuum — Batch folder no longer used."""
+    return Path(root) / "Vacuum"
 
 def get_temp_path(root: Path, sub: str = "downloads") -> Path:
     from core.paths import PathAuthority
@@ -205,13 +222,25 @@ def two_step_verify(
     if str(item_id) not in history_data:
         return VerificationResult(False, f"item_id '{item_id}' not in history")
 
-    recorded_filename = history_data[str(item_id)]
+    entry_val = history_data[str(item_id)]
+    recorded_filename = entry_val.get("filename", "") if isinstance(entry_val, dict) else str(entry_val)
 
     # ── Step 2: Media ─────────────────────────────────────────────────────────
     if media_path is None:
         # Derive path from the parent of .zine and the recorded filename
         parent = zine_dir.parent
+        candidates = [
+            parent / recorded_filename,
+            parent / "video" / recorded_filename,
+            parent / "music" / recorded_filename,
+            parent / "song" / recorded_filename,
+            parent / "short" / recorded_filename,
+        ]
         media_path = parent / recorded_filename
+        for cand in candidates:
+            if cand.exists():
+                media_path = cand
+                break
 
     media_path = Path(media_path)
 

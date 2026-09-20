@@ -25,7 +25,10 @@ from core.config import ConfigLayer
 Image.MAX_IMAGE_PIXELS = None
 
 DEFAULT_CHUNK_HEIGHT = 2000
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif",
+    ".avif", ".gif", ".jfif", ".pjpeg", ".pjp", ".ico", ".heic", ".heif"
+}
 
 
 def natural_sort_key(s: str) -> List[Any]:
@@ -277,7 +280,8 @@ def run_image_slicer_tui():
 
         console.print(f"\n[success]● Complete! Sliced: {sliced} strips | Untouched: {untouched} pages[/success]\n")
         
-        console.input("[info]Press Enter to continue...[/info]")
+        from core.ui import prompt_return
+        prompt_return("Press Enter to return...")
         
         startup_clear()
         print_banner()

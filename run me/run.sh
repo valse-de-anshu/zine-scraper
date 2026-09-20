@@ -10,5 +10,7 @@ if [ ! -d "$ROOT_DIR/venv" ]; then
     exit 1
 fi
 
-echo "[+] Booting Zine Scraper inside isolated VENV..."
-"$ROOT_DIR/venv/bin/python" "$ROOT_DIR/orchestrator.py"
+if [ $# -eq 0 ]; then
+    echo "[+] Booting Zine Scraper inside isolated VENV..."
+fi
+exec "$ROOT_DIR/venv/bin/python" "$ROOT_DIR/orchestrator.py" "$@"

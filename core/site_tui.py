@@ -11,7 +11,8 @@ Panels side-by-side inside one unified expanded frame:
 
 Navigation:
   Tab / ← / → : Switch focus between Platforms and Domains
-  1-8         : Jump directly to Category
+  1-0 / - / = : Jump directly to Category (1-8 SFW, 9,0,-,= NSFW)
+  [ / ]       : Cycle Category
   Enter       : Launch selected domain in default Web Browser
   Esc / q     : Return to Main Menu
 """
@@ -35,6 +36,7 @@ from core.ui import console, startup_clear, print_banner
 # Master Catalog Data (SFW 1-6, NSFW 7-8) - Aligned with scrapper_site_catalog.md
 # ─────────────────────────────────────────────────────────────────────────────
 SITE_CATEGORIES = [
+    # ── 1_SFW / ANIME ──
     {
         "id": "1",
         "icon": "📺",
@@ -96,8 +98,64 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Anime · Streaming · Minimal · Modern",
                 "desc": "Obsessively minimal design with zero clutter. Pulls high-speed video streams via third-party APIs, delivering superior uptime versus standard self-hosted platforms."
             },
+            {
+                "name": "Anikai",
+                "primary": "anikai.to",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Anime streaming (Sub / Dub)",
+                "tags": "SFW · Anime · Streaming · Sub · Dub · Fast",
+                "desc": "Modern responsive anime streaming platform providing fast high-definition streams with full episode catalogs and low latency buffering."
+            },
+            {
+                "name": "KickAssAnime",
+                "primary": "kaa.lt",
+                "alts": ["kaa.to", "kickassanime.cx", "kaa.rs", "kaa.mx", "kickassanime.mx", "kickassanimes.ru", "kaas.ro", "kaas.to", "watchanime.io", "kickass-anime.ro", "kickass-anime.ru"],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Anime streaming (Soft-sub / Sub / Dub)",
+                "tags": "SFW · Anime · Streaming · Soft-sub · Multi-Domain",
+                "desc": "High video bitrate anime portal featuring multi-language soft subtitles, high-speed playback, and a vast mirror network."
+            },
+            {
+                "name": "AnimeX",
+                "primary": "animex.one",
+                "alts": ["aniwave.at", "anistream.one"],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Anime streaming (Sub / Dub / Sync)",
+                "tags": "SFW · Anime · Streaming · Multi-Source · AniList Sync",
+                "desc": "Modern anime portal formerly known as Otakuu. Supports AniList/MyAnimeList dual sync, multi-source stream aggregation, and clean player UI."
+            },
+            {
+                "name": "Anime Nexus",
+                "primary": "anime.nexus",
+                "alts": ["animenexus.tv"],
+                "rating": "8/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Anime streaming (Soft-sub / 4K Upscale)",
+                "tags": "SFW · Anime · Streaming · 4K Upscale · Soft-sub",
+                "desc": "Created by the team behind AnimeFever. Features 4K AI-upscaled streams, multi-language soft subtitles, and custom player options."
+            },
+            {
+                "name": "HiAnimes",
+                "primary": "hianimes.se",
+                "alts": ["hianime.at", "zokoanime.video"],
+                "rating": "7/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Anime streaming & video index",
+                "tags": "SFW · Anime · Streaming · Mirror · API",
+                "desc": "Self-hosted anime streaming alternative powered by the ZokoAnime engine with direct episode indexing and high-capacity video streams."
+            },
         ]
     },
+    # ── 1_SFW / MANGA ──
     {
         "id": "2",
         "icon": "📖",
@@ -115,6 +173,15 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Manga · REST API · Scanlations · Multi-Lang",
                 "desc": "The internet's foremost community-driven open manga database. Hosts millions of chapters across hundreds of languages with clean high-resolution scans, zero ads, and official REST API integration."
             },
+        ]
+    },
+    # ── 1_SFW / MANHWA ──
+    {
+        "id": "3",
+        "icon": "🇰🇷",
+        "label": "Manhwa",
+        "tag": "SFW",
+        "sites": [
             {
                 "name": "Asura Scans",
                 "primary": "asurascans.com",
@@ -125,17 +192,6 @@ SITE_CATEGORIES = [
                 "content": "Korean Manhwa / Webtoons",
                 "tags": "SFW · Manhwa · Webtoon · Action · Korean",
                 "desc": "One of the most prominent active scanlation groups in the world. Specialises in top-tier Korean action, fantasy, and regression webtoons with swift chapter release schedules."
-            },
-            {
-                "name": "Weeb Central",
-                "primary": "weebcentral.com",
-                "alts": [],
-                "rating": "8/10",
-                "popularity": "High",
-                "status": "Active",
-                "content": "Manga / Manhwa / Comics",
-                "tags": "SFW · Manga · Manhwa · Aggregator · Fast",
-                "desc": "Modern, ultra-fast manga aggregator built with a clean aesthetic interface. Provides high-resolution reader scans and comprehensive series tracking without invasive ads."
             },
             {
                 "name": "Project Suki",
@@ -159,27 +215,47 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Manhua · Chinese · Cultivation · Xianxia",
                 "desc": "Dedicated platform for Chinese Manhua. Dominates the cultivation, xianxia, martial arts, and reincarnation comic niches with frequent daily updates."
             },
-            {
-                "name": "MangaK",
-                "primary": "mangak.io",
-                "alts": [],
-                "rating": "7/10",
-                "popularity": "Medium",
-                "status": "Active",
-                "content": "Manga archive",
-                "tags": "SFW · Manga · Legacy Archive · Aggregator",
-                "desc": "Formerly MangaKakalot. One of the internet's oldest and most massive manga repositories, containing decades of serialised Japanese manga and one-shots."
-            },
+        ]
+    },
+    # ── 1_SFW / HYBRID_COMICS ──
+    {
+        "id": "4",
+        "icon": "📑",
+        "label": "Hybrid",
+        "tag": "SFW",
+        "sites": [
             {
                 "name": "Kunmanga",
                 "primary": "kunmanga.com",
-                "alts": [],
+                "alts": ["kunmanga.co.uk"],
                 "rating": "7/10",
                 "popularity": "Medium",
                 "status": "Active",
                 "content": "Manga / Comics",
                 "tags": "SFW · Manga · Comics · Fast",
                 "desc": "Streamlined manga reader with broad coverage across shonen, shojo, and fantasy series with low latency chapter image loading."
+            },
+            {
+                "name": "Topmanhua",
+                "primary": "topmanhua.fan",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Manhua / Manhwa / Webtoons",
+                "tags": "SFW · Manhua · Manhwa · Shoujo · Romance · Webtoons",
+                "desc": "Extensive platform delivering fast translated releases of popular Asian manhua, manhwa, and webtoons with high-resolution vertical strips."
+            },
+            {
+                "name": "Weeb Central",
+                "primary": "weebcentral.com",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "High",
+                "status": "Active",
+                "content": "Manga / Manhwa / Comics",
+                "tags": "SFW · Manga · Manhwa · Aggregator · Fast",
+                "desc": "Modern, ultra-fast manga aggregator built with a clean aesthetic interface. Provides high-resolution reader scans and comprehensive series tracking without invasive ads."
             },
             {
                 "name": "Fanfox",
@@ -192,10 +268,22 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Manga · Legacy Directory · Global",
                 "desc": "Formerly MangaFox. A historic pioneer of online manga reading. Holds an immense legacy catalogue, especially strong for completed classic series."
             },
+            {
+                "name": "MangaK",
+                "primary": "mangak.io",
+                "alts": [],
+                "rating": "7/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Manga archive",
+                "tags": "SFW · Manga · Legacy Archive · Aggregator",
+                "desc": "Formerly MangaKakalot. One of the internet's oldest and most massive manga repositories, containing decades of serialised Japanese manga and one-shots."
+            },
         ]
     },
+    # ── 1_SFW / NOVELS ──
     {
-        "id": "3",
+        "id": "5",
         "icon": "📚",
         "label": "Novels",
         "tag": "SFW",
@@ -236,7 +324,7 @@ SITE_CATEGORIES = [
             {
                 "name": "NovelBuddy",
                 "primary": "novelbuddy.me",
-                "alts":["novelbuddy.com"],
+                "alts": ["novelbuddy.com"],
                 "rating": "8/10",
                 "popularity": "High",
                 "status": "Active",
@@ -254,11 +342,85 @@ SITE_CATEGORIES = [
                 "content": "Web serials / light novels",
                 "tags": "SFW · Light Novel · Archive · REST API",
                 "desc": "Clean API-driven light novel repository. Serves as a dependable backup reader for completed web serials and light novels when primary aggregators go offline."
-            }
+            },
         ]
     },
+    # ── 1_SFW / TORRENTS_DDL ──
     {
-        "id": "4",
+        "id": "6",
+        "icon": "🧲",
+        "label": "Torrents",
+        "tag": "SFW",
+        "sites": [
+            {
+                "name": "Nyaa",
+                "primary": "nyaa.si",
+                "alts": ["sukebei.nyaa.si", "nyaa.iss.one", "nyaa.iss.ink", "nyaa.land"],
+                "rating": "10/10",
+                "popularity": "Very High",
+                "status": "Info Only",
+                "content": "Anime / Manga / Media torrent tracker",
+                "tags": "SFW · Torrents · Index · P2P · External Client",
+                "desc": "The largest public BitTorrent tracker for anime, manga, and media. Zine lists this for database reference — grab magnets/torrents here to download via your own torrent client (e.g. qBittorrent)."
+            },
+            {
+                "name": "TsukiHime",
+                "primary": "tsukihime.org",
+                "alts": [],
+                "rating": "8/10",
+                "popularity": "Medium",
+                "status": "Info Only",
+                "content": "Torrent / DDL / Usenet indexer",
+                "tags": "SFW · DDL · Torrent · NZB · External Client",
+                "desc": "Advanced media aggregator providing direct download and Usenet mirrors for anime releases. Listed for reference to download via your personal tools."
+            },
+            {
+                "name": "SeaDex",
+                "primary": "releases.moe",
+                "alts": [],
+                "rating": "9/10",
+                "popularity": "High",
+                "status": "Info Only",
+                "content": "Curated best anime release index",
+                "tags": "SFW · Index · Curated · Release Comparison",
+                "desc": "Authoritative release comparison index tracking top-fidelity anime video encodes, official subs, and optimal audio. Use with your torrent client to archive the best release."
+            },
+        ]
+    },
+    # ── 1_SFW / KNOWLEDGE_STUDY ──
+    {
+        "id": "7",
+        "icon": "🏛",
+        "label": "Study",
+        "tag": "SFW",
+        "sites": [
+            {
+                "name": "Project Gutenberg",
+                "primary": "gutenberg.org",
+                "alts": [],
+                "rating": "10/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Public domain ebooks & classics",
+                "tags": "SFW · Books · Ebooks · Public Domain · Classics",
+                "desc": "The oldest digital library in human history, founded in 1971 by Michael S. Hart. Offers over 70,000 completely free eBooks of timeless world literature, philosophy, and history."
+            },
+            {
+                "name": "Internet Archive",
+                "primary": "archive.org",
+                "alts": [],
+                "rating": "9/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Books / scans / manuscripts / archives",
+                "tags": "SFW · Archive · Books · Preservation · Non-Profit",
+                "desc": "The world's largest non-profit digital library. Preserves 835+ billion web pages, 44 million books and texts, 15 million audio recordings, and 10 million films for universal permanent access."
+            },
+        ]
+    },
+    # ── 1_SFW / MUSIC_MEDIA ──
+    {
+        "id": "8",
         "icon": "🎵",
         "label": "Music",
         "tag": "SFW",
@@ -288,7 +450,7 @@ SITE_CATEGORIES = [
             {
                 "name": "YouTube Music",
                 "primary": "music.youtube.com",
-                "alts": ["youtube.com"],
+                "alts": [],
                 "rating": "9/10",
                 "popularity": "Very High",
                 "status": "Active",
@@ -296,55 +458,6 @@ SITE_CATEGORIES = [
                 "tags": "SFW · Music · Video · Global · High-Res",
                 "desc": "Google's global music streaming network. Integrates official studio releases with rare live recordings, concert bootlegs, and user covers across every genre."
             },
-            {
-                "name": "Internet Archive Music",
-                "primary": "archive.org/details/audio",
-                "alts": ["archive.org"],
-                "rating": "9/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Live concerts / audio recordings / 78s",
-                "tags": "SFW · Archive · Audio · Live Music · Historical",
-                "desc": "Massive repository of historical audio recordings, public domain music, old-time radio broadcasts, and the Live Music Archive containing 250,000+ lossless live concert recordings."
-            },
-        ]
-    },
-    {
-        "id": "5",
-        "icon": "🏛",
-        "label": "Books",
-        "tag": "SFW",
-        "sites": [
-            {
-                "name": "Project Gutenberg",
-                "primary": "gutenberg.org",
-                "alts": [],
-                "rating": "10/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Public domain ebooks & classics",
-                "tags": "SFW · Books · Ebooks · Public Domain · Classics",
-                "desc": "The oldest digital library in human history, founded in 1971 by Michael S. Hart. Offers over 70,000 completely free eBooks of timeless world literature, philosophy, and history."
-            },
-            {
-                "name": "Internet Archive",
-                "primary": "archive.org",
-                "alts": [],
-                "rating": "9/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Books / scans / manuscripts / archives",
-                "tags": "SFW · Archive · Books · Preservation · Non-Profit",
-                "desc": "The world's largest non-profit digital library. Preserves 835+ billion web pages, 44 million books and texts, 15 million audio recordings, and 10 million films for universal permanent access."
-            },
-        ]
-    },
-    {
-        "id": "6",
-        "icon": "🌐",
-        "label": "Social",
-        "tag": "SFW",
-        "sites": [
             {
                 "name": "YouTube",
                 "primary": "youtube.com",
@@ -368,17 +481,6 @@ SITE_CATEGORIES = [
                 "desc": "Meta's flagship platform for photo, carousel, reel, and story sharing. The global center for visual creator content, photography, and digital art portfolios."
             },
             {
-                "name": "Facebook",
-                "primary": "facebook.com",
-                "alts": ["fb.watch"],
-                "rating": "8/10",
-                "popularity": "Very High",
-                "status": "Active",
-                "content": "Profile media / photos / video reels",
-                "tags": "SFW · Social · Profiles · Photos · Reels · Live",
-                "desc": "Meta's core social network. Zine provides dedicated modules for extracting full-resolution profile pictures, photo albums, and public video reels."
-            },
-            {
                 "name": "Pinterest",
                 "primary": "pinterest.com",
                 "alts": ["pin.it"],
@@ -391,55 +493,56 @@ SITE_CATEGORIES = [
             },
         ]
     },
+    # ── 2_NSFW_ADULT / ADULT_ANIME ──
     {
-        "id": "7",
+        "id": "9",
         "icon": "🔞",
-        "label": "18+ Vid",
+        "label": "H-Anime",
         "tag": "NSFW",
         "sites": [
             {
-                "name": "Pornhub",
-                "primary": "pornhub.com",
-                "alts": ["phncdn.com"],
-                "rating": "8/10",
+                "name": "Hanime",
+                "primary": "hanime1.me",
+                "alts": ["hanime.tv"],
+                "rating": "9/10",
                 "popularity": "Very High",
                 "status": "Active",
-                "content": "Adult video streaming",
-                "tags": "NSFW · Adult · Video · Mainstream",
-                "desc": "The world's largest adult video streaming network, delivering high-definition video content across virtually every adult category with multi-quality resolution feeds."
+                "content": "Adult anime streaming",
+                "tags": "NSFW · Adult · Anime · Video · 1080p",
+                "desc": "Premier adult anime portal delivering high-definition 1080p uncensored video streams with extensive tag metadata and full episode archiving."
             },
             {
-                "name": "HStream",
-                "primary": "hstream.moe",
+                "name": "Hanime Red",
+                "primary": "hanime.red",
                 "alts": [],
                 "rating": "6/10",
                 "popularity": "Medium",
                 "status": "Active",
-                "content": "Adult anime video streaming",
-                "tags": "NSFW · Adult · Anime · Streaming · HD",
-                "desc": "Clean, optimized streaming platform tailored exclusively to adult anime and hentai series. Delivers reliable video playback with minimal intrusive ads."
+                "content": "Adult anime streaming",
+                "tags": "NSFW · Adult · Anime · Video · HD",
+                "desc": "Alternative adult anime portal featuring organized franchise collections, tagged search filters, and subtitle track extraction."
             },
             {
-                "name": "Hentai18",
-                "primary": "hentai18.net",
-                "alts": [],
-                "rating": "6/10",
-                "popularity": "Medium",
+                "name": "Hentai Haven",
+                "primary": "hentaihaven.xxx",
+                "alts": ["hentaihaven.red", "hentaihaven.online", "hentaihaven.club"],
+                "rating": "7/10",
+                "popularity": "High",
                 "status": "Active",
-                "content": "Uncensored HD adult anime",
-                "tags": "NSFW · Adult · Anime · HD · Uncensored",
-                "desc": "Fast-loading adult streaming platform focused on uncensored HD hentai releases with a steady stream of newly translated series."
+                "content": "Adult anime streaming",
+                "tags": "NSFW · Adult · Anime · Video · Mirrors",
+                "desc": "Mirror network for the historic adult anime streaming brand with broad coverage of trending releases and series indexing."
             },
             {
-                "name": "OHentai",
-                "primary": "ohentai.org",
+                "name": "HentaiHaven Co",
+                "primary": "hentaihaven.co",
                 "alts": [],
-                "rating": "6/10",
+                "rating": "7/10",
                 "popularity": "Medium",
                 "status": "Active",
-                "content": "Adult anime archive",
-                "tags": "NSFW · Adult · Anime · Archive · Classic",
-                "desc": "Classic adult anime streaming network with a rich archive spanning older vintage OVAs through contemporary releases."
+                "content": "Adult anime streaming (nhplayer)",
+                "tags": "NSFW · Adult · Anime · Video · Playwright",
+                "desc": "Specialized HentaiHaven portal utilizing nhplayer cloud streaming with automated headless browser bridge extraction."
             },
             {
                 "name": "Hentaimama",
@@ -453,44 +556,76 @@ SITE_CATEGORIES = [
                 "desc": "Specialises in fan-translated adult anime releases that are difficult to locate on larger mainstream streaming portals."
             },
             {
-                "name": "Oppai Stream",
-                "primary": "oppai.stream",
-                "alts": ["read.oppai.stream"],
-                "rating": "6/10",
-                "popularity": "Low",
-                "status": "Active",
-                "content": "Adult anime & webtoons",
-                "tags": "NSFW · Adult · Video · Toons · Unified",
-                "desc": "Unified adult hub featuring both high-definition video streaming and a dedicated webtoon/comic reader platform."
-            },
-            {
-                "name": "hanime.red",
-                "primary": "hanime.red",
+                "name": "HStream",
+                "primary": "hstream.moe",
                 "alts": [],
                 "rating": "6/10",
                 "popularity": "Medium",
                 "status": "Active",
-                "content": "Adult anime streaming",
-                "tags": "NSFW · Adult · Anime · Video · HD",
-                "desc": "Alternative adult anime portal featuring organized franchise collections, tagged search filters, and creator profiles."
+                "content": "Adult anime video streaming",
+                "tags": "NSFW · Adult · Anime · Streaming · HD",
+                "desc": "Clean, optimized streaming platform tailored exclusively to adult anime and hentai series. Delivers reliable video playback with minimal intrusive ads."
             },
             {
-                "name": "Hentai Haven",
-                "primary": "hentaihaven.xxx",
-                "alts": ["hentaihaven.red", "hentaihaven.online", "hentaihaven.club", "hentaihaven.co"],
+                "name": "OHentai",
+                "primary": "ohentai.org",
+                "alts": [],
                 "rating": "6/10",
                 "popularity": "Medium",
                 "status": "Active",
-                "content": "Adult anime streaming",
-                "tags": "NSFW · Adult · Anime · Video · Mirrors",
-                "desc": "Mirror network for the historic adult anime streaming brand with broad coverage of trending releases."
+                "content": "Adult anime archive",
+                "tags": "NSFW · Adult · Anime · Archive · Classic",
+                "desc": "Classic adult anime streaming network with a rich archive spanning older vintage OVAs through contemporary releases."
+            },
+            {
+                "name": "HentaiCity",
+                "primary": "hentaicity.com",
+                "alts": [],
+                "rating": "7/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Adult anime & hentai videos",
+                "tags": "NSFW · Adult · Anime · Video · HD",
+                "desc": "Comprehensive adult anime video repository with granular tagging, multi-episode series tracking, and direct stream feeds."
+            },
+            {
+                "name": "Oppai Stream",
+                "primary": "oppai.stream",
+                "alts": [],
+                "rating": "6/10",
+                "popularity": "Low",
+                "status": "Active",
+                "content": "Adult anime video streams",
+                "tags": "NSFW · Adult · Video · Anime · HD",
+                "desc": "High-definition adult anime video streaming portal with fast direct HLS stream extraction."
             },
         ]
     },
+    # ── 2_NSFW_ADULT / ADULT_PORN ──
     {
-        "id": "8",
+        "id": "0",
         "icon": "🔞",
-        "label": "18+ Toon",
+        "label": "Porn",
+        "tag": "NSFW",
+        "sites": [
+            {
+                "name": "Pornhub",
+                "primary": "pornhub.com",
+                "alts": ["phncdn.com"],
+                "rating": "8/10",
+                "popularity": "Very High",
+                "status": "Active",
+                "content": "Adult video streaming",
+                "tags": "NSFW · Adult · Video · Mainstream",
+                "desc": "The world's largest adult video streaming network, delivering high-definition video content across virtually every adult category with multi-quality resolution feeds."
+            },
+        ]
+    },
+    # ── 2_NSFW_ADULT / Doujinshi ──
+    {
+        "id": "-",
+        "icon": "🔞",
+        "label": "Doujin",
         "tag": "NSFW",
         "sites": [
             {
@@ -505,28 +640,6 @@ SITE_CATEGORIES = [
                 "desc": "The most recognised global archive for doujinshi. The universal gold standard for numeric ID lookups, complete tag indexing, and dual raw/translated archives."
             },
             {
-                "name": "Omega Scans",
-                "primary": "omegascans.org",
-                "alts": [],
-                "rating": "7/10",
-                "popularity": "Medium",
-                "status": "Active",
-                "content": "Adult manhwa / manga",
-                "tags": "NSFW · Manga · Manhwa · Uncensored · Premium",
-                "desc": "Premium-tier adult scanlation group renowned for high-fidelity English translations and ongoing uncensored Korean adult manhwa."
-            },
-            {
-                "name": "Hentai8",
-                "primary": "hentai8.net",
-                "alts": [],
-                "rating": "6/10",
-                "popularity": "Medium",
-                "status": "Active",
-                "content": "Adult manga / doujinshi",
-                "tags": "NSFW · Manga · Doujinshi · Images",
-                "desc": "Simple, fast-loading adult manga gallery reader with broad coverage across translated Japanese doujinshi releases."
-            },
-            {
                 "name": "AsmHentai",
                 "primary": "asmhentai.com",
                 "alts": [],
@@ -537,16 +650,36 @@ SITE_CATEGORIES = [
                 "tags": "NSFW · Doujinshi · Manga · Western · Clean",
                 "desc": "Well-curated doujinshi and adult comic platform with an extensive tag catalogue, particularly strong for western translated works."
             },
+        ]
+    },
+    # ── 2_NSFW_ADULT / ADULT_Webtoons ──
+    {
+        "id": "=",
+        "icon": "🔞",
+        "label": "Toons",
+        "tag": "NSFW",
+        "sites": [
             {
-                "name": "Hentaicity",
-                "primary": "hentaicity.com",
+                "name": "ManhwaUS",
+                "primary": "manhwaus.net",
                 "alts": [],
-                "rating": "6/10",
-                "popularity": "Low",
+                "rating": "7/10",
+                "popularity": "Medium",
                 "status": "Active",
-                "content": "Doujinshi / adult comics",
-                "tags": "NSFW · Doujinshi · Tags · Discovery",
-                "desc": "Engineered around a granular tagging matrix, making it exceptionally effective for discovering doujinshi through narrow tag intersections."
+                "content": "Adult manhwa / webtoons",
+                "tags": "NSFW · Manhwa · Webtoon · Romance · Drama",
+                "desc": "Fast-updating reader for localized adult Korean webtoons spanning romance, drama, and modern workplace themes."
+            },
+            {
+                "name": "Omega Scans",
+                "primary": "omegascans.org",
+                "alts": [],
+                "rating": "7/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Adult manhwa / manga",
+                "tags": "NSFW · Manga · Manhwa · Uncensored · Premium",
+                "desc": "Premium-tier adult scanlation group renowned for high-fidelity English translations and ongoing uncensored Korean adult manhwa."
             },
             {
                 "name": "Hentai20",
@@ -560,17 +693,6 @@ SITE_CATEGORIES = [
                 "desc": "Community-driven reader for western adult comics, webtoons, and doujinshi with an active upload repository and clean pagination."
             },
             {
-                "name": "ManhwaUS",
-                "primary": "manhwaus.net",
-                "alts": [],
-                "rating": "7/10",
-                "popularity": "Medium",
-                "status": "Active",
-                "content": "Adult manhwa / webtoons",
-                "tags": "NSFW · Manhwa · Webtoon · Romance · Drama",
-                "desc": "Fast-updating reader for localized adult Korean webtoons spanning romance, drama, and modern workplace themes."
-            },
-            {
                 "name": "Manga18fx",
                 "primary": "manga18fx.com",
                 "alts": [],
@@ -581,9 +703,47 @@ SITE_CATEGORIES = [
                 "tags": "NSFW · SFW · Webtoon · Manhwa · Manga · Strips",
                 "desc": "Hybrid platform hosting both adult and all-ages webtoons, manhwa, and manga with continuous vertical strip slicing."
             },
+            {
+                "name": "Hentai18",
+                "primary": "hentai18.net",
+                "alts": [],
+                "rating": "7/10",
+                "popularity": "Medium",
+                "status": "Active",
+                "content": "Adult manhwa / webtoons",
+                "tags": "NSFW · Adult · Webtoons · Manhwa · Uncensored",
+                "desc": "Fast-updating portal for uncensored adult manhwa, webtoons, and translated Asian adult comics with full chapter galleries."
+            },
+            {
+                "name": "Oppai Stream Toon",
+                "primary": "read.oppai.stream",
+                "alts": [],
+                "rating": "6/10",
+                "popularity": "Low",
+                "status": "Active",
+                "content": "Adult webtoons & comics",
+                "tags": "NSFW · Adult · Webtoons · Comics · Vertical",
+                "desc": "Dedicated webtoon and comic reading extension of the Oppai Stream network with high-resolution vertical scroll strips."
+            },
         ]
     },
 ]
+
+# ── Category Encyclopedia Definitions (Dead Simple Human Language) ────────────
+CATEGORY_ENCYCLOPEDIA = {
+    "1": ("Anime (Streaming)", "📺", "SFW", "Web streaming scrapers removed due to host shutdowns & CDN limits. Use [6] Torrents with your desktop client (like qBittorrent) for permanent anime archiving."),
+    "2": ("Manga", "📖", "SFW", "You will find Japanese Manga chapters and complete volumes here."),
+    "3": ("Manhwa", "🇰🇷", "SFW", "You will find Korean Manhwa and Chinese Manhua webtoons here."),
+    "4": ("Hybrid Comics", "📑", "SFW", "You will find all-in-one comic hubs with Manga, Manhwa & Western comics here."),
+    "5": ("Novels", "📚", "SFW", "You will find Light Novels, Web Serials, and fiction books here."),
+    "6": ("Torrents & DDL", "🧲", "SFW", "Direct downloading not supported — listed for info only! Grab magnets/torrents to download with your own client (like qBittorrent), since Zine is a media DB in itself."),
+    "7": ("Knowledge & Study", "🏛", "SFW", "You will find classic books, library archives, and study papers here."),
+    "8": ("Music & Media", "🎵", "SFW", "You will find high quality Music, songs, full albums, and audio tracks here."),
+    "9": ("Adult Anime (Hentai)", "🔞", "NSFW", "You will find 18+ Adult Anime and Hentai series here."),
+    "0": ("Adult Video (Porn)", "🔞", "NSFW", "You will find 18+ Adult videos, tube scenes, and model clips here."),
+    "-": ("Adult Doujinshi", "🔞", "NSFW", "You will find 18+ Doujinshi galleries, adult manga, and fan-comics here."),
+    "=": ("Adult Webtoons", "🔞", "NSFW", "You will find 18+ Uncensored Korean Adult Webtoons and romance comics here.")
+}
 
 # ── Dimensions ───────────────────────────────────────────────────────────────
 PANEL_W = 144   # Frame width
@@ -634,7 +794,7 @@ class SiteDatabaseTUI:
             if ch in (b"q", b"Q"):  return "ESC"
             try:
                 c = ch.decode()
-                if c in "12345678": return c
+                if c in "1234567890-=[]": return c
             except Exception: pass
             return ""
         else:
@@ -669,7 +829,7 @@ class SiteDatabaseTUI:
                 if ch in ("\r", "\n"): return "ENTER"
                 if ch == "\x03":       return "CTRL_C"
                 if ch == "\x09":       return "TAB"
-                if ch in "12345678":   return ch
+                if ch in "1234567890-=[]": return ch
                 return ""
             except Exception:
                 return ""
@@ -678,17 +838,83 @@ class SiteDatabaseTUI:
 
     # ── category bar ─────────────────────────────────────────────────────────
 
-    def _cat_bar(self) -> Text:
-        t = Text(no_wrap=True)
-        for i, cat in enumerate(SITE_CATEGORIES):
-            nsfw   = cat["tag"] == "NSFW"
+    def _cat_bar(self) -> Table:
+        cat_table = Table(
+            show_header=False,
+            show_edge=True,
+            box=box.ROUNDED,
+            border_style="unselected",
+            padding=(0, 1),
+            expand=False,
+            width=PANEL_W - 8
+        )
+        cat_table.add_column("Badge", width=14, no_wrap=True)
+        cat_table.add_column("Tabs", no_wrap=True)
+
+        # ── SFW Categories Row ──
+        sfw_badge = Text("  🛡️ SFW", style="bold green")
+        sfw_tabs = Text()
+        for i in range(min(8, len(SITE_CATEGORIES))):
+            cat = SITE_CATEGORIES[i]
             active = (i == self.cat_idx)
             if active:
-                style = "bold error" if nsfw else "bold sexy_pink"
+                sfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold sexy_pink on blue")
+                sfw_tabs.append(" ")
             else:
-                style = "error" if nsfw else "unselected"
-            t.append(f"[{cat['id']}] {cat['icon']} {cat['label']}   ", style=style)
-        return t
+                sfw_tabs.append(f"[{cat['id']}]", style="bold white")
+                sfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
+
+        # ── NSFW Categories Row ──
+        nsfw_badge = Text("  🔞 NSFW", style="bold red")
+        nsfw_tabs = Text()
+        for i in range(8, len(SITE_CATEGORIES)):
+            cat = SITE_CATEGORIES[i]
+            active = (i == self.cat_idx)
+            if active:
+                nsfw_tabs.append(f" [{cat['id']}] {cat['icon']} {cat['label']} ", style="bold sexy_pink on blue")
+                nsfw_tabs.append(" ")
+            else:
+                nsfw_tabs.append(f"[{cat['id']}]", style="bold white")
+                nsfw_tabs.append(f" {cat['icon']} {cat['label']}  ", style="unselected")
+
+        cat_table.add_row(sfw_badge, sfw_tabs, end_section=True)
+        cat_table.add_row(nsfw_badge, nsfw_tabs)
+
+        return cat_table
+
+    # ── category definition / scope guide box ────────────────────────────────
+
+    def _cat_info_box(self) -> Table:
+        cat = self._cat()
+        cat_id = cat["id"]
+        name, icon, tag, desc = CATEGORY_ENCYCLOPEDIA.get(
+            cat_id, (cat["label"], cat.get("icon", "📁"), cat.get("tag", "SFW"), "Media catalog category.")
+        )
+
+        badge_w = 16
+        scope_w = PANEL_W - 8 - badge_w - 5
+
+        guide_table = Table(
+            show_header=False,
+            show_edge=True,
+            box=box.ROUNDED,
+            border_style="unselected",
+            padding=(0, 1),
+            expand=False,
+            width=PANEL_W - 8
+        )
+        guide_table.add_column("Badge", width=badge_w, min_width=badge_w, no_wrap=True, vertical="top")
+        guide_table.add_column("Scope", width=scope_w, no_wrap=False)
+
+        badge_style = "bold green" if tag == "SFW" else "bold red"
+        badge_text = Text(f" 📖 [{cat_id}] Guide", style=badge_style)
+
+        info_text = Text()
+        info_text.append(f"[{cat_id}] {icon} {name}\n", style="bold sexy_pink on blue")
+        info_text.append(desc, style="white")
+
+        guide_table.add_row(badge_text, info_text)
+        return guide_table
 
     # ── composite render ──────────────────────────────────────────────────────
 
@@ -813,7 +1039,8 @@ class SiteDatabaseTUI:
         footer = Text(justify="center", no_wrap=True)
         footer.append("↑↓", style="bold white");        footer.append(" Navigate  ", style="unselected")
         footer.append("Tab / ← →", style="bold white"); footer.append(" Switch Panel  ", style="unselected")
-        footer.append("1-8", style="bold white");       footer.append(" Category  ", style="unselected")
+        footer.append("1-0/-=", style="bold white");    footer.append(" Jump Cat  ", style="unselected")
+        footer.append("[ ]", style="bold white");       footer.append(" Cycle Cat  ", style="unselected")
         footer.append("Enter", style="bold white");     footer.append(" Open in Browser  ", style="unselected")
         footer.append("Esc / q", style="bold white");   footer.append(" Return", style="unselected")
 
@@ -822,9 +1049,10 @@ class SiteDatabaseTUI:
                 Text("◆ ZINE SCRAPER CATALOG & SITES DATABASE", style="bold menu", no_wrap=True),
                 Text(""),
                 Text("  * Note: Piracy and aggregator sites periodically update domains or rotate mirrors.", style="dim italic", no_wrap=True),
-                Text("    You can easily add or customize domain mirrors in: core/site_tui.py", style="dim italic", no_wrap=True),
+                Text("    You can easily add or customize domain mirrors in: core/site_tui.py and site_config.json", style="dim italic", no_wrap=True),
                 Text(""),
                 self._cat_bar(),
+                self._cat_info_box(),
                 Text(""),
                 table,
             ),
@@ -879,13 +1107,30 @@ class SiteDatabaseTUI:
                     elif key in ("TAB", "LEFT", "RIGHT"):
                         self.focus = FOCUS_D if self.focus == FOCUS_S else FOCUS_S
 
-                    elif key and key in "12345678":
-                        idx = int(key) - 1
-                        if 0 <= idx < len(SITE_CATEGORIES):
+                    elif key in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="):
+                        cat_keymap = {
+                            "1": 0, "2": 1, "3": 2, "4": 3,
+                            "5": 4, "6": 5, "7": 6, "8": 7,
+                            "9": 8, "0": 9, "-": 10, "=": 11
+                        }
+                        idx = cat_keymap.get(key)
+                        if idx is not None and 0 <= idx < len(SITE_CATEGORIES):
                             self.cat_idx  = idx
                             self.site_idx = 0
                             self.dom_idx  = 0
                             self.focus    = FOCUS_S
+
+                    elif key == "[":
+                        self.cat_idx  = (self.cat_idx - 1) % len(SITE_CATEGORIES)
+                        self.site_idx = 0
+                        self.dom_idx  = 0
+                        self.focus    = FOCUS_S
+
+                    elif key == "]":
+                        self.cat_idx  = (self.cat_idx + 1) % len(SITE_CATEGORIES)
+                        self.site_idx = 0
+                        self.dom_idx  = 0
+                        self.focus    = FOCUS_S
 
                     elif key == "ENTER":
                         try:

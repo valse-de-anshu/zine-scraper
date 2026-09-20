@@ -6,10 +6,16 @@ cd /d "%SCRIPT_DIR%\.."
 
 if not exist "venv\Scripts\python.exe" (
     echo [-] Virtual environment not found! Please run install.bat first.
-    pause
+    if "%~1"=="" pause
     exit /b 1
 )
 
-echo [+] Booting Zine Scraper inside isolated VENV...
-"venv\Scripts\python.exe" orchestrator.py
-pause
+if "%~1"=="" (
+    echo [+] Booting Zine Scraper inside isolated VENV...
+)
+
+"venv\Scripts\python.exe" orchestrator.py %*
+
+if "%~1"=="" (
+    pause
+)

@@ -1,8 +1,10 @@
 import yt_dlp
 import json
 import logging
+import re
+import shutil
 from pathlib import Path
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, Union
 import requests
 import time
 from bs4 import BeautifulSoup
@@ -25,7 +27,7 @@ class VideoEngine:
             'nocheckcertificate': True,
             'cachedir': False,
             'no_warnings': True,
-            'ignoreerrors': True, # We handle errors via file verification
+            'ignoreerrors': False,
             'retries': 10,
             'fragment_retries': 10,
             'timeout': 60,
@@ -33,17 +35,28 @@ class VideoEngine:
             'concurrent_fragment_downloads': 5,
             'buffersize': 1024 * 1024,
             'http_chunk_size': 1048576,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web']
+                },
+                'youtubetab': {
+                    'skip': ['authcheck']
+                }
+            }
         }
+        try:
+            from core.config import ConfigLayer
+            from core.paths import PathAuthority
+            from core.storage import StorageLayer
+            cfg = ConfigLayer(PathAuthority(), StorageLayer())
+            browser = cfg.get("cookies_browser")
+            if browser and browser != "None":
+                self.common_ydl_opts['cookiesfrombrowser'] = (str(browser), None, None, None)
+        except Exception:
+            pass
 
     def extract_playlist_info(self, url: str, playlist_limit: Optional[int] = None, playlist_start: Optional[int] = None) -> Dict[str, Any]:
-        """Extracts flat info for a playlist or channel to get total counts and metadata."""
-        ydl_opts = self.common_ydl_opts.copy()
-        ydl_opts.update({
-            'quiet': True,
-            'extract_flat': True,
-            'dump_single_json': True,
-            'ignoreconfig': True,
-        })
+        """Extracts flat info for a playlist or channel with multi-client rotation."""
         if playlist_limit is None:
             try:
                 from core.config import ConfigLayer
@@ -54,33 +67,89 @@ class VideoEngine:
             except Exception:
                 playlist_limit = 100
 
-        if playlist_limit and playlist_limit > 0:
-            ydl_opts['playlistend'] = playlist_limit
+        client_waterfall = [
+            ['android', 'ios', 'web'],
+            ['web_creator', 'mweb', 'android'],
+            ['ios', 'mweb', 'web'],
+            ['android_music', 'android', 'web']
+        ]
+        last_exc = None
+        for chain in client_waterfall:
+            ydl_opts = self.common_ydl_opts.copy()
+            ydl_opts.update({
+                'quiet': True,
+                'extract_flat': True,
+                'dump_single_json': True,
+                'ignoreconfig': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': chain
+                    },
+                    'youtubetab': {
+                        'skip': ['authcheck']
+                    }
+                }
+            })
+            if playlist_limit and playlist_limit > 0:
+                ydl_opts['playlistend'] = playlist_limit
+            if playlist_start and playlist_start > 0:
+                ydl_opts['playliststart'] = playlist_start
 
-        if playlist_start and playlist_start > 0:
-            ydl_opts['playliststart'] = playlist_start
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Could not extract playlist metadata from {url}")
 
     def extract_video_info(self, url: str, fast: bool = False) -> Dict[str, Any]:
-        """Extracts full info for a single video."""
-        ydl_opts = self.common_ydl_opts.copy()
-        ydl_opts.update({
-            'quiet': True,
-            'dump_single_json': True,
-            'noplaylist': True,
-        })
-        if fast:
+        """Extracts full info for a single video with multi-client rotation."""
+        client_waterfall = [
+            ['android', 'ios', 'web'],
+            ['web_creator', 'mweb', 'android'],
+            ['ios', 'mweb', 'web'],
+            ['android_music', 'android', 'web']
+        ]
+        last_exc = None
+        for chain in client_waterfall:
+            ydl_opts = self.common_ydl_opts.copy()
             ydl_opts.update({
-                'extract_flat': True,
-                'check_formats': False,
-                'ignoreconfig': True,
-                'noplugins': True,
-                'source_address': '0.0.0.0',
+                'quiet': True,
+                'dump_single_json': True,
+                'noplaylist': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': chain
+                    },
+                    'youtubetab': {
+                        'skip': ['authcheck']
+                    }
+                }
             })
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
+            if fast:
+                ydl_opts.update({
+                    'extract_flat': True,
+                    'check_formats': False,
+                    'ignoreconfig': True,
+                    'noplugins': True,
+                    'source_address': '0.0.0.0',
+                })
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Could not extract video metadata from {url}")
 
     def download_video(self, url: str, output_dir: Path, progress_hook: Callable, raw_stream_url: str = None, is_audio: bool = False, custom_thumbnail: Path = None, fixed_title: str = None, fixed_artist: str = None, fixed_album: str = None, format_override: str = None, baking_callback: Callable = None, **kwargs) -> bool:
         """
@@ -90,7 +159,17 @@ class VideoEngine:
         videos_dir = output_dir
         videos_dir.mkdir(parents=True, exist_ok=True)
 
-        ext = "flac" if is_audio else "mp4"
+        if is_audio:
+            from core.config import ConfigLayer
+            from core.paths import PathAuthority
+            from core.storage import StorageLayer
+            cfg = ConfigLayer(PathAuthority(), StorageLayer())
+            audio_fmt = (format_override or cfg.get("default_audio_format", "FLAC")).lower()
+            if audio_fmt not in ["flac", "mp3", "opus", "m4a", "wav", "aac"]:
+                audio_fmt = "flac"
+            ext = audio_fmt
+        else:
+            ext = "mp4"
         
         # If we have a fixed title, use it for the filename
         if fixed_title:
@@ -106,6 +185,7 @@ class VideoEngine:
         
         tmp_path = poop_dir / f"{clean_title}.{ext}"
         final_dest = videos_dir / f"{clean_title}.{ext}"
+
 
         import tempfile
         import os
@@ -161,22 +241,22 @@ class VideoEngine:
                 "--batch-file", str(temp_batch),
                 "-o", str(poop_dir / f"{clean_title}.%(ext)s"),
                 "--no-playlist",
-                "--write-subs",
-                "--write-auto-subs",
-                "--all-subs",
-                "--embed-subs",
-                "--retries", "10",
-                "--fragment-retries", "10",
-                "--concurrent-fragments", "16",
+                "--retries", "15",
+                "--fragment-retries", "15",
+                "--concurrent-fragments", "8",
                 "--no-check-certificate",
                 "--no-warnings",
-                "--socket-timeout", "5"
+                "--socket-timeout", "30"
             ]
             
             if shutil.which("aria2c"):
+                aria_args = kwargs.get(
+                    "downloader_args",
+                    "aria2c:-c -x 8 -s 8 -k 2M --file-allocation=none --connect-timeout=20 --timeout=30 --max-tries=15 --retry-wait=2 --allow-overwrite=true --auto-file-renaming=false"
+                )
                 cmd.extend([
                     "--downloader", "aria2c",
-                    "--downloader-args", "aria2c:-x 16 -s 16 -k 1M --file-allocation=none"
+                    "--downloader-args", aria_args
                 ])
             
             for k, v in self.headers.items():
@@ -185,11 +265,12 @@ class VideoEngine:
             if is_audio:
                 cmd.extend([
                     "-x",
-                    "--audio-format", "flac",
+                    "--audio-format", ext,
                     "--audio-quality", "0",
                     "--embed-metadata",
                     "--embed-thumbnail"
                 ])
+
             else:
                 if ".mp4" in target or ".m3u8" in target:
                     pass # Do not pass any format flag for direct streams
@@ -218,6 +299,23 @@ class VideoEngine:
                     real_filename = generated.name
                     real_final_dest = videos_dir / real_filename
                     shutil.move(str(generated), str(real_final_dest))
+
+                    # Move companion subtitle / lyrics files matching clean_title
+                    sub_dest_dir = (videos_dir / "subtitle") if not is_audio else ((videos_dir.parent / "lyrics") if videos_dir.name == "audio" else videos_dir)
+                    sub_dest_dir.mkdir(parents=True, exist_ok=True)
+
+                    for sub_file in poop_dir.iterdir():
+                        if sub_file.is_file() and sub_file.name.startswith(clean_title):
+                            if sub_file.suffix.lower() in ['.srt', '.vtt', '.ass'] and not is_audio:
+                                try:
+                                    shutil.move(str(sub_file), str(sub_dest_dir / sub_file.name))
+                                except Exception:
+                                    pass
+                            elif sub_file.suffix.lower() in ['.lrc'] and is_audio:
+                                try:
+                                    shutil.move(str(sub_file), str(sub_dest_dir / sub_file.name))
+                                except Exception:
+                                    pass
                     
                     if custom_thumbnail and custom_thumbnail.exists():
                         self._apply_custom_metadata(real_final_dest, custom_thumbnail, is_audio, fixed_title, fixed_artist, fixed_album)
@@ -455,17 +553,19 @@ class VideoEngine:
     def _apply_custom_metadata(self, media_path: Path, cover_path: Path, is_audio: bool, title: str = None, artist: str = None, album: str = None):
         """Uses ffmpeg to bake the custom cover AND forced metadata (Title, Artist, Album) into the media file."""
         import subprocess
+        from core.cover_utils import ensure_compatible_image_for_ffmpeg
+        effective_cover, temp_to_clean = ensure_compatible_image_for_ffmpeg(cover_path)
         try:
             tmp_path = media_path.with_suffix(".meta.tmp" + media_path.suffix)
             
             import shutil
             ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
             cmd = [ffmpeg_bin, "-y", "-i", str(media_path)]
-            if cover_path and cover_path.exists():
-                cmd.extend(["-i", str(cover_path)])
+            if effective_cover and effective_cover.exists():
+                cmd.extend(["-i", str(effective_cover)])
             
             # Map streams
-            if cover_path and cover_path.exists():
+            if effective_cover and effective_cover.exists():
                 if is_audio:
                     cmd.extend(["-map", "0:a", "-map", "1:0"])
                 else:
@@ -484,7 +584,7 @@ class VideoEngine:
                 cmd.extend(["-metadata", f"album={album}"])
 
             # Cover disposition
-            if cover_path and cover_path.exists():
+            if effective_cover and effective_cover.exists():
                 if is_audio:
                     cmd.extend(["-disposition:v", "attached_pic"])
                 else:
@@ -507,6 +607,12 @@ class VideoEngine:
         except Exception as e:
             logger.error(f"FFmpeg metadata/cover application failed: {e}")
             return False
+        finally:
+            if temp_to_clean and temp_to_clean.exists():
+                try:
+                    temp_to_clean.unlink()
+                except Exception:
+                    pass
 
     def save_metadata(self, root_dir: Path, info: Dict[str, Any], source: str, cover_url: Optional[str] = None):
         """Saves metadata.json inside .zine/ folder and cover.jpg in root content folder."""
@@ -514,31 +620,19 @@ class VideoEngine:
         if _is_quick_grab_dir(root_dir):
             return
             
-        if source.lower() not in ["idagio", "soundcloud", "music"]:
-            meta_dir = root_dir / ".zine"
-            meta_dir.mkdir(parents=True, exist_ok=True)
-            
-            meta_path = meta_dir / "metadata.json"
-            
-            # Migration: Move metadata.json from root or metadata/ if it exists
-            for old_loc in [root_dir / "metadata.json", root_dir / "metadata" / "metadata.json"]:
-                if old_loc.exists() and not meta_path.exists():
-                    try:
-                        old_loc.rename(meta_path)
-                    except Exception: pass
-            
-            # Only overwrite metadata if we are processing a playlist/channel, or if it doesn't exist.
-            if not meta_path.exists() or info.get('_type') == 'playlist':
-                metadata = {
-                    "channel_name": info.get('uploader') or info.get('channel') or info.get('title') or "Unknown",
-                    "channel_id": info.get('uploader_id') or info.get('channel_id') or info.get('id') or "Unknown",
-                    "source": source,
-                    "url": info.get('webpage_url') or info.get('original_url') or "",
-                    "total_videos": len(info.get('entries', [])) if info.get('_type') == 'playlist' else 1,
-                    "description": info.get('description', ''),
-                }
-                with open(meta_path, 'w', encoding='utf-8') as f:
-                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+        from core.metadata_engine import MetadataEngine, ZineMetadataPayload
+        is_music = source.lower() in ["idagio", "soundcloud", "music"]
+        media_type = "Song" if is_music else "Channel"
+        title = info.get('album') or info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
+        author = info.get('artist') or info.get('uploader') or info.get('channel') or ""
+        payload = ZineMetadataPayload(
+            title=title,
+            type=media_type,
+            author=author,
+            description=info.get('description', ''),
+            url=info.get('webpage_url') or info.get('original_url') or ""
+        )
+        MetadataEngine.save_metadata(root_dir, payload)
 
         # Try to download cover/avatar
         thumb_url = cover_url
@@ -566,17 +660,8 @@ class VideoEngine:
                 base_url = info.get('webpage_url') or info.get('original_url')
                 thumb_url = urljoin(base_url, thumb_url)
 
-            from urllib.parse import urlparse
-            ext = Path(urlparse(thumb_url).path).suffix or ".jpg"
-            cover_path = root_dir / f"cover{ext}"
-            if not cover_path.exists():
-                try:
-                    resp = requests.get(thumb_url, headers=self.headers, timeout=15)
-                    resp.raise_for_status()
-                    with open(cover_path, 'wb') as f:
-                        f.write(resp.content)
-                except Exception as e:
-                    logger.error(f"Failed to download cover from {thumb_url}: {e}")
+            from core.cover_utils import download_verified_cover
+            download_verified_cover(thumb_url, root_dir, headers=self.headers)
 
     def _download_custom_hls(self, playlist_url: str, tmp_path: Path, progress_hook: Callable, fixed_title: str, custom_thumbnail: Path, baking_callback: Callable = None) -> bool:
         """
@@ -597,10 +682,10 @@ class VideoEngine:
             import json
             import base64
             
-            project_root = Path(__file__).parent.parent
+            from core.paths import get_system_script
             import sys
             venv_python = sys.executable
-            script_path = project_root / "scrapers" / "hls_extractor.py"
+            script_path = get_system_script("hls_extractor.py")
             
             headers_b64 = base64.b64encode(json.dumps(self.headers).encode('utf-8')).decode('utf-8')
             
@@ -818,3 +903,151 @@ def handle_internet_loss() -> bool:
                 active_live.start()
             except Exception:
                 pass
+
+
+def vtt_to_srt(vtt_text: str) -> str:
+    """
+    Converts WebVTT format text to standard SubRip (.srt) format text.
+    Handles timestamp formatting (period -> comma), strips WEBVTT headers,
+    cue styling/positioning tags, and ensures valid sequential 1-based cue numbers.
+    """
+    if not vtt_text or not isinstance(vtt_text, str):
+        return ""
+
+    # If it's already an SRT format (starts with a digit cue number and has --> with commas), return as is
+    if re.match(r'^\s*\d+\s*\n\s*\d{2}:\d{2}:\d{2},\d{3}\s*-->', vtt_text):
+        return vtt_text.strip() + "\n"
+
+    lines = vtt_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ts_pattern = re.compile(
+        r'(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})'
+    )
+
+    def normalize_timestamp(m):
+        h1 = m.group(1) or "00"
+        if len(h1) == 1: h1 = "0" + h1
+        m1, s1, ms1 = m.group(2), m.group(3), m.group(4)
+
+        h2 = m.group(5) or "00"
+        if len(h2) == 1: h2 = "0" + h2
+        m2, s2, ms2 = m.group(6), m.group(7), m.group(8)
+
+        return f"{h1}:{m1}:{s1},{ms1} --> {h2}:{m2}:{s2},{ms2}"
+
+    cues = []
+    current_cue = {"time": "", "lines": []}
+    in_header = True
+    in_style = False
+
+    for line in lines:
+        stripped = line.strip()
+        if in_header:
+            if stripped.startswith("WEBVTT") or stripped.startswith("NOTE") or stripped.startswith("REGION"):
+                continue
+            if stripped.startswith("STYLE"):
+                in_style = True
+                continue
+            if in_style:
+                if stripped == "":
+                    in_style = False
+                continue
+            if stripped == "":
+                in_header = False
+                continue
+
+        match = ts_pattern.search(line)
+        if match:
+            in_header = False
+            if current_cue["time"] and current_cue["lines"]:
+                cues.append(current_cue)
+            current_cue = {"time": normalize_timestamp(match), "lines": []}
+        elif current_cue["time"]:
+            if stripped == "":
+                if current_cue["lines"]:
+                    cues.append(current_cue)
+                    current_cue = {"time": "", "lines": []}
+            else:
+                # Strip cue settings or inline styling tags like <c.color>, <00:01.000>
+                clean_line = re.sub(r'<\/?c[^>]*>', '', line)
+                clean_line = re.sub(r'<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3}>', '', clean_line)
+                clean_line = clean_line.strip()
+                if clean_line:
+                    current_cue["lines"].append(clean_line)
+
+    if current_cue["time"] and current_cue["lines"]:
+        cues.append(current_cue)
+
+    srt_blocks = []
+    for idx, cue in enumerate(cues, 1):
+        srt_blocks.append(f"{idx}\n{cue['time']}\n" + "\n".join(cue["lines"]))
+
+    return "\n\n".join(srt_blocks).strip() + "\n" if srt_blocks else ""
+
+
+def save_subtitle_as_srt(content: Union[str, bytes], dest_dir: Path, base_name: str, lang: Optional[str] = None) -> Path:
+    """
+    Saves subtitle content as .srt in dest_dir.
+    Converts VTT to SRT if content is WebVTT.
+    Returns the path to the saved .srt file.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, bytes):
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1", errors="replace")
+    else:
+        text = str(content)
+
+    srt_text = vtt_to_srt(text) or text
+
+    stem = f"{base_name}.{lang}" if lang else base_name
+    dest_file = dest_dir / f"{stem}.srt"
+    dest_file.write_text(srt_text, encoding="utf-8")
+    return dest_file
+
+
+def migrate_and_clean_subtitles(video_dir: Path, subtitle_dir: Path):
+    """
+    Ensures no subtitle files (.srt, .vtt, .ass) sit directly in video_dir.
+    Migrates any loose subtitles into subtitle_dir, converting .vtt to .srt and unlinking .vtt.
+    """
+    if not video_dir.exists():
+        return
+    subtitle_dir.mkdir(parents=True, exist_ok=True)
+
+    # Migrate loose subtitles from video_dir to subtitle_dir
+    for sub in list(video_dir.glob("*.vtt")) + list(video_dir.glob("*.srt")) + list(video_dir.glob("*.ass")):
+        if sub.is_file() and sub.parent == video_dir:
+            dest_srt = subtitle_dir / f"{sub.stem}.srt"
+            if sub.suffix.lower() == ".vtt":
+                try:
+                    text = sub.read_text(encoding="utf-8-sig", errors="replace")
+                    srt_text = vtt_to_srt(text) or text
+                    dest_srt.write_text(srt_text, encoding="utf-8")
+                    sub.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            elif sub.suffix.lower() == ".srt":
+                if not dest_srt.exists():
+                    shutil.move(str(sub), str(dest_srt))
+                else:
+                    sub.unlink(missing_ok=True)
+            elif sub.suffix.lower() == ".ass":
+                if not dest_srt.exists():
+                    shutil.move(str(sub), str(subtitle_dir / sub.name))
+                else:
+                    sub.unlink(missing_ok=True)
+
+    # Also clean any legacy .vtt in subtitle_dir itself by converting to .srt
+    for vtt in list(subtitle_dir.glob("*.vtt")):
+        if vtt.is_file():
+            try:
+                dest_srt = subtitle_dir / f"{vtt.stem}.srt"
+                text = vtt.read_text(encoding="utf-8-sig", errors="replace")
+                srt_text = vtt_to_srt(text) or text
+                dest_srt.write_text(srt_text, encoding="utf-8")
+                vtt.unlink(missing_ok=True)
+            except Exception:
+                pass
+

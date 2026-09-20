@@ -126,9 +126,67 @@ class CustomConsole(Console):
 custom_theme = Theme(THEMES["tokyo-night-storm"])
 console = CustomConsole(theme=custom_theme, color_system="truecolor" if supports_color() else None)
 
+_CURRENT_THEME_NAME: str = "tokyo-night-storm"
+
 def apply_theme(theme_name: str):
+    global _CURRENT_THEME_NAME
+    _CURRENT_THEME_NAME = theme_name
     import theme
     theme.apply_theme(console, theme_name)
+
+def get_exit_art_colors(forceful: bool = False) -> Tuple[Tuple[int, int, int], Tuple[int, int, int], str]:
+    """
+    Dynamically resolves start color, end color, and text style from the active theme
+    for rendering exit art (exit.txt and forcefully_stop.txt).
+    
+    Returns:
+        (start_color_rgb, end_color_rgb, text_style_str)
+    """
+    entry = None
+    try:
+        entry = console._theme_stack._entries[-1]
+    except Exception:
+        pass
+
+    theme_dict = THEMES.get(_CURRENT_THEME_NAME, THEMES["tokyo-night-storm"])
+
+    def _get_rgb(key: str, fallback_key: Optional[str] = None, default_rgb: Tuple[int, int, int] = (187, 154, 247)) -> Tuple[int, int, int]:
+        for k in (key, fallback_key):
+            if not k:
+                continue
+            try:
+                if entry and k in entry:
+                    st = entry[k]
+                    if st and hasattr(st, "color") and st.color:
+                        return st.color.get_truecolor()
+                if theme_dict and k in theme_dict:
+                    st = Style.parse(theme_dict[k]) if isinstance(theme_dict[k], str) else theme_dict[k]
+                    if st and st.color:
+                        return st.color.get_truecolor()
+            except Exception:
+                pass
+        return default_rgb
+
+    if forceful:
+        # Forceful exit (forcefully_stop.txt): warning/sexy_pink -> error
+        end_color = _get_rgb("error", default_rgb=(219, 75, 75))
+        start_color = _get_rgb("sexy_pink", fallback_key="warning", default_rgb=(187, 154, 247))
+        if start_color == end_color:
+            start_color = _get_rgb("warning", fallback_key="selected", default_rgb=(224, 175, 104))
+            if start_color == end_color:
+                start_color = _get_rgb("menu", default_rgb=(122, 162, 247))
+        text_style = f"bold #{end_color[0]:02x}{end_color[1]:02x}{end_color[2]:02x}"
+        return start_color, end_color, text_style
+    else:
+        # Normal exit (exit.txt): menu/info -> sexy_pink/selected
+        start_color = _get_rgb("menu", fallback_key="info", default_rgb=(122, 162, 247))
+        end_color = _get_rgb("sexy_pink", fallback_key="selected", default_rgb=(187, 154, 247))
+        if start_color == end_color:
+            end_color = _get_rgb("selected", fallback_key="title", default_rgb=(187, 154, 247))
+            if start_color == end_color:
+                end_color = _get_rgb("title", default_rgb=(200, 200, 200))
+        text_style = f"bold #{end_color[0]:02x}{end_color[1]:02x}{end_color[2]:02x}"
+        return start_color, end_color, text_style
 
 def make_gradient_text(text: str, start_color: Tuple[int, int, int], end_color: Tuple[int, int, int], total_length: Optional[int] = None) -> Text:
     rich_text = Text()
@@ -235,6 +293,13 @@ _REVOLT_TRIGGERED_DURING_ITEM = False
 _REVOLT_CURRENT_DONE = False
 _REVOLT_EXIT_LOCK = threading.Lock()
 _REVOLT_EXITING = False
+
+_TRUNCATE_ACTIVE = False
+_TRUNCATE_LIMIT = 0
+_TRUNCATE_TRIGGERING = False
+_TRUNCATE_INPUT_BUFFER = ""
+_TRUNCATE_TRIGGERED_DURING_ITEM = False
+_TRUNCATE_CURRENT_DONE = False
 
 _tty_fd = None
 _old_tty_settings = None
@@ -380,33 +445,58 @@ def global_internet_monitor():
 _monitor_thread = threading.Thread(target=global_internet_monitor, daemon=True)
 _monitor_thread.start()
 
+class TruncateStopException(Exception):
+    """Raised when Ctrl+T early stop limit is reached to gracefully break out of scraping loops."""
+    pass
+
 def inject_revolt_into_renderable(renderable):
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _REVOLT_INPUT_BUFFER
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERING, _TRUNCATE_INPUT_BUFFER
     from rich.tree import Tree
     from rich.console import Group
     from rich.panel import Panel
 
-    if not (_REVOLT_TRIGGERING or _REVOLT_ACTIVE):
+    has_revolt = (_REVOLT_TRIGGERING or _REVOLT_ACTIVE)
+    has_truncate = (_TRUNCATE_TRIGGERING or _TRUNCATE_ACTIVE)
+
+    if not (has_revolt or has_truncate):
         if isinstance(renderable, Tree) and renderable.children:
             renderable.children = [c for c in renderable.children if not getattr(c, "_is_revolt_node", False)]
         return renderable
 
-    if _REVOLT_TRIGGERING:
-        revolt_msg = (
-            f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_REVOLT_INPUT_BUFFER}[/selected]█\n"
-            f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
-        )
+    if has_truncate:
+        tag_title = "[sexy_pink]◆ Stop Early (Ctrl+T)[/sexy_pink]"
+        panel_title = "[sexy_pink]Stop Early (Ctrl+T)[/sexy_pink]"
+        if _TRUNCATE_TRIGGERING:
+            msg = (
+                f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_TRUNCATE_INPUT_BUFFER}[/selected]█\n"
+                f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
+            )
+        else:
+            msg = (
+                f"[warning]Stopping after {_TRUNCATE_LIMIT} more file(s) and wrapping up...[/warning]"
+                if _TRUNCATE_LIMIT > 0
+                else "[warning]Stopping after current file and wrapping up...[/warning]"
+            )
     else:
-        revolt_msg = (
-            f"[warning]Shutting down after {_REVOLT_LIMIT} more file(s)[/warning]"
-            if _REVOLT_LIMIT > 0
-            else "[warning]Shutting down after current file[/warning]"
-        )
+        tag_title = "[sexy_pink]◆ Revolt (Ctrl+R)[/sexy_pink]"
+        panel_title = "[sexy_pink]Revolt (Ctrl+R)[/sexy_pink]"
+        if _REVOLT_TRIGGERING:
+            msg = (
+                f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_REVOLT_INPUT_BUFFER}[/selected]█\n"
+                f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
+            )
+        else:
+            msg = (
+                f"[warning]Shutting down after {_REVOLT_LIMIT} more file(s)[/warning]"
+                if _REVOLT_LIMIT > 0
+                else "[warning]Shutting down after current file[/warning]"
+            )
 
     if isinstance(renderable, Tree):
-        node = Tree("[sexy_pink]◆ Revolt[/sexy_pink]", guide_style="unselected")
+        node = Tree(tag_title, guide_style="unselected")
         node._is_revolt_node = True
-        for line in revolt_msg.split("\n"):
+        for line in msg.split("\n"):
             node.add(line)
         if renderable.children and getattr(renderable.children[0], "_is_revolt_node", False):
             renderable.children[0] = node
@@ -414,11 +504,12 @@ def inject_revolt_into_renderable(renderable):
             renderable.children.insert(0, node)
         return renderable
     else:
-        revolt_panel = Panel(revolt_msg, border_style="warning", title="[sexy_pink]Revolt[/sexy_pink]", title_align="left")
-        return Group(revolt_panel, renderable)
+        panel = Panel(msg, border_style="warning", title=panel_title, title_align="left")
+        return Group(panel, renderable)
 
 def trigger_revolt_exit(title: Optional[str] = None):
-    global _REVOLT_EXITING, _LIVE_INSTANCE
+    global _REVOLT_EXITING, _LIVE_INSTANCE, _REVOLT_TRIGGERED
+    _REVOLT_TRIGGERED = True
     with _REVOLT_EXIT_LOCK:
         if _REVOLT_EXITING:
             return
@@ -445,8 +536,18 @@ def trigger_revolt_exit(title: Optional[str] = None):
             termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
         except Exception:
             pass
-    console.print("\n[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
+    console.print("\n[warning]● Revolt shutdown triggered (Ctrl+R). Exiting cleanly...[/warning]\n")
     sys.stdout.flush()
+
+    # Flush session telemetry and history before exit
+    try:
+        from core.journal import DownloadJournal
+        journal = DownloadJournal.get_active()
+        if journal.current_download:
+            journal.finish_download(journal.current_download.get("url") or "", status="completed")
+        journal.finish_session()
+    except Exception:
+        pass
 
     # Dispatch OS notification for Revolt completion
     try:
@@ -464,20 +565,96 @@ def trigger_revolt_exit(title: Optional[str] = None):
         pass
     os._exit(0)
 
+_TRUNCATE_TRIGGERED: bool = False
+_REVOLT_TRIGGERED: bool = False
+
+def trigger_truncate_stop(title: Optional[str] = None):
+    """Gracefully ends current scrape item loop after user-requested limit without terminating process."""
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE, _LIVE_INSTANCE, _TRUNCATE_TRIGGERED
+    _TRUNCATE_TRIGGERED = True
+    _TRUNCATE_ACTIVE = False
+    _TRUNCATE_LIMIT = 0
+    _TRUNCATE_CURRENT_DONE = False
+
+    if _LIVE_INSTANCE:
+        try:
+            _LIVE_INSTANCE.stop()
+        except Exception:
+            pass
+        _LIVE_INSTANCE = None
+
+    console.show_cursor(True)
+    import sys, os
+    sys.stdout.write("\033[?25h\033[0m\n")
+    sys.stdout.flush()
+    if os.name != 'nt':
+        try:
+            import termios
+            fd = sys.stdin.fileno()
+            attrs = termios.tcgetattr(fd)
+            attrs[3] = attrs[3] | termios.ICANON | termios.ECHO
+            attrs[1] = attrs[1] | termios.OPOST
+            termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+        except Exception:
+            pass
+
+    target_name = f" for [title]{title}[/title]" if title else ""
+    console.print(f"\n[warning]● Stop limit reached (Ctrl+T). Wrapping up{target_name}...[/warning]")
+    console.print("[success]✦ All done! Requested files saved.[/success]\n")
+    sys.stdout.flush()
+
+    # Flush telemetry
+    try:
+        from core.journal import DownloadJournal
+        journal = DownloadJournal.get_active()
+        if journal.current_download:
+            journal.finish_download(journal.current_download.get("url") or "", status="completed")
+    except Exception:
+        pass
+
+    try:
+        from butler.notify import send_os_notification
+        msg = f"Completed requested downloads for {title} and stopped." if title else "Downloads stopped cleanly via Ctrl+T."
+        send_os_notification("Zine Scraper — All Done", msg, is_success=True)
+    except Exception:
+        pass
+
+    try:
+        from core.history import BatchHistoryManager
+        if BatchHistoryManager._instance:
+            BatchHistoryManager._instance.flush()
+    except Exception:
+        pass
+
+    raise TruncateStopException(f"Scrape truncated early via Ctrl+T for {title or 'current item'}")
+
 def check_revolt(title: Optional[str] = None) -> bool:
-    """Check if Revolt mode is active and limit reached. If so, triggers clean exit."""
+    """Check if Revolt or Truncate mode is active and limit reached."""
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_CURRENT_DONE
-    if not _REVOLT_ACTIVE:
-        return False
-    if _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE
+    if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
         trigger_revolt_exit(title=title)
+        return True
+    if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
+        trigger_truncate_stop(title=title)
+        return True
+    return False
+
+def check_truncate(title: Optional[str] = None) -> bool:
+    """Explicit check for Ctrl+T early stop."""
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE
+    if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
+        trigger_truncate_stop(title=title)
         return True
     return False
 
 def global_revolt_listener():
     import time
     import sys
-    global _LIVE_INSTANCE, _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _MENU_ACTIVE, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
+    global _LIVE_INSTANCE, _MENU_ACTIVE
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERING, _TRUNCATE_INPUT_BUFFER, _TRUNCATE_TRIGGERED_DURING_ITEM, _TRUNCATE_CURRENT_DONE
+
     while True:
         if _LIVE_INSTANCE is None or _MENU_ACTIVE:
             time.sleep(0.04)
@@ -487,8 +664,10 @@ def global_revolt_listener():
         if not key:
             continue
             
-        if not _REVOLT_TRIGGERING:
-            if key == '\x12':  # Ctrl+R
+        is_typing = _REVOLT_TRIGGERING or _TRUNCATE_TRIGGERING
+
+        if not is_typing:
+            if key == '\x12':  # Ctrl+R (Revolt - Shutdown)
                 _REVOLT_TRIGGERING = True
                 _REVOLT_INPUT_BUFFER = ""
                 if _LIVE_INSTANCE is not None:
@@ -496,57 +675,101 @@ def global_revolt_listener():
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-        else:
-            # We are in Revolt typing mode (inline inside Rich Live context)
-            if key in ('\x1b', 'ESC'):  # Escape key cancels Revolt prompt
-                _REVOLT_TRIGGERING = False
-                _REVOLT_INPUT_BUFFER = ""
+            elif key == '\x14':  # Ctrl+T (Truncate - Stop Early & Wrap Up)
+                _TRUNCATE_TRIGGERING = True
+                _TRUNCATE_INPUT_BUFFER = ""
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-            elif key in ('\r', '\n'):  # Enter key confirms
-                val = _REVOLT_INPUT_BUFFER.strip()
-                if val:  # Non-empty input activates Revolt limit
+        else:
+            target_is_truncate = _TRUNCATE_TRIGGERING
+
+            if key in ('\x1b', 'ESC'):  # ESC cancels prompt
+                if target_is_truncate:
+                    _TRUNCATE_TRIGGERING = False
+                    _TRUNCATE_INPUT_BUFFER = ""
+                else:
+                    _REVOLT_TRIGGERING = False
+                    _REVOLT_INPUT_BUFFER = ""
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
+            elif key in ('\r', '\n'):  # Enter confirms
+                buf = _TRUNCATE_INPUT_BUFFER if target_is_truncate else _REVOLT_INPUT_BUFFER
+                val = buf.strip()
+                if val:
                     try:
                         limit = int(val)
                         if limit >= 0:
-                            _REVOLT_ACTIVE = True
-                            _REVOLT_LIMIT = limit
-                            if _LIVE_INSTANCE is not None:
-                                _REVOLT_CURRENT_DONE = False
-                                _REVOLT_TRIGGERED_DURING_ITEM = True
+                            if target_is_truncate:
+                                _TRUNCATE_ACTIVE = True
+                                _TRUNCATE_LIMIT = limit
+                                if _LIVE_INSTANCE is not None:
+                                    _TRUNCATE_CURRENT_DONE = False
+                                    _TRUNCATE_TRIGGERED_DURING_ITEM = True
+                                else:
+                                    _TRUNCATE_CURRENT_DONE = True
+                                    _TRUNCATE_TRIGGERED_DURING_ITEM = False
+                                    if limit == 0:
+                                        trigger_truncate_stop()
                             else:
-                                _REVOLT_CURRENT_DONE = True
-                                _REVOLT_TRIGGERED_DURING_ITEM = False
-                                if limit == 0:
-                                    trigger_revolt_exit()
+                                _REVOLT_ACTIVE = True
+                                _REVOLT_LIMIT = limit
+                                if _LIVE_INSTANCE is not None:
+                                    _REVOLT_CURRENT_DONE = False
+                                    _REVOLT_TRIGGERED_DURING_ITEM = True
+                                else:
+                                    _REVOLT_CURRENT_DONE = True
+                                    _REVOLT_TRIGGERED_DURING_ITEM = False
+                                    if limit == 0:
+                                        trigger_revolt_exit()
                     except ValueError:
                         pass
-                else:  # Empty input cancels/backs out of Revolt mode
-                    _REVOLT_ACTIVE = False
-                    _REVOLT_LIMIT = 0
-                    _REVOLT_CURRENT_DONE = False
-                    _REVOLT_TRIGGERED_DURING_ITEM = False
-                _REVOLT_TRIGGERING = False
-                _REVOLT_INPUT_BUFFER = ""
+                else:
+                    if target_is_truncate:
+                        _TRUNCATE_ACTIVE = False
+                        _TRUNCATE_LIMIT = 0
+                        _TRUNCATE_CURRENT_DONE = False
+                        _TRUNCATE_TRIGGERED_DURING_ITEM = False
+                    else:
+                        _REVOLT_ACTIVE = False
+                        _REVOLT_LIMIT = 0
+                        _REVOLT_CURRENT_DONE = False
+                        _REVOLT_TRIGGERED_DURING_ITEM = False
+
+                if target_is_truncate:
+                    _TRUNCATE_TRIGGERING = False
+                    _TRUNCATE_INPUT_BUFFER = ""
+                else:
+                    _REVOLT_TRIGGERING = False
+                    _REVOLT_INPUT_BUFFER = ""
+
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-            elif key in ('\x7f', '\x08'):  # Backspace key deletes last character
-                _REVOLT_INPUT_BUFFER = _REVOLT_INPUT_BUFFER[:-1]
+            elif key in ('\x7f', '\x08'):  # Backspace
+                if target_is_truncate:
+                    _TRUNCATE_INPUT_BUFFER = _TRUNCATE_INPUT_BUFFER[:-1]
+                else:
+                    _REVOLT_INPUT_BUFFER = _REVOLT_INPUT_BUFFER[:-1]
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-            elif key == '\x03':  # Ctrl+C during revolt prompt forces clean exit
+            elif key == '\x03':  # Ctrl+C
                 clean_exit(forceful=True)
-            elif key.isdigit():  # Accept digits only
-                _REVOLT_INPUT_BUFFER += key
+            elif key.isdigit():
+                if target_is_truncate:
+                    _TRUNCATE_INPUT_BUFFER += key
+                else:
+                    _REVOLT_INPUT_BUFFER += key
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
@@ -561,11 +784,15 @@ _ctrl_r_thread.start()
 def set_active_live(live):
     global _LIVE_INSTANCE, _tty_fd, _old_tty_settings, _is_custom_tty_fd
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERED_DURING_ITEM, _TRUNCATE_CURRENT_DONE
 
     if live is not None:
-        # If revolt is active and limit is 0 (and an item already finished under revolt), halt before starting next!
+        # Check if either Revolt or Truncate reached 0
         if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
             trigger_revolt_exit()
+            return
+        if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
+            trigger_truncate_stop()
             return
 
         _LIVE_INSTANCE = live
@@ -641,6 +868,13 @@ def set_active_live(live):
             else:
                 if _REVOLT_LIMIT > 0:
                     _REVOLT_LIMIT -= 1
+
+        if _TRUNCATE_ACTIVE:
+            if not _TRUNCATE_CURRENT_DONE:
+                _TRUNCATE_CURRENT_DONE = True
+            else:
+                if _TRUNCATE_LIMIT > 0:
+                    _TRUNCATE_LIMIT -= 1
 
 import contextlib
 
@@ -731,22 +965,16 @@ def clean_exit(forceful: bool = False):
         clean_lines.append(art_part)
         text_parts.append(text_part)
 
+    start_color, end_color, text_style = get_exit_art_colors(forceful=forceful)
+
     for i, art_line in enumerate(clean_lines):
         text_line = text_parts[i]
-        if forceful:
-             # Magenta to Deep Red gradient
-             # Consistent max_len ensures vertical alignment of colors
-             gradient_art = make_gradient_text(art_line, (187, 154, 247), (219, 75, 75), total_length=max_len)
-             if text_line:
-                 # Keep text in the "Hot" end color
-                 full_line = gradient_art.append(text_line, style="bold #db4b4b")
-                 console.print(gradient_art)
-             else:
-                 console.print(gradient_art)
-        else:
-             # Blue to Magenta gradient
-             gradient_art = make_gradient_text(art_line, (122, 162, 247), (187, 154, 247), total_length=max_len)
-             console.print(gradient_art)
+        # Dynamically resolved theme gradient; consistent max_len ensures vertical alignment
+        gradient_art = make_gradient_text(art_line, start_color, end_color, total_length=max_len)
+        if text_line:
+            # Highlight text line with active theme's accent/error style
+            gradient_art.append(text_line, style=text_style)
+        console.print(gradient_art)
     console.print("")
     sys.stdout.write("\033[?25h\033[0m\n")
     sys.stdout.flush()
@@ -759,10 +987,10 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 class Selector:
-    def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", vertical: bool = False, align_width: int = 8):
+    def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", vertical: bool = False, align_width: int = 8, default_index: int = 0):
         self.options = options
         self.title = title
-        self.index = 0
+        self.index = default_index if (isinstance(default_index, int) and 0 <= default_index < len(options)) else 0
         self.vertical = vertical
         self.align_width = align_width
 
@@ -808,11 +1036,11 @@ class Selector:
                         return ""
                     ch = ch_bytes.decode('utf-8', errors='ignore')
                     if ch == '\x1b':
-                        r2, _, _ = _sel.select([fd], [], [], 0.05)
+                        r2, _, _ = _sel.select([fd], [], [], 0.1)
                         if r2:
                             ch2 = os.read(fd, 1).decode('utf-8', errors='ignore')
                             if ch2 in ('[', 'O'):
-                                r3, _, _ = _sel.select([fd], [], [], 0.05)
+                                r3, _, _ = _sel.select([fd], [], [], 0.1)
                                 if r3:
                                     ch3 = os.read(fd, 1).decode('utf-8', errors='ignore')
                                     return ch2 + ch3
@@ -855,7 +1083,7 @@ class Selector:
                     ch_bytes = os.read(fd, 1)
                     ch = ch_bytes.decode('utf-8', errors='ignore')
                     if ch == '\x1b':
-                        r2, _, _ = _sel.select([fd], [], [], 0.05)
+                        r2, _, _ = _sel.select([fd], [], [], 0.1)
                         if r2:
                             ch2 = os.read(fd, 1).decode('utf-8', errors='ignore')
                             if ch2 == 'O': ch2 = '['
@@ -882,7 +1110,14 @@ class Selector:
                 val = input().strip()
                 idx = int(val) - 1
                 if 0 <= idx < len(self.options):
-                    return self.options[idx][1]
+                    chosen_label = self.options[idx][0]
+                    chosen_val = self.options[idx][1]
+                    try:
+                        from core.journal import DownloadJournal
+                        DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                    except Exception:
+                        pass
+                    return chosen_val
             except Exception:
                 pass
             console.print("[error]● Invalid selection. Please try again.[/error]")
@@ -894,53 +1129,102 @@ class Selector:
         old_menu_active = _MENU_ACTIVE
         _MENU_ACTIVE = True
         console.show_cursor(False)
-        try:
-            with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
-                _LIVE_INSTANCE = live
-                live.update(self._render(), refresh=True)
-                while True:
-                    key = self._get_key()
-                    if not key:
-                        try:
-                            from core.paths import PathAuthority
-                            error_log = PathAuthority().get_logs_root() / "💩" / "error.log"
-                            error_log.parent.mkdir(parents=True, exist_ok=True)
-                            with open(error_log, "a") as f:
-                                f.write("Selector.select: _get_key returned empty key\n")
-                                f.write(f"sys.stdin: {sys.stdin}, isatty: {sys.stdin.isatty()}\n")
-                        except Exception:
-                            pass
-                        return self.select_fallback()
-                    if key in ('[D', 'OD') or key in ('[A', 'OA'):
-                        self.index = (self.index - 1) % len(self.options)
-                        live.update(self._render(), refresh=True)
-                    elif key in ('[C', 'OC') or key in ('[B', 'OB'):
-                        self.index = (self.index + 1) % len(self.options)
-                        live.update(self._render(), refresh=True)
-                    elif key in ('\r', '\n'):
-                        return self.options[self.index][1]
-                    elif key == '=':
-                        return "="
-                    elif key == 'ESC':
-                        return "ESC"
-                    elif key == '\x03':
-                        clean_exit(forceful=True)
-        except Exception as e:
+
+        if os.name != 'nt' and sys.stdin.isatty():
+            import tty, termios, select as _sel
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
             try:
-                import traceback
-                from core.paths import PathAuthority
-                error_log = PathAuthority().get_logs_root() / "💩" / "error.log"
-                error_log.parent.mkdir(parents=True, exist_ok=True)
-                with open(error_log, "a") as f:
-                    f.write("=== Exception in Selector.select ===\n")
-                    traceback.print_exc(file=f)
-            except Exception:
-                pass
-            return self.select_fallback()
-        finally:
-            _LIVE_INSTANCE = None
-            console.show_cursor(True)
-            _MENU_ACTIVE = old_menu_active
+                tty.setcbreak(fd, termios.TCSADRAIN)
+                with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
+                    _LIVE_INSTANCE = live
+                    live.update(self._render(), refresh=True)
+                    while True:
+                        r, _, _ = _sel.select([fd], [], [], 0.05)
+                        if not r:
+                            continue
+                        chunk = os.read(fd, 64)
+                        if not chunk:
+                            continue
+
+                        if chunk in (b'\r', b'\n'):
+                            chosen_label = self.options[self.index][0]
+                            chosen_val = self.options[self.index][1]
+                            try:
+                                from core.journal import DownloadJournal
+                                DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                            except Exception:
+                                pass
+                            return chosen_val
+
+                        if chunk in (b'\x1b', b'q', b'Q'):
+                            return "ESC"
+
+                        if chunk == b'=':
+                            return "="
+
+                        if chunk == b'\x03':
+                            clean_exit(forceful=True)
+
+                        raw = chunk.decode('utf-8', errors='ignore')
+                        if any(raw == p or raw.startswith(p) for p in ['\x1b[A', '\x1bOA', '[A', 'OA', 'k', '\x1b[D', '\x1bOD']):
+                            self.index = (self.index - 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif any(raw == p or raw.startswith(p) for p in ['\x1b[B', '\x1bOB', '[B', 'OB', 'j', '\x1b[C', '\x1bOC']):
+                            self.index = (self.index + 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif '\r' in raw or '\n' in raw:
+                            chosen_label = self.options[self.index][0]
+                            chosen_val = self.options[self.index][1]
+                            try:
+                                from core.journal import DownloadJournal
+                                DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                            except Exception:
+                                pass
+                            return chosen_val
+            except Exception as e:
+                return self.select_fallback()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                _LIVE_INSTANCE = None
+                console.show_cursor(True)
+                _MENU_ACTIVE = old_menu_active
+        else:
+            try:
+                with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
+                    _LIVE_INSTANCE = live
+                    live.update(self._render(), refresh=True)
+                    while True:
+                        key = self._get_key()
+                        if not key:
+                            return self.select_fallback()
+                        if key in ('[D', 'OD') or key in ('[A', 'OA'):
+                            self.index = (self.index - 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif key in ('[C', 'OC') or key in ('[B', 'OB'):
+                            self.index = (self.index + 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif key in ('\r', '\n'):
+                            chosen_label = self.options[self.index][0]
+                            chosen_val = self.options[self.index][1]
+                            try:
+                                from core.journal import DownloadJournal
+                                DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                            except Exception:
+                                pass
+                            return chosen_val
+                        elif key == '=':
+                            return "="
+                        elif key == 'ESC':
+                            return "ESC"
+                        elif key == '\x03':
+                            clean_exit(forceful=True)
+            except Exception as e:
+                return self.select_fallback()
+            finally:
+                _LIVE_INSTANCE = None
+                console.show_cursor(True)
+                _MENU_ACTIVE = old_menu_active
 
     def _render(self) -> Text:
         full_text = Text()
@@ -966,6 +1250,55 @@ class Selector:
                 else:
                     full_text.append(f"  {label} ", style="unselected")
         return full_text
+
+
+class BoxSelector(Selector):
+    """Renders options cleanly inside a stylized Panel box with title, border, and footer navigation."""
+    def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", border_style: str = "sexy_pink", width: int = 86):
+        super().__init__(options, title=title, vertical=True)
+        self.border_style = border_style
+        self.width = width
+
+    def _render(self) -> Any:
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+
+        table = Table(box=None, show_header=False, padding=(0, 1))
+        table.add_column("icon", width=3, justify="right")
+        table.add_column("option", width=max(40, self.width - 12))
+
+        for i, (label, _) in enumerate(self.options):
+            is_active = (i == self.index)
+            if is_active:
+                table.add_row(
+                    Text("▶", style="bold sexy_pink"),
+                    Text(label, style="bold white")
+                )
+            else:
+                table.add_row(
+                    Text(" ", style="unselected"),
+                    Text(label, style="unselected")
+                )
+
+        footer = Text(justify="center")
+        footer.append("↑↓", style="bold white")
+        footer.append(" Navigate  ", style="unselected")
+        footer.append("Enter", style="bold white")
+        footer.append(" Select  ", style="unselected")
+        footer.append("Esc", style="bold white")
+        footer.append(" Return to Menu", style="unselected")
+
+        return Panel(
+            table,
+            title=f"[bold white]◆ {self.title.upper()} ◆[/bold white]",
+            subtitle=footer,
+            subtitle_align="center",
+            border_style=self.border_style,
+            padding=(1, 2),
+            width=self.width,
+        )
+
 
 class MinimalPulseBar(ProgressColumn):
     def __init__(self, bar_width: int = 40):
@@ -1091,8 +1424,16 @@ class MultiSelector:
                             self.selected.add(self.index)
                     elif key in ('\r', '\n'): # Enter to confirm
                         if not self.selected:
-                            return [self.options[self.index]]
-                        return [self.options[i] for i in sorted(self.selected)]
+                            res = [self.options[self.index]]
+                        else:
+                            res = [self.options[i] for i in sorted(self.selected)]
+                        try:
+                            from core.journal import DownloadJournal
+                            names = [opt.get("name") or opt.get("title") or str(opt) for opt in res]
+                            DownloadJournal.get_active().record_choice(self.title, f"Selected {len(names)} items ({', '.join(names[:3])}{'...' if len(names) > 3 else ''})", names)
+                        except Exception:
+                            pass
+                        return res
                     elif key == '\x03': # Ctrl+C
                         clean_exit(forceful=True)
 
@@ -1210,6 +1551,95 @@ def theme_input(prompt_msg: str = "") -> str:
         sys.stdout.write("\033[0m")
         sys.stdout.flush()
     return clean_user_input(raw)
+
+_error_wait_consumed = False
+
+def reset_error_wait() -> None:
+    global _error_wait_consumed
+    _error_wait_consumed = False
+
+def wait_for_error(prompt_msg: str = "Press Enter to return to menu...", force: bool = False) -> None:
+    """
+    Waits for a single keypress (Enter, Space, Esc, Q, etc.) when an error/failure occurs.
+    Guarantees that failure messages and error panels stay on screen until user dismissal.
+    Prevents duplicate pause prompts within the same failure cycle.
+    """
+    global _error_wait_consumed
+    if not sys.stdin.isatty():
+        return
+    if _error_wait_consumed and not force:
+        return
+    _error_wait_consumed = True
+
+    if prompt_msg:
+        console.print(f"\n[menu]{prompt_msg}[/menu]", end="")
+        sys.stdout.flush()
+
+    if os.name != 'nt':
+        import termios, tty, select as _sel
+        try:
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+        except Exception:
+            try:
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+            console.print()
+            return
+
+        try:
+            termios.tcflush(fd, termios.TCIFLUSH)
+            tty.setcbreak(fd, termios.TCSADRAIN)
+            while True:
+                r, _, _ = _sel.select([fd], [], [], 0.05)
+                if not r:
+                    continue
+                chunk = os.read(fd, 64)
+                if not chunk:
+                    continue
+                if chunk == b'\x03':  # Ctrl+C
+                    clean_exit(forceful=True)
+                # Any single keystroke confirms return
+                break
+        except Exception:
+            pass
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
+            console.print()
+    else:
+        import msvcrt, time
+        try:
+            while msvcrt.kbhit():
+                msvcrt.getch()
+            while True:
+                if msvcrt.kbhit():
+                    ch = msvcrt.getch()
+                    if ch == b'\x03':
+                        clean_exit(forceful=True)
+                    break
+                time.sleep(0.02)
+        except Exception:
+            pass
+        console.print()
+
+def prompt_return(prompt_msg: str = "Press Enter to return to main menu...") -> None:
+    """Explicit pause for informational/utility screens (doctor, version, lyrics tools, etc.)."""
+    wait_for_error(prompt_msg=prompt_msg, force=True)
+
+def wait_for_return(prompt_msg: str = "") -> None:
+    """
+    Auto-returns immediately for successful workflows — no keypress required.
+    Ctrl+C is still respected via normal signal handling.
+    """
+    sys.stdout.flush()
+
+wait_for_enter = wait_for_return
+
+
 
 def _read_tty_chunk(fd: int, timeout: float = 0.05) -> bytes:
     import select
@@ -1503,64 +1933,11 @@ def clear_lines(num_lines: int):
     sys.stdout.flush()
 
 def get_batch_save_path(store_layer) -> Optional[Path]:
-    """Helper to get batch mode save location (Default or Custom)."""
+    """Returns the Vacuum folder (was Batch/ — redirected)."""
     from core.paths import PathAuthority
-    import json
-    import time
     paths = PathAuthority()
-    library_root = paths.get_downloads_root()
-    
-    # Read download_base from settings.json directly to avoid circular imports
-    config_file = paths.get_config_file()
-    if config_file.exists():
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                custom_base = data.get("download_base")
-                if custom_base:
-                    library_root = Path(custom_base)
-        except Exception:
-            pass
-            
-    default_batch = library_root / "Batch"
-    
-    while True:
-        if not sys.stdin.isatty():
-            loc_choice = "DEFAULT"
-        else:
-            loc_choice = Selector([
-                ("Use Default Batch Location (Batch)", "DEFAULT"),
-                ("Select Custom Location", "CUSTOM"),
-                ("Back", "BACK")
-            ], "Save Location").select()
-        if loc_choice == "BACK":
-            return None
-        
-        if loc_choice == "DEFAULT":
-            return default_batch
-        elif loc_choice == "CUSTOM":
-            while True:
-                console.print("\n[menu]Enter Folder Path (Empty to cancel): [/menu]", end="")
-                sys.stdout.write(get_theme_input_ansi())
-                sys.stdout.flush()
-                custom_path_str = input().strip()
-                sys.stdout.write("\033[0m")
-                sys.stdout.flush()
-                if not custom_path_str:
-                    clear_lines(2)
-                    break
-                
-                is_valid, err_msg = store_layer.validate_directory(Path(custom_path_str))
-                if not is_valid:
-                    console.print(f"\n[error]Invalid directory.[/error]")
-                    console.print(f"[warning]Reason:\n{err_msg}[/warning]")
-                    time.sleep(2)
-                    clear_lines(6)
-                    continue
-                
-                clear_lines(2)
-                return Path(custom_path_str)
-            continue
+    return paths.get_downloads_root() / "Vacuum"
+
 
 def get_video_save_path(title: str, store_layer) -> Optional[Path]:
     """Helper to get non-YouTube video/music save location (Default or Custom)."""
@@ -1619,119 +1996,21 @@ def get_video_save_path(title: str, store_layer) -> Optional[Path]:
 
 def get_toon_save_path(url: str, scraper: Any, is_batch: bool, batch_path: Optional[Path], default_root: Path, store_layer: Any) -> Optional[Path]:
     if batch_path is not None:
-        return batch_path
+        return Path(batch_path)
 
     library_root = default_root.parent
     site_folder = default_root.name
 
-    if is_batch:
-        return library_root / "Toon" / "SFW" / "OnGoing" / site_folder
+    if library_root.name == "Quick grab":
+        return default_root
 
-    current_menu = library_root.name
-    
-    if getattr(scraper, "title", None):
-        toon_name = scraper.title
-    else:
-        url_parts = [p for p in url.strip('/').split('/') if p]
-        if "chapter" not in url.lower() and "-ch-" not in url.lower():
-            toon_name = url_parts[-1] if url_parts else "unknown"
-        else:
-            toon_name = url_parts[-2] if len(url_parts) > 1 else url_parts[-1]
-    
-    def draw_header():
-        startup_clear()
-        print_banner()
-        console.print(f"[menu]{'Menu':<12}:[/menu] [site]{current_menu}[/site]", overflow="ellipsis", no_wrap=True)
-        console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]", overflow="ellipsis", no_wrap=True)
-        console.print(f"[menu]{'Toon':<12}:[/menu] [title]{toon_name}[/title]", overflow="ellipsis", no_wrap=True)
-        console.print("")
-
-    state = 0
-    type_choice = None
-    status_choice = None
-    
-    while True:
-        if state == 0:
-            draw_header()
-            choice = Selector([("SFW", "SFW"), ("NSFW", "NSFW"), ("Back", "BACK")], "Type").select()
-            if choice == "BACK":
-                return None
-            if choice == "=":
-                current_menu = "Quick grab" if current_menu == "Vacuum" else "Vacuum"
-                library_root = library_root.parent / current_menu
-                continue
-            type_choice = choice
-            state = 1
-        elif state == 1:
-            draw_header()
-            console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
-            choice = Selector([("Ongoing", "OnGoing"), ("Complete", "Completed"), ("Back", "BACK")], "Status").select()
-            if choice == "BACK":
-                state = 0
-                continue
-            if choice == "=":
-                current_menu = "Quick grab" if current_menu == "Vacuum" else "Vacuum"
-                library_root = library_root.parent / current_menu
-                continue
-            status_choice = choice
-            state = 2
-        elif state == 2:
-            draw_header()
-            console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
-            console.print(f"[menu]{'Status':<12}:[/menu] [site]{status_choice}[/site]")
-            choice = Selector([
-                ("Use Default Location", "DEFAULT"),
-                ("Select Custom Location", "CUSTOM"),
-                ("Back", "BACK")
-            ], "Save Location").select()
-            if choice == "BACK":
-                state = 1
-                continue
-            if choice == "=":
-                current_menu = "Quick grab" if current_menu == "Vacuum" else "Vacuum"
-                library_root = library_root.parent / current_menu
-                continue
-            elif choice == "DEFAULT":
-                # Clear options to prevent them from staying on screen
-                draw_header()
-                console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
-                console.print(f"[menu]{'Status':<12}:[/menu] [site]{status_choice}[/site]")
-                console.print(f"[menu]{'Location':<12}:[/menu] [site]Default[/site]\n")
-                return library_root / "Toon" / type_choice / status_choice / site_folder
-            elif choice == "CUSTOM":
-                state = 3
-        elif state == 3:
-            console.print("\n[menu]Enter Folder Path (Empty to cancel): [/menu]", end="")
-            sys.stdout.write(get_theme_input_ansi())
-            sys.stdout.flush()
-            custom_path_str = input().strip()
-            sys.stdout.write("\033[0m")
-            sys.stdout.flush()
-            if not custom_path_str:
-                clear_lines(2)
-                state = 2
-                continue
-            
-            custom_path = Path(custom_path_str)
-            is_valid, err_msg = store_layer.validate_directory(custom_path)
-            if not is_valid:
-                console.print(f"\n[error]Invalid directory.[/error]")
-                console.print(f"[warning]Reason:\n{err_msg}[/warning]")
-                time.sleep(2)
-                clear_lines(6)
-                continue
-            
-            try:
-                custom_manhua_root = custom_path / "Toon"
-                store_layer.create_directory(custom_manhua_root)
-                final_path = store_layer.create_directory(custom_manhua_root / type_choice)
-                clear_lines(2)
-                return final_path
-            except Exception as e:
-                console.print(f"\n[error]Error creating directory: {e}[/error]")
-                time.sleep(2)
-                clear_lines(4)
-                continue
+    target_dir = library_root / site_folder
+    if store_layer:
+        try:
+            store_layer.create_directory(target_dir)
+        except Exception:
+            pass
+    return target_dir
 
 # Global monkey-patch for requests to handle connection losses instantly
 try:
@@ -1762,17 +2041,80 @@ except ImportError:
 
 
 
-def apply_chapter_limit(to_process: List[Tuple[str, str]], scraper: Any) -> List[Tuple[str, str]]:
+def apply_chapter_limit(
+    to_process: List[Tuple[str, str]],
+    scraper: Any,
+    url: Optional[str] = None,
+    target_path: Optional[Path] = None
+) -> List[Tuple[str, str]]:
     """
-    Limits the un-downloaded items/chapters according to active flags.
+    Limits the un-downloaded items/chapters according to active mode, URL type, and flags.
     --<N> (e.g. --2, --5) downloads the next N un-downloaded items in systematic order.
-    --0 (Quick grab) downloads the single next item.
+    --0 (Quick grab) / Quick grab mode downloads the single target item.
+    --A / --a (Vacuum all) downloads all un-downloaded items.
     """
+    if not to_process:
+        return to_process
+
+    # 1. Check explicit force vacuum / batch all flags
+    if getattr(scraper, '_force_vacuum', False) or getattr(scraper, '_batch_all', False):
+        return to_process
+
+    # 2. Check explicit chapter limit flag (e.g. --2, --5)
     chapter_limit = getattr(scraper, '_chapter_limit', None)
     if isinstance(chapter_limit, int) and chapter_limit > 0:
         return to_process[:chapter_limit]
-    if getattr(scraper, '_batch_quick_grab', False):
+
+    # 3. Detect Quick grab mode from flags, scraper attributes, or target destination
+    is_quick_grab = (
+        getattr(scraper, '_batch_quick_grab', False)
+        or getattr(scraper, 'is_quick_grab', False)
+        or (target_path and "quick grab" in str(target_path).lower())
+    )
+
+    # 4. Check if the input URL is a single chapter/item link
+    raw_url = str(url or getattr(scraper, 'url', '') or '').strip()
+    is_chapter_link = False
+    if hasattr(scraper, 'is_chapter_link'):
+        try:
+            is_chapter_link = bool(scraper.is_chapter_link())
+        except Exception:
+            is_chapter_link = False
+    if not is_chapter_link:
+        is_chapter_link = any(x in raw_url.lower() for x in ["/c/", "chapter", "/read/", "/ch-", "-chapter-", "/ch/", "/g/"])
+
+    if is_chapter_link:
+        # Match the specific chapter URL or chapter number if possible
+        matched = []
+        # Try exact URL match
+        for item in to_process:
+            ch_num, ch_url = item
+            if ch_url and (ch_url.rstrip('/') == raw_url.rstrip('/') or raw_url.rstrip('/').endswith(ch_url.rstrip('/')) or ch_url.rstrip('/').endswith(raw_url.rstrip('/'))):
+                matched.append(item)
+                break
+        if matched:
+            return matched
+
+        # Try matching chapter number from URL
+        import re
+        m = re.search(r"(?:chapter-|/c/|/ch-|/ch/|/read/\d+/|/read/|/chapter/)([\d]+(?:[\.-][\d]+)?)", raw_url.lower())
+        if m:
+            target_num = m.group(1).replace("-", ".")
+            for item in to_process:
+                ch_num, ch_url = item
+                if str(ch_num).strip() == target_num or str(ch_num).strip() == str(int(float(target_num)) if '.' in target_num and target_num.endswith('.0') else target_num):
+                    matched.append(item)
+                    break
+        if matched:
+            return matched
+
+        # If in Quick Grab or chapter link, take only the single chapter
+        if is_quick_grab or not getattr(scraper, '_force_vacuum', False):
+            return to_process[:1]
+
+    if is_quick_grab:
         return to_process[:1]
+
     return to_process
 
 
@@ -1798,6 +2140,8 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
     # Never prompt if any flags, batch flags, or chapter limits are active
     has_flags = False
     if scraper:
+        if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+            has_flags = True
         if getattr(scraper, "_chapter_limit", None) is not None:
             has_flags = True
         if getattr(scraper, "_batch_quick_grab", False):
@@ -1809,7 +2153,7 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
     if getattr(HistoryLayer, "_active_instance", None) and getattr(HistoryLayer._active_instance, "_active_batch_flags", None):
         has_flags = True
 
-    if re.search(r"--\d+\b", url):
+    if re.search(r"--(\d+|[aA])\b", url):
         has_flags = True
 
     if has_flags:
@@ -1818,7 +2162,7 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
     startup_clear()
     print_banner()
     if is_batch:
-        console.print("[menu]Menu[/menu]         : [site]Batch Mode[/site]")
+        console.print("[menu]Menu[/menu]         : [site]Vacuum Mode[/site]")
     console.print(f"[menu]URL[/menu]          : [sexy_pink]{url}[/sexy_pink]")
     console.print(f"[menu]Title[/menu]        : [title]{title}[/title]")
     console.print("")
@@ -1847,3 +2191,93 @@ def filter_subchapters(url: str, title: str, chapters: List[Tuple[str, str]], is
 def clean_exit_revolt(title: Optional[str] = None):
     """Used to exit after the Revolt limit is reached. Delegates cleanly to trigger_revolt_exit."""
     trigger_revolt_exit(title=title)
+
+
+def print_alternative_anime_sources(anime_title: str, current_site: str = "Anime"):
+    """Renders a clean Rich tree informing the user that web streaming is deprecated and points to permanent torrent indexers."""
+    from rich.tree import Tree
+    clean_t = str(anime_title or "this anime").strip()
+    tree = Tree(f"[warning]⚠ Web streaming is deprecated / unavailable for '{clean_t}'[/warning]")
+    tree.add("[unselected]Web streaming sites suffer from frequent domain takedowns and CDN throttling.[/unselected]")
+    alt_branch = tree.add("[menu]Recommended torrent indexers (download via qBittorrent):[/menu]")
+    alt_branch.add("[site]Nyaa[/site]        : [sexy_pink]https://nyaa.si[/sexy_pink] [unselected](Premier anime torrent tracker)[/unselected]")
+    alt_branch.add("[site]SeaDex[/site]      : [sexy_pink]https://releases.moe[/sexy_pink] [unselected](Curated best releases database)[/unselected]")
+    alt_branch.add("[site]TsukiHime[/site]    : [sexy_pink]https://tsukihime.org[/sexy_pink] [unselected](Torrent, DDL & NZB aggregator)[/unselected]")
+    console.print("")
+    console.print(tree)
+    console.print("")
+
+
+def print_alternative_adult_anime_sources(anime_title: str, current_site: str = "Hentai"):
+    """Renders a clean Rich tree informing the user that the host stream is dead and lists verified alternative adult anime platforms in Zine."""
+    from rich.tree import Tree
+    clean_t = str(anime_title or "this title").strip()
+    tree = Tree(f"[warning]⚠ Stream unavailable or missing pieces on {current_site}[/warning]")
+    tree.add(f"[unselected]Host CDN returned missing or unplayable media chunks for '{clean_t}'.[/unselected]")
+    alt_branch = tree.add("[menu]Alternative adult anime sources supported in Zine Scraper:[/menu]")
+    alt_branch.add("[site]Hanime[/site]       : [sexy_pink]https://hanime1.me[/sexy_pink] / [sexy_pink]https://hanime.red[/sexy_pink]")
+    alt_branch.add("[site]HentaiHaven[/site]  : [sexy_pink]https://hentaihaven.xxx[/sexy_pink] / [sexy_pink]https://hentaihaven.red[/sexy_pink]")
+    alt_branch.add("[site]HStream[/site]      : [sexy_pink]https://hstream.moe[/sexy_pink]")
+    alt_branch.add("[site]OHentai[/site]      : [sexy_pink]https://ohentai.org[/sexy_pink]")
+    alt_branch.add("[site]OppaiStream[/site]  : [sexy_pink]https://oppai.stream[/sexy_pink]")
+    alt_branch.add("[site]HentaiCity[/site]   : [sexy_pink]https://www.hentaicity.com[/sexy_pink]")
+    alt_branch.add("[site]HentaiMama[/site]   : [sexy_pink]https://hentaimama.io[/sexy_pink]")
+    console.print("")
+    console.print(tree)
+    console.print("")
+
+
+def render_failure_box(
+    title: str,
+    failed_items: Optional[List[str]] = None,
+    reason: Optional[str] = None,
+    width: int = 86
+):
+    """
+    Renders a minimal, high-visibility failure notification box with red ball marker:
+    🔴 [failed]
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.markup import escape
+    from rich import box
+
+    body = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), expand=True)
+    body.add_column("Key", style="bold red", width=10, no_wrap=True)
+    body.add_column("Val", style="white")
+
+    body.add_row("Status", f"🔴 [bold red]{escape('[failed]')}[/bold red]")
+    body.add_row("Target", f"[title]{escape(str(title))}[/title]")
+
+    if reason:
+        body.add_row("Reason", f"[warning]{escape(str(reason))}[/warning]")
+
+    if failed_items:
+        items_preview = ", ".join(str(x) for x in failed_items[:6])
+        if len(failed_items) > 6:
+            items_preview += f" ... (+{len(failed_items) - 6} more)"
+        body.add_row("Failed", f"[sexy_pink]{items_preview}[/sexy_pink] ({len(failed_items)} item(s))")
+
+    body.add_row("Logs", "[unselected]Check Logs/💩/latest_session.log or latest_error.log[/unselected]")
+
+    return Panel(
+        body,
+        title="[bold red]🔴 Download Incomplete / Failed[/bold red]",
+        title_align="left",
+        border_style="red",
+        box=box.ROUNDED,
+        width=min(width, console.width or 86),
+        padding=(0, 1)
+    )
+
+
+def print_failure_box(
+    title: str,
+    failed_items: Optional[List[str]] = None,
+    reason: Optional[str] = None
+):
+    """Prints the minimal 🔴 [failed] box directly to the console."""
+    console.print("")
+    console.print(render_failure_box(title, failed_items=failed_items, reason=reason))
+    console.print("")
+

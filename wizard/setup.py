@@ -987,6 +987,50 @@ def run_first_launch_setup(paths, storage, config):
 
     # Save first_launch = False to write settings.json permanently
     config.mark_launched()
+
+    # ── Ensure 'zine' CLI binary is linked to user's PATH ──────────────────
+    try:
+        suite_root = paths.get_suite_root()
+        if os.name == 'nt':
+            user_bin = Path(os.environ.get("USERPROFILE", "")) / "bin"
+            user_bin.mkdir(parents=True, exist_ok=True)
+            zine_cmd = user_bin / "zine.cmd"
+            run_bat = suite_root / "run me" / "run.bat"
+            orch_py = suite_root / "orchestrator.py"
+            py_exe = suite_root / "venv" / "Scripts" / "python.exe"
+            
+            cmd_content = (
+                "@echo off\n"
+                f'if exist "{run_bat}" (\n'
+                f'    call "{run_bat}" %*\n'
+                f') else (\n'
+                f'    "{py_exe}" "{orch_py}" %*\n'
+                ")\n"
+            )
+            zine_cmd.write_text(cmd_content, encoding="utf-8")
+        else:
+            bin_dir = Path.home() / ".local" / "bin"
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            zine_sh = bin_dir / "zine"
+            run_sh = suite_root / "run me" / "run.sh"
+            orch_py = suite_root / "orchestrator.py"
+            py_bin = suite_root / "venv" / "bin" / "python"
+            
+            sh_content = (
+                "#!/usr/bin/env bash\n"
+                f'if [ -f "{run_sh}" ]; then\n'
+                f'    exec "{run_sh}" "$@"\n'
+                f'elif [ -f "{orch_py}" ]; then\n'
+                f'    exec "{py_bin}" "{orch_py}" "$@"\n'
+                "else\n"
+                f'    echo "[-] Error: Zine Scraper not found at {suite_root}" >&2\n'
+                "    exit 1\n"
+                "fi\n"
+            )
+            zine_sh.write_text(sh_content, encoding="utf-8")
+            zine_sh.chmod(0o755)
+    except Exception:
+        pass
     
     # ── Final Success Screen ──────────────────────────────────────────────
     startup_clear()
