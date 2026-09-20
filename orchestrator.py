@@ -49,6 +49,10 @@ if len(sys.argv) > 1:
         handle_unknown_flag(raw_arg)
         sys.exit(2)
 
+# Automatically clean temporary buffers, old session logs, and traces on startup
+from core.cli_help import purge_logs_and_temp
+purge_logs_and_temp(silent=True)
+
 # Initialize unified session logger
 from core.logger import init_session_logger, record_error_log
 from core.journal import DownloadJournal

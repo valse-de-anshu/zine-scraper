@@ -268,36 +268,44 @@ def run_cli_doctor():
     console.print("\n[bold green]✦ All critical subsystem diagnostics completed.[/bold green]\n")
 
 
-def run_cli_clean():
-    """Purges intermediate fragments, orphaned chunks, and cache buffers in 💩/."""
-    print_cli_banner()
-    console.print("[bold white]Purging Zine Temporary Buffers & Cache...[/bold white]\n")
-
+def purge_logs_and_temp(silent: bool = False):
+    """
+    Purges contents inside:
+      - zine scraper/Logs/Downlode 💩/Sessions
+      - zine scraper/Logs/💩
+      - zine scraper/💩 (project root and downloads root)
+    """
     from core.paths import PathAuthority
     pa = PathAuthority()
-    
-    clean_targets = [
-        pa.get_project_root() / "💩",
-        pa.get_downloads_root() / "💩",
+
+    targets = [
+        pa.get_sessions_dir(),                       # Logs/Downlode 💩/Sessions
+        pa.get_logs_root() / "💩",                   # Logs/💩
+        pa.get_project_root() / "💩",               # 💩 (project root)
+        pa.get_downloads_root() / "💩",             # 💩 (downloads root)
     ]
 
     purged_files = 0
     purged_dirs = 0
     bytes_freed = 0
 
-    for temp_dir in clean_targets:
-        if not temp_dir.exists():
+    for target_dir in targets:
+        if not target_dir.exists():
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
             continue
-        for item in list(temp_dir.rglob("*")):
-            if item.is_file() and not item.name.startswith(".git"):
+        for item in list(target_dir.rglob("*")):
+            if item.is_file() and not item.name.startswith(".gitkeep"):
                 try:
                     bytes_freed += item.stat().st_size
                     item.unlink()
                     purged_files += 1
                 except Exception:
                     pass
-        for item in list(temp_dir.rglob("*")):
-            if item.is_dir() and item != temp_dir:
+        for item in list(target_dir.rglob("*")):
+            if item.is_dir() and item != target_dir:
                 try:
                     if not any(item.iterdir()):
                         item.rmdir()
@@ -305,11 +313,19 @@ def run_cli_clean():
                 except Exception:
                     pass
 
-    mb_freed = bytes_freed / (1024 * 1024)
-    if purged_files > 0:
-        console.print(f"[bold green]✔ Successfully purged {purged_files} temporary buffer files ({mb_freed:.2f} MB freed) in 💩/.[/bold green]\n")
-    else:
-        console.print("[dim green]✔ Temporary buffer (💩/) is completely clean. No orphaned files found.[/dim green]\n")
+    if not silent:
+        mb_freed = bytes_freed / (1024 * 1024)
+        if purged_files > 0:
+            console.print(f"[bold green]✔ Successfully purged {purged_files} logs & temporary session files ({mb_freed:.2f} MB freed).[/bold green]\n")
+        else:
+            console.print("[dim green]✔ All log directories and temporary buffers are completely clean.[/dim green]\n")
+
+
+def run_cli_clean():
+    """Purges intermediate fragments, session logs, crash traces, and cache buffers."""
+    print_cli_banner()
+    console.print("[bold white]Purging Zine Temporary Buffers, Session Journals & Crash Logs...[/bold white]\n")
+    purge_logs_and_temp(silent=False)
 
 
 def handle_unknown_flag(flag: str):
