@@ -268,12 +268,15 @@ def run_cli_doctor():
     console.print("\n[bold green]✦ All critical subsystem diagnostics completed.[/bold green]\n")
 
 
-def purge_logs_and_temp(silent: bool = False):
+def purge_logs_and_temp(silent: bool = False, preserve_active_session: bool = True):
     """
     Purges contents inside:
       - zine scraper/Logs/Downlode 💩/Sessions
       - zine scraper/Logs/💩
       - zine scraper/💩 (project root and downloads root)
+
+    If preserve_active_session is True, protects the active running execution's
+    session log and journal files so active logging is never disrupted.
     """
     from core.paths import PathAuthority
     pa = PathAuthority()
@@ -284,6 +287,31 @@ def purge_logs_and_temp(silent: bool = False):
         pa.get_project_root() / "💩",               # 💩 (project root)
         pa.get_downloads_root() / "💩",             # 💩 (downloads root)
     ]
+
+    # Collect active session files that must NEVER be deleted while Zine is running
+    protected_paths = set()
+    if preserve_active_session:
+        try:
+            from core.logger import get_current_session_log, get_logs_dir
+            curr_log = get_current_session_log()
+            if curr_log and curr_log.exists():
+                protected_paths.add(curr_log.resolve())
+            latest_log = get_logs_dir() / "latest_session.log"
+            if latest_log.exists():
+                protected_paths.add(latest_log.resolve())
+        except Exception:
+            pass
+
+        try:
+            from core.journal import DownloadJournal
+            if DownloadJournal._instance is not None:
+                inst = DownloadJournal._instance
+                if inst.session_file and inst.session_file.exists():
+                    protected_paths.add(inst.session_file.resolve())
+                if inst.latest_file and inst.latest_file.exists():
+                    protected_paths.add(inst.latest_file.resolve())
+        except Exception:
+            pass
 
     purged_files = 0
     purged_dirs = 0
@@ -298,6 +326,8 @@ def purge_logs_and_temp(silent: bool = False):
             continue
         for item in list(target_dir.rglob("*")):
             if item.is_file() and not item.name.startswith(".gitkeep"):
+                if item.resolve() in protected_paths:
+                    continue
                 try:
                     bytes_freed += item.stat().st_size
                     item.unlink()
@@ -318,14 +348,14 @@ def purge_logs_and_temp(silent: bool = False):
         if purged_files > 0:
             console.print(f"[bold green]✔ Successfully purged {purged_files} logs & temporary session files ({mb_freed:.2f} MB freed).[/bold green]\n")
         else:
-            console.print("[dim green]✔ All log directories and temporary buffers are completely clean.[/dim green]\n")
+            console.print("[dim green]✔ All log directories and temporary buffers are clean (active session preserved).[/dim green]\n")
 
 
 def run_cli_clean():
     """Purges intermediate fragments, session logs, crash traces, and cache buffers."""
     print_cli_banner()
     console.print("[bold white]Purging Zine Temporary Buffers, Session Journals & Crash Logs...[/bold white]\n")
-    purge_logs_and_temp(silent=False)
+    purge_logs_and_temp(silent=False, preserve_active_session=True)
 
 
 def handle_unknown_flag(flag: str):
