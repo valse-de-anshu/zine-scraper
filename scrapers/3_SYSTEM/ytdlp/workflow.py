@@ -50,15 +50,24 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
             scraper.engine.save_metadata(folder, info, metadata.get("Source", "Unknown"), cover_url=cover_url)
         except Exception:
             pass
+        if is_music:
+            target_download_dir = folder / "music"
+            location_manager.create_directory(target_download_dir)
+            location_manager.create_directory(target_download_dir / "lyrics")
+        else:
+            target_download_dir = folder / "video"
+            location_manager.create_directory(target_download_dir)
+            location_manager.create_directory(target_download_dir / "subtitle")
     else:
         folder = target_path
+        target_download_dir = folder
         location_manager.create_directory(folder)
         
     cover_exists = any(folder.glob("cover.*"))
     cover_path = next(folder.glob("cover.*"), folder / "cover.jpg")
     
     ext_str = "flac" if is_music else "mp4"
-    verified_ids = verify_videos(folder, videos, ext_str, tracker, scraper.url)
+    verified_ids = verify_videos(target_download_dir, videos, ext_str, tracker, scraper.url)
     
     startup_clear()
     print_banner()
@@ -78,6 +87,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         
     try:
         from butler.part_cleaner import clean_part_files
+        clean_part_files(target_download_dir, videos, tracker, scraper.url)
         clean_part_files(folder, videos, tracker, scraper.url)
     except Exception:
         pass
@@ -89,7 +99,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         vid_url = video.get("url")
         vid_thumb_url = video.get("thumbnail")
         
-        resolved_file_path, is_in_verified = tracker.resolve_download_path(folder, str(vid_id), vid_title, ext_str)
+        resolved_file_path, is_in_verified = tracker.resolve_download_path(target_download_dir, str(vid_id), vid_title, ext_str)
         display_name = resolved_file_path.name
         
         if is_in_verified:
@@ -120,13 +130,10 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         
         from rich.tree import Tree
         from rich.live import Live
-        from rich.progress import Progress, TextColumn, TaskProgressColumn, DownloadColumn, TimeRemainingColumn
-        from core.ui import MinimalPulseBar, set_active_live
-        from rich.progress import BarColumn
-        from core.ui import MbpsColumn
+        from rich.progress import Progress
+        from core.ui import MinimalPulseBar, TaskProgressColumn, DownloadColumn, MbpsColumn, TimeRemainingColumn
         
         progress_bar = Progress(
-            TextColumn("[progress.description]{task.description}"),
             MinimalPulseBar(bar_width=40),
             TaskProgressColumn(),
             DownloadColumn(binary_units=False),
@@ -171,7 +178,7 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                     time.sleep(2)
                 try:
                     success = scraper.engine.download_video(
-                        vid_url, folder, stats_callback,
+                        vid_url, target_download_dir, stats_callback,
                         is_audio=is_music,
                         custom_thumbnail=track_cover_path,
                         fixed_title=vid_title,
