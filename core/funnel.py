@@ -337,6 +337,7 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
         elif "ANIME" in site_folder.upper() or "SERIES" in site_folder.upper():
             media_type = "Series"
 
+        canonical_url = getattr(scraper, "series_url", None) or getattr(scraper, "canonical_url", None) or getattr(scraper, "series_page", None) or getattr(scraper, "url", None) or url
         payload = ZineMetadataPayload(
             title=title_val,
             type=media_type,
@@ -349,7 +350,7 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
             rating=rating_val,
             tags=tags_list,
             year=year_val,
-            url=url,
+            url=canonical_url,
             views=str(getattr(scraper, "views", "") or meta_dict.get("Views", "") or meta_dict.get("views", "") or ""),
             likes=str(getattr(scraper, "likes", "") or meta_dict.get("Likes", "") or meta_dict.get("likes", "") or ""),
             hottest=getattr(scraper, "hottest", []) or meta_dict.get("hottest", []),

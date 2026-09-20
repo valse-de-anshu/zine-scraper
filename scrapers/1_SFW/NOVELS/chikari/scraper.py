@@ -79,11 +79,20 @@ class ChikariScraper(ChikariBaseEngine):
         if data:
             self.title = data.get("title") or self.slug.replace("-", " ").title()
             raw_desc = data.get("description", "") or ""
-            clean_desc = re.sub(r'(?:\r?\n\s*)*Tags:\s*#.*$', '', raw_desc, flags=re.DOTALL | re.IGNORECASE).strip()
+            # Strip HTML tags and decode HTML entities
+            clean_desc = BeautifulSoup(raw_desc, "html.parser").get_text(separator="\n").strip()
+            # Extract hashtag tags
+            hashtag_tags = [t.strip('# ').strip() for t in re.findall(r'#([A-Za-z0-9_-]+)', clean_desc)]
+            # Strip trailing Tags: #... section
+            clean_desc = re.sub(r'(?:\r?\n\s*)*Tags:\s*#.*$', '', clean_desc, flags=re.DOTALL | re.IGNORECASE).strip()
+            # Collapse excessive empty lines
+            clean_desc = re.sub(r'\n{3,}', '\n\n', clean_desc)
             self.description = clean_desc
+
             self.status = data.get("status", "Unknown").title() if data.get("status") else "Unknown"
             self.cover_url = data.get("cover_url", "")
             self.rating = str(data.get("rating", "")) if data.get("rating") is not None else ""
+            self.views = str(data.get("views", "")) if data.get("views") is not None else ""
             self.type = data.get("type", "")
             self.alt_titles = data.get("alt_titles", [])
 
@@ -97,7 +106,13 @@ class ChikariScraper(ChikariBaseEngine):
             self.genres = [g.get("name", "") if isinstance(g, dict) else str(g) for g in genres if g]
 
             tags = data.get("tags", [])
-            self.tags = [t.get("name", "") if isinstance(t, dict) else str(t) for t in tags if t]
+            direct_tags = [t.get("name", "") if isinstance(t, dict) else str(t) for t in tags if t]
+
+            all_tags = []
+            for t in (self.genres + direct_tags + hashtag_tags):
+                if t and t not in all_tags:
+                    all_tags.append(t)
+            self.tags = all_tags
         else:
             soup = self.get_soup(self.series_url)
             h1 = soup.find("h1")
