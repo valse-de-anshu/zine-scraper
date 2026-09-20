@@ -422,7 +422,15 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                 core.ui.trigger_revolt_exit(title=getattr(scraper, "title", None) or url)
             fire_notification() # In case it's batch mode and didn't call input
             try:
-                final_title = getattr(scraper, "title", None)
+                final_title = getattr(scraper, "title", None) or getattr(scraper, "name", None)
+                final_dest = getattr(scraper, "folder", None) or getattr(scraper, "target_dir", None) or getattr(scraper, "output_dir", None) or batch_path
+                if final_title or final_dest:
+                    journal.update_active(
+                        url=url,
+                        title=str(final_title).strip() if (final_title and str(final_title).strip() not in ("Unknown", "Videos", "Watch")) else None,
+                        destination=str(final_dest) if final_dest else None
+                    )
+
                 has_downloaded = check_has_downloaded()
                 final_status = "completed" if (has_downloaded or already_up_to_date) else "failed"
                 err_msg = last_error if final_status == "failed" else None

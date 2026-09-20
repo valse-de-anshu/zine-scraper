@@ -1,13 +1,13 @@
 """
 core/journal.py
 ---------------
-Download Journal & Structured Session Telemetry Subsystem.
+Download Journal & Structured Telemetry Subsystem.
 Maintains high-fidelity, human-readable session journals and feeds rich metadata,
 user selections, destination paths, and download progress into:
-  1. Logs/Downlode 💩/session_YYYY-MM-DD_HH-MM-SS.json (brand new with each session)
-  2. Logs/Downlode 💩/latest_session.json (mirror of the active session)
-  3. Logs/Downlode 💩/Download History.json (enriched master download history)
-  4. Logs/Downlode 💩/Batch History.json (enriched batch download history)
+  1. Logs/Downlode 💩/Download History.json (master enriched download history)
+  2. Logs/Downlode 💩/Batch History.json (master enriched batch history)
+  3. Logs/Downlode 💩/latest_session.json (mirror of active/latest session)
+  4. Logs/Downlode 💩/Sessions/session_YYYY-MM-DD_HH-MM-SS.json (archived sessions)
 """
 
 import os
@@ -17,7 +17,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from core.paths import PathAuthority
 
@@ -33,6 +33,66 @@ def _strip_ansi_and_rich(text: str) -> str:
     return cleaned.strip()
 
 
+def clean_site_and_category(site: Optional[str]) -> Tuple[str, str]:
+    """Returns (friendly_site_name, category_name)."""
+    if not site:
+        return "Unknown", "Media"
+    parts = site.replace("/", ".").split(".")
+    raw_slug = parts[-1].lower()
+
+    # Prettify category
+    cat = "Media"
+    if len(parts) >= 2:
+        raw_cat = parts[-2]
+        cat = raw_cat.replace("_", " ").title()
+        cat = cat.replace("Sfw", "SFW").replace("Nsfw", "NSFW").replace("Tts", "TTS")
+
+    site_map = {
+        "weebcentral": ("WeebCentral", "Hybrid Comics"),
+        "yt_music": ("YouTube Music", "Music"),
+        "youtube_music": ("YouTube Music", "Music"),
+        "youtube": ("YouTube", "Video"),
+        "pornhub": ("PornHub", "Video"),
+        "nhentai": ("NHentai", "Doujinshi"),
+        "asmhentai": ("AsmHentai", "Doujinshi"),
+        "hentai18": ("Hentai18", "Adult Webtoons"),
+        "hentai20": ("Hentai20", "Adult Webtoons"),
+        "manga18fx": ("Manga18fx", "Adult Webtoons"),
+        "manhwaus": ("ManhwaUS", "Adult Webtoons"),
+        "asurascans": ("AsuraScans", "Manhwa"),
+        "omegascans": ("OmegaScans", "Manhwa"),
+        "projectsuki": ("ProjectSuki", "Manhwa"),
+        "manhuaplus": ("ManhuaPlus", "Manhwa"),
+        "mangak": ("MangaK", "Hybrid Comics"),
+        "kunmanga": ("KunManga", "Hybrid Comics"),
+        "fanfox": ("FanFox", "Hybrid Comics"),
+        "topmanhua": ("TopManhua", "Hybrid Comics"),
+        "mangadex": ("MangaDex", "Manga"),
+        "novelarchive": ("NovelArchive", "Novels"),
+        "hanime": ("Hanime", "Adult Anime"),
+        "hanime_red": ("HanimeRed", "Adult Anime"),
+        "hentaihaven": ("HentaiHaven", "Adult Anime"),
+        "hentaihaven_co": ("HentaiHavenCo", "Adult Anime"),
+        "hentaicity": ("HentaiCity", "Adult Anime"),
+        "hstream": ("Hstream", "Adult Anime"),
+        "oppai_stream": ("OppaiStream", "Adult Anime"),
+        "oppai_stream_toon": ("OppaiStreamToon", "Adult Webtoons"),
+        "hentaimama": ("Hentaimama", "Adult Anime"),
+        "ohentai": ("OHentai", "Adult Anime"),
+        "breeze_tts": ("Breeze TTS", "AI Audiobook"),
+        "qwen_tts": ("Qwen TTS", "AI Audiobook"),
+        "spotify": ("Spotify", "Music"),
+        "bandcamp": ("Bandcamp", "Music"),
+        "soundcloud": ("SoundCloud", "Music")
+    }
+
+    if raw_slug in site_map:
+        return site_map[raw_slug]
+
+    friendly = raw_slug.replace("_", " ").title()
+    return friendly, cat
+
+
 class DownloadJournal:
     _instance: Optional["DownloadJournal"] = None
 
@@ -40,9 +100,13 @@ class DownloadJournal:
         self._paths = PathAuthority()
         self._journal_dir = self._paths.get_download_logs_root()
         self._journal_dir.mkdir(parents=True, exist_ok=True)
+        self._sessions_dir = self._paths.get_sessions_dir()
+        self._sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        self._migrate_stray_sessions()
 
         self.session_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.session_file = self._journal_dir / f"session_{self.session_id}.json"
+        self.session_file = self._sessions_dir / f"session_{self.session_id}.json"
         self.latest_file = self._journal_dir / "latest_session.json"
 
         hist_file = self._paths.get_history_file()
@@ -79,6 +143,19 @@ class DownloadJournal:
 
         DownloadJournal._instance = self
         self._save_session()
+
+    def _migrate_stray_sessions(self):
+        """Moves any loose session_*.json files in Logs/Downlode 💩 into Sessions/."""
+        try:
+            for item in self._journal_dir.glob("session_*.json"):
+                if item.is_file():
+                    target = self._sessions_dir / item.name
+                    if not target.exists():
+                        item.rename(target)
+                    else:
+                        item.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     @classmethod
     def get_active(cls) -> "DownloadJournal":
@@ -117,11 +194,15 @@ class DownloadJournal:
         destination: Optional[Any] = None,
         chosen_options: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        flags: Optional[List[str]] = None
+        flags: Optional[List[str]] = None,
+        category: Optional[str] = None
     ) -> Dict[str, Any]:
         """Initializes a new download journal entry for the current URL."""
         from core.history import HistoryLayer
         canonical_url = HistoryLayer.normalize_url(url)
+
+        friendly_site, inferred_cat = clean_site_and_category(site)
+        final_cat = category or inferred_cat
 
         # Check if already registered in this session
         existing = next((d for d in self.downloads if d.get("canonical_url") == canonical_url), None)
@@ -134,9 +215,10 @@ class DownloadJournal:
         entry: Dict[str, Any] = {
             "url": url,
             "canonical_url": canonical_url,
-            "site": site or "Unknown",
+            "site": friendly_site,
+            "category": final_cat,
             "title": title or "Unknown",
-            "menu_mode": menu_mode or ("Batch" if self.session_type == "Batch" else "Quick Grab"),
+            "menu_mode": menu_mode or ("Batch" if self.session_type == "Batch" else "Quick grab"),
             "execution_mode": "CLI" if (flags and self.session_type == "CLI") else self.session_type,
             "flags": list(flags) if flags else [],
             "destination": dest_str,
@@ -182,6 +264,11 @@ class DownloadJournal:
                 for f in v:
                     if f not in existing_f:
                         existing_f.append(f)
+            elif k == "site":
+                friendly_site, inferred_cat = clean_site_and_category(v)
+                target["site"] = friendly_site
+                if not target.get("category") or target.get("category") == "Media":
+                    target["category"] = inferred_cat
             else:
                 target[k] = v
 
@@ -202,7 +289,7 @@ class DownloadJournal:
             options["quality"] = clean_l
         elif "format" in p_lower:
             options["format"] = clean_l
-        elif "download" in p_lower or "mode" in p_lower:
+        elif "download" in p_lower or "mode" in p_lower or "menu" in p_lower:
             options["mode_selection"] = clean_l
 
         self._save_session()
@@ -226,7 +313,9 @@ class DownloadJournal:
             return
 
         items = target.setdefault("items", [])
-        id_str = str(item_id)
+        id_str = str(item_id).strip()
+        if not id_str:
+            return
 
         existing_item = next((it for it in items if it.get("id") == id_str), None)
         if existing_item:
@@ -251,7 +340,7 @@ class DownloadJournal:
         summary["downloaded"] = sum(1 for it in items if it.get("status") == "downloaded")
         summary["already_exists"] = sum(1 for it in items if it.get("status") in ("already_exists", "existing"))
         summary["failed"] = sum(1 for it in items if it.get("status") == "failed")
-        summary["total_items"] = len(items)
+        summary["total_items"] = max(summary.get("total_items", 0), len(items))
 
         self._save_session()
 
@@ -302,6 +391,7 @@ class DownloadJournal:
         entry = data.setdefault(url, {})
         entry["title"] = target.get("title") or entry.get("title") or "Unknown"
         entry["site"] = target.get("site") or entry.get("site") or "Unknown"
+        entry["category"] = target.get("category") or entry.get("category") or "Media"
         entry["mode"] = target.get("menu_mode") or entry.get("mode") or "Vacuum"
         entry["date"] = target.get("finish_time") or target.get("start_time") or entry.get("date")
 
@@ -351,6 +441,7 @@ class DownloadJournal:
         entry["title"] = target.get("title") or entry.get("title") or "Unknown"
         entry["url"] = url
         entry["site"] = target.get("site") or entry.get("site") or "Unknown"
+        entry["category"] = target.get("category") or entry.get("category") or "Media"
         entry["mode"] = target.get("menu_mode") or entry.get("mode") or "Batch"
         entry["status"] = target.get("status", "completed")
         entry["date"] = target.get("finish_time") or target.get("start_time") or entry.get("date")
@@ -413,8 +504,11 @@ class DownloadJournal:
                 target["destination"] = v
                 target.setdefault("metadata", {})["Location"] = v
             elif k_lower == "source":
-                target["site"] = v
-                target.setdefault("metadata", {})["Source"] = v
+                friendly_site, inferred_cat = clean_site_and_category(v)
+                target["site"] = friendly_site
+                target.setdefault("metadata", {})["Source"] = friendly_site
+                if not target.get("category") or target.get("category") == "Media":
+                    target["category"] = inferred_cat
             elif k_lower in ("channel", "artist", "author", "creator", "model"):
                 target.setdefault("metadata", {})[k] = v
                 if target.get("title") in ("Unknown", "Videos", "Watch", None):
@@ -425,6 +519,9 @@ class DownloadJournal:
                     target["title"] = v
             elif "total" in k_lower:
                 target.setdefault("metadata", {})[k] = v
+                m_num = re.search(r"\d+", v)
+                if m_num:
+                    target.setdefault("summary", {})["total_items"] = int(m_num.group(0))
             elif k_lower in ("existing", "cover"):
                 target.setdefault("metadata", {})[k] = v
 
@@ -439,10 +536,11 @@ class DownloadJournal:
             self.record_item(target["url"], stem, title=stem, filename=fn, status="already_exists")
             return
 
-        # 3. Newly downloaded item: e.g. "● hate u love u.flac"
+        # 3. Newly downloaded item: e.g. "● hate u love u.flac" or "● Chapter 140"
         m_dl = re.search(r"^[●✔✦]\s*([^\n]+)", line)
         if m_dl:
             content = m_dl.group(1).strip()
+            c_lower = content.lower()
             ignore_keywords = (
                 "subtitle", "lyrics", "download finished", "connection", "starting",
                 "done with", "progress", "result", "warning", "info", "skipping",
@@ -452,7 +550,9 @@ class DownloadJournal:
             if not any(x in c_lower for x in ignore_keywords):
                 fn = content
                 stem = Path(fn).stem
-                self.record_item(target["url"], stem, title=stem, filename=fn, status="downloaded")
+                m_ch = re.match(r"(?:Chapter|Ch\.?|Episode|Ep\.?|Track)?\s*(\d+(?:\.\d+)?)", fn, re.I)
+                item_id = m_ch.group(1) if m_ch else stem
+                self.record_item(target["url"], item_id, title=fn, filename=fn, status="downloaded")
                 return
 
     def finish_session(self):

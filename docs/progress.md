@@ -1,3 +1,28 @@
+# Progress Report - September 20, 2026 (Professional Download Journal Overhaul & Sessions Subfolder Isolation)
+
+- **Sessions Subfolder Isolation & Clean Downlode 💩 Directory Layout (`core/paths.py`, `core/journal.py`):**
+  - **Identified Problem**:
+    - `Logs/Downlode 💩/` was becoming cluttered with dozens of loose timestamped `session_YYYY-MM-DD_HH-MM-SS.json` files alongside `Download History.json` and `Batch History.json`, making navigation difficult.
+    - `consume_terminal_line` had an undefined variable (`c_lower`) when parsing downloaded items, causing terminal pipe telemetry to silently skip.
+  - **Resolution**:
+    - **Isolated `Sessions/` Subdirectory (`core/paths.py:get_sessions_dir()`, `core/journal.py`)**:
+      - Historical session transcripts are automatically archived into `Logs/Downlode 💩/Sessions/`.
+      - Stray session files at the root of `Logs/Downlode 💩/` are automatically migrated on startup.
+      - The root `Logs/Downlode 💩/` stays clean and uncluttered with only:
+        - `Download History.json` (Master enriched media download history)
+        - `Batch History.json` (Master enriched batch execution history)
+        - `latest_session.json` (Active/latest session mirror)
+        - `Sessions/` (Subfolder containing all archived individual sessions)
+    - **Clean Site & Category Metadata Mapping (`clean_site_and_category`)**:
+      - Replaced raw package slugs (e.g. `1_SFW.HYBRID_COMICS.weebcentral`) with clean human-readable site names (e.g. `WeebCentral`, `YouTube Music`, `NHentai`) and category names (`Hybrid Comics`, `Music`, `Doujinshi`, `Manhwa`, `Adult Anime`, `Video`, `Novels`).
+    - **Robust Terminal Output Pipe & Item Telemetry**:
+      - Fixed `c_lower` variable definition in `consume_terminal_line`.
+      - Expanded key-value header parsing to extract `Location`, `Source`, `Artist`, `Album`, `Author`, `Channel`, `Series`, `Menu`, `Quality`, `Format`, `Total Chapters/Tracks/Videos`, `Existing`, `Cover` in real-time.
+    - **Direct Scraper Instance Sync (`core/funnel.py`)**:
+      - Synced final scraper title, series URL, and output folder into `journal.update_active` upon completion.
+
+---
+
 # Progress Report - September 20, 2026 (Fix: Engine Temp Directory Cleanup via Try-Finally & Playwright Log Redirection)
 
 - **Chapter Temp Directory Cleanup in `try...finally` (All Comic/Manga/Webtoon/Doujin Engines):**

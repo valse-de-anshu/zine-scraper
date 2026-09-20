@@ -160,6 +160,12 @@ class PathAuthority:
                 pass
         return self._download_logs_root
 
+    def get_sessions_dir(self) -> Path:
+        """Directory for individual archived session journals (Logs/Downlode 💩/Sessions)."""
+        p = self.get_download_logs_root() / "Sessions"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
     # ── Library structure paths (all rooted at downloads_root) ──────────────
 
     def get_quick_grab_root(self) -> Path:
