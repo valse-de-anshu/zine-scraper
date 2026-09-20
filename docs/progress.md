@@ -1,3 +1,27 @@
+# Progress Report - September 20, 2026 (Feature: Zero-Friction Toon/Comic Automation & Centralized Settings Configurator)
+
+- **Zero-Friction Ingestion across 22 Comic, Manga, Manhwa, Novel, Doujinshi & Webtoon Scrapers (`core/ui.py`, 22 `location.py` files):**
+  - **Identified Problem**:
+    - Scrapers for Manga, Manhwa, Novels, Doujinshi, and Webtoons prompted the user through a redundant 3-step interactive TUI loop (`SFW vs NSFW` -> `Ongoing vs Completed` -> `Default vs Custom Location`) for every single link.
+    - Websites already provide metadata tags and status automatically, making human prompts redundant and preventing frictionless 100+ URL queue automation.
+  - **Resolution**:
+    - **Streamlined Non-Blocking Location Delegation (`core/ui.py:get_toon_save_path`)**:
+      - Completely removed the 3-step blocking loop.
+      - Resolves save path immediately to `~/Downloads/Zine/Quick grab` for Quick Grab mode or `~/Downloads/Zine/Vacuum/<Site>` for Vacuum mode.
+      - Standardized all 22 `location.py` files to cleanly delegate to `get_toon_save_path`.
+
+- **Permanent Media & Automation Settings Configurator (`core/config.py`, `core/settings_tui.py`):**
+  - **Centralized Preferences**:
+    - Added global media configuration options:
+      - `Novel Output Format` [TXT / EPUB / PDF / All] (`novel_format`)
+      - `Download Cover Art` [Yes / No] (`download_cover`)
+      - `Video Quality Preset` [Best / 1080p / 720p / 480p] (`default_video_quality`)
+      - `Audio Download Format` [MP3 / FLAC / OPUS] (`default_audio_format`)
+      - `Duplicate File Action` [Skip Existing / Overwrite] (`duplicate_behavior`)
+    - Added interactive `BoxSelector` submenus in `SettingsSelector` for clean, single-panel configuration.
+
+---
+
 # Progress Report - September 20, 2026 (Architecture Alignment: Quick Grab Flat Access & Single-Chapter Isolation Across 22 Scrapers)
 
 - **Quick Grab vs. Vacuum Architecture Alignment (`core/ui.py`, 22 `workflow.py` files):**

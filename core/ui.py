@@ -1861,123 +1861,21 @@ def get_video_save_path(title: str, store_layer) -> Optional[Path]:
 
 def get_toon_save_path(url: str, scraper: Any, is_batch: bool, batch_path: Optional[Path], default_root: Path, store_layer: Any) -> Optional[Path]:
     if batch_path is not None:
-        return batch_path
+        return Path(batch_path)
 
     library_root = default_root.parent
     site_folder = default_root.name
 
-    if is_batch:
-        return library_root / site_folder
+    if library_root.name == "Quick grab":
+        return default_root
 
-    current_menu = library_root.name
-    
-    if getattr(scraper, "title", None):
-        toon_name = scraper.title
-    else:
-        url_parts = [p for p in url.strip('/').split('/') if p]
-        if "chapter" not in url.lower() and "-ch-" not in url.lower():
-            toon_name = url_parts[-1] if url_parts else "unknown"
-        else:
-            toon_name = url_parts[-2] if len(url_parts) > 1 else url_parts[-1]
-    
-    def draw_header():
-        startup_clear()
-        print_banner()
-        console.print(f"[menu]{'Menu':<12}:[/menu] [site]{current_menu}[/site]", overflow="ellipsis", no_wrap=True)
-        console.print(f"[menu]{'URL':<12}:[/menu] [site]{url}[/site]", overflow="ellipsis", no_wrap=True)
-        console.print(f"[menu]{'Toon':<12}:[/menu] [title]{toon_name}[/title]", overflow="ellipsis", no_wrap=True)
-        console.print("")
-
-    state = 0
-    type_choice = None
-    status_choice = None
-    
-    while True:
-        if state == 0:
-            draw_header()
-            choice = Selector([("SFW", "SFW"), ("NSFW", "NSFW"), ("Back", "BACK")], "Type").select()
-            if choice == "BACK":
-                return None
-            if choice == "=":
-                current_menu = "Quick grab" if current_menu == "Vacuum" else "Vacuum"
-                library_root = library_root.parent / current_menu
-                continue
-            type_choice = choice
-            state = 1
-        elif state == 1:
-            draw_header()
-            console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
-            choice = Selector([("Ongoing", "OnGoing"), ("Complete", "Completed"), ("Back", "BACK")], "Status").select()
-            if choice == "BACK":
-                state = 0
-                continue
-            if choice == "=":
-                current_menu = "Quick grab" if current_menu == "Vacuum" else "Vacuum"
-                library_root = library_root.parent / current_menu
-                continue
-            status_choice = choice
-            state = 2
-        elif state == 2:
-            draw_header()
-            console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
-            console.print(f"[menu]{'Status':<12}:[/menu] [site]{status_choice}[/site]")
-            choice = Selector([
-                ("Use Default Location", "DEFAULT"),
-                ("Select Custom Location", "CUSTOM"),
-                ("Back", "BACK")
-            ], "Save Location").select()
-            if choice == "BACK":
-                state = 1
-                continue
-            if choice == "=":
-                current_menu = "Quick grab" if current_menu == "Vacuum" else "Vacuum"
-                library_root = library_root.parent / current_menu
-                continue
-            elif choice == "DEFAULT":
-                # Clear options to prevent them from staying on screen
-                draw_header()
-                console.print(f"[menu]{'Type':<12}:[/menu] [site]{type_choice}[/site]")
-                console.print(f"[menu]{'Status':<12}:[/menu] [site]{status_choice}[/site]")
-                console.print(f"[menu]{'Location':<12}:[/menu] [site]Default[/site]\n")
-                if scraper:
-                    setattr(scraper, "classification_type", type_choice)
-                    setattr(scraper, "publication_status", status_choice)
-                return library_root / site_folder
-            elif choice == "CUSTOM":
-                state = 3
-        elif state == 3:
-            console.print("\n[menu]Enter Folder Path (Empty to cancel): [/menu]", end="")
-            sys.stdout.write(get_theme_input_ansi())
-            sys.stdout.flush()
-            custom_path_str = input().strip()
-            sys.stdout.write("\033[0m")
-            sys.stdout.flush()
-            if not custom_path_str:
-                clear_lines(2)
-                state = 2
-                continue
-            
-            custom_path = Path(custom_path_str)
-            is_valid, err_msg = store_layer.validate_directory(custom_path)
-            if not is_valid:
-                console.print(f"\n[error]Invalid directory.[/error]")
-                console.print(f"[warning]Reason:\n{err_msg}[/warning]")
-                time.sleep(2)
-                clear_lines(6)
-                continue
-            
-            try:
-                if scraper:
-                    setattr(scraper, "classification_type", type_choice)
-                    setattr(scraper, "publication_status", status_choice)
-                final_path = store_layer.create_directory(custom_path / site_folder)
-                clear_lines(2)
-                return final_path
-            except Exception as e:
-                console.print(f"\n[error]Error creating directory: {e}[/error]")
-                time.sleep(2)
-                clear_lines(4)
-                continue
+    target_dir = library_root / site_folder
+    if store_layer:
+        try:
+            store_layer.create_directory(target_dir)
+        except Exception:
+            pass
+    return target_dir
 
 # Global monkey-patch for requests to handle connection losses instantly
 try:

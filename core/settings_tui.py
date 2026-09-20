@@ -922,6 +922,11 @@ def launch_settings_tui():
         curr_theme = config.get("theme", "tokyo-night-storm")
         curr_tips = "Show" if config.get("show_tips", True) else "Hide"
         curr_check = config.get("internet_check_interval", 10)
+        curr_novel_fmt = config.get("novel_format", "TXT")
+        curr_cover_art = "Yes" if config.get("download_cover", True) else "No"
+        curr_vid_qual = config.get("default_video_quality", "1080p")
+        curr_audio_fmt = config.get("default_audio_format", "MP3")
+        curr_dup_act = config.get("duplicate_behavior", "Skip Existing")
         curr_sub_mode = config.get("ai_subtitles_mode", "Both")
         curr_sub_model = config.get("ai_subtitles_model", "~/Models/faster-whisper-large-v3-turbo")
         curr_sub_vram = config.get("ai_subtitles_vram", "6GB (INT8)")
@@ -940,21 +945,76 @@ def launch_settings_tui():
         curr_tts_ref_audio_display = _short_path(curr_tts_ref_audio) if curr_tts_ref_audio else "None"
         
         options = [
-            (("Library Root Path",      _short_path(curr_download)), "download_base"),
-            (("Music Quick-Grab Path",  _short_path(curr_music_display)), "music_quick_grab_path"),
-            (("Chapter Download Delay", f"{curr_delay}s"), "chapter_delay"),
-            (("Connection Check Delay", f"{curr_check}s"), "internet_check_interval"),
-            (("Whisper AI Subtitles",   "▶ Configure Options"), "submenu_whisper"),
+            (("Library Root Path",        _short_path(curr_download)), "download_base"),
+            (("Music Quick-Grab Path",    _short_path(curr_music_display)), "music_quick_grab_path"),
+            (("Chapter Download Delay",   f"{curr_delay}s"), "chapter_delay"),
+            (("Connection Check Delay",   f"{curr_check}s"), "internet_check_interval"),
+            (("Novel Output Format",      curr_novel_fmt), "novel_format"),
+            (("Download Cover Art",       curr_cover_art), "download_cover"),
+            (("Video Quality Preset",     curr_vid_qual), "default_video_quality"),
+            (("Audio Download Format",    curr_audio_fmt), "default_audio_format"),
+            (("Duplicate File Action",    curr_dup_act), "duplicate_behavior"),
+            (("Whisper AI Subtitles",     "▶ Configure Options"), "submenu_whisper"),
             (("Breeze TTS 2 (GGUF / C++)","▶ Configure Options"), "submenu_breeze"),
-            (("Qwen Audiobooks TTS",    "▶ Configure Options"), "submenu_qwen"),
-            (("Color Theme",            curr_theme), "theme"),
-            (("Quick Guide",            curr_tips), "show_tips"),
+            (("Qwen Audiobooks TTS",      "▶ Configure Options"), "submenu_qwen"),
+            (("Color Theme",              curr_theme), "theme"),
+            (("Quick Guide",              curr_tips), "show_tips"),
         ]
 
         choice = SettingsSelector(options).select()
 
         if choice in ("ESC", None, "CTRL_C"):
             break
+
+        elif choice == "novel_format":
+            fmt_opts = [
+                ("Plain Text (.txt)                   ", "TXT"),
+                ("EPUB E-Book (.epub)                 ", "EPUB"),
+                ("PDF Document (.pdf)                 ", "PDF"),
+                ("All Formats (TXT + EPUB + PDF)      ", "All"),
+            ]
+            new_fmt = BoxSelector(fmt_opts, "Select Novel Format").select()
+            if new_fmt and new_fmt != "ESC":
+                config.set("novel_format", new_fmt)
+
+        elif choice == "download_cover":
+            cov_opts = [
+                ("Yes (Download and save cover art)", True),
+                ("No  (Skip cover art downloads)  ", False),
+            ]
+            new_cov = BoxSelector(cov_opts, "Download Cover Art").select()
+            if new_cov is not None and new_cov != "ESC":
+                config.set("download_cover", new_cov)
+
+        elif choice == "default_video_quality":
+            qual_opts = [
+                ("Best Available Quality", "Best"),
+                ("1080p (Full HD)       ", "1080p"),
+                ("720p (HD)             ", "720p"),
+                ("480p (Standard)       ", "480p"),
+            ]
+            new_qual = BoxSelector(qual_opts, "Select Video Quality").select()
+            if new_qual and new_qual != "ESC":
+                config.set("default_video_quality", new_qual)
+
+        elif choice == "default_audio_format":
+            aud_opts = [
+                ("MP3 (320kbps Standard)  ", "MP3"),
+                ("FLAC (Lossless Audio)    ", "FLAC"),
+                ("OPUS (High Efficiency)   ", "OPUS"),
+            ]
+            new_aud = BoxSelector(aud_opts, "Select Audio Format").select()
+            if new_aud and new_aud != "ESC":
+                config.set("default_audio_format", new_aud)
+
+        elif choice == "duplicate_behavior":
+            dup_opts = [
+                ("Skip Existing (Prevent re-downloading) ", "Skip Existing"),
+                ("Overwrite (Re-download fresh copies)   ", "Overwrite"),
+            ]
+            new_dup = BoxSelector(dup_opts, "Duplicate File Action").select()
+            if new_dup and new_dup != "ESC":
+                config.set("duplicate_behavior", new_dup)
 
         elif choice == "submenu_whisper":
             whisper_settings_tui()

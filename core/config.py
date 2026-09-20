@@ -17,9 +17,15 @@ DEFAULT_CONFIG = {
     "download_base": "",  # If empty, defaults to PathAuthority downloads root (~/Downloads/Zine)
     "music_quick_grab_path": "", # Custom music quick grab path (falls back if unmounted/invalid)
     "chapter_delay": 1.0,
+    "internet_check_interval": 10,
     "first_launch": True,
     "show_tips": True,
     "playlist_max_items": 100,
+    "novel_format": "TXT",
+    "download_cover": True,
+    "default_video_quality": "1080p",
+    "default_audio_format": "MP3",
+    "duplicate_behavior": "Skip Existing",
     "ai_subtitles_vram": "6GB (INT8)",
     "ai_target_lang": "English",
     "ai_subtitles_mode": "Both",
