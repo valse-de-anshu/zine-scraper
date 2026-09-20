@@ -47,6 +47,9 @@ if len(sys.argv) > 1:
     elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to exit...", force=True)
         sys.exit(2)
 
 # Automatically clean temporary buffers, old session logs, and traces on startup
@@ -82,6 +85,9 @@ if __name__ == "__main__":
         pass
     except Exception as e:
         record_error_log(e, context={"args": sys.argv[1:], "cwd": os.getcwd()})
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to exit...", force=True)
         raise
     finally:
         try:

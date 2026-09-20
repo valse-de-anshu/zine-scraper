@@ -127,6 +127,7 @@ def handle_vacuum_queue(
     console.print(f"[info]Queue: {len(urls)} URLs loaded.[/info]")
     console.print()
 
+    queue_has_failures = False
     # Process each URL sequentially — no global path override, each scraper picks its own vacuum destination
     for raw_url in list(urls):
         raw_url_clean = raw_url.strip()
@@ -169,8 +170,6 @@ def handle_vacuum_queue(
             batch_quick_grab = False
             chapter_limit = None
 
-        canonical_url = HistoryLayer.normalize_url(url)
-
         # Route without a global batch_path — let each scraper decide its own vacuum/quick-grab folder
         success = route_url(
             url,
@@ -197,15 +196,23 @@ def handle_vacuum_queue(
                     logging.error(f"Failed to update {target_file.name}: {e}")
             console.print(f"[success]✔ Done: {raw_url_clean}[/success]\n")
         else:
+            queue_has_failures = True
             console.print(f"[error]✘ Failed: {raw_url_clean}[/error]\n")
+            if sys.stdin.isatty():
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to continue queue...", force=True)
 
         import core.ui
         if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
             core.ui.trigger_revolt_exit()
 
     if sys.stdin.isatty():
-        from core.ui import wait_for_return
-        wait_for_return("Press Enter to return...")
+        if queue_has_failures:
+            from core.ui import wait_for_error
+            wait_for_error("Queue finished with failures. Press Enter to return...", force=True)
+        else:
+            from core.ui import wait_for_return
+            wait_for_return("Press Enter to return...")
 
 
 # Backward-compat alias so any external callers still work
@@ -254,9 +261,9 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
                 extracted_title = getattr(scraper, "title", "Unknown")
         except Exception as e:
             console.print(f"[error]Failed to extract metadata: {escape(str(e))}[/error]")
-            if not is_batch and sys.stdin.isatty():
+            if sys.stdin.isatty():
                 from core.ui import wait_for_error
-                wait_for_error("Press Enter to return...")
+                wait_for_error("Press Enter to return...", force=True)
             return False
 
     if not extracted_title or extracted_title == "Unknown":
@@ -389,9 +396,9 @@ def handle_only_metadata(url: str, hist_layer: HistoryLayer, store_layer: Storag
         return True
     else:
         console.print(f"[error]Failed to write metadata.json to {target_folder}[/error]")
-        if not is_batch and sys.stdin.isatty():
+        if sys.stdin.isatty():
             from core.ui import wait_for_error
-            wait_for_error("Press Enter to return...")
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
 
@@ -427,22 +434,16 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         from core.ui import print_failure_box, wait_for_error
         record_error_log("Unsupported URL or command", context={"url": url})
         print_failure_box(safe_url, reason="Domain or URL format is not supported by any active scraper in Zine.")
-        if not is_batch:
-            if sys.stdin.isatty() and not getattr(scraper, "_is_cli", False):
-                wait_for_error("Press Enter to return...")
-        else:
-            time.sleep(1.5)
+        if sys.stdin.isatty():
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
     site_folder = get_site_folder(url)
     if not site_folder:
         console.print(f"[warning]Unsupported site folder for URL: {safe_url}[/warning]")
-        if not is_batch:
-            if sys.stdin.isatty():
-                from core.ui import wait_for_error
-                wait_for_error("Press Enter to return...")
-        else:
-            time.sleep(1.5)
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
     if only_metadata:
@@ -453,12 +454,9 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
     except Exception as e:
         logging.error(f"Failed to import TUI module for {site_folder}: {e}")
         console.print(f"[error]Site handler error for {site_folder}: {e}[/error]")
-        if not is_batch:
-            if sys.stdin.isatty():
-                from core.ui import wait_for_error
-                wait_for_error("Press Enter to return...")
-        else:
-            time.sleep(1.5)
+        if sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
     from core.journal import DownloadJournal
@@ -647,9 +645,9 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                 hist_layer.mark_downloaded = original_mark_downloaded
             
         has_downloaded = check_has_downloaded()
-        if not (has_downloaded or already_up_to_date) and not is_batch and sys.stdin.isatty():
+        if not (has_downloaded or already_up_to_date) and sys.stdin.isatty():
             from core.ui import wait_for_error
-            wait_for_error("Press Enter to return...")
+            wait_for_error("Press Enter to return...", force=True)
 
         logging.info(f"Finished TUI execution for: {url}")
         return True
@@ -690,10 +688,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             pass
             
         console.print(f"[error]Failed to load TUI for {escape(str(site_folder))}: {escape(str(e))}[/error]")
-        if not is_batch:
-            wait_for_error("Press Enter to return...")
-        else:
-            time.sleep(1.5)
+        if sys.stdin.isatty():
+            wait_for_error("Press Enter to return...", force=True)
         return False
 
 def _get_tui_key() -> str:
@@ -1200,6 +1196,9 @@ def main():
         elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
             from core.cli_help import handle_unknown_flag
             handle_unknown_flag(raw_arg)
+            if sys.stdin.isatty():
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to exit...", force=True)
             sys.exit(2)
 
     first_run = True
@@ -1352,7 +1351,7 @@ def main():
                 # Headless if launched via CLI args (no interactive TUI needed in that path)
                 is_headless = bool(cli_args)
 
-                route_url(
+                success = route_url(
                     clean_candidate,
                     history,
                     storage,
@@ -1366,6 +1365,9 @@ def main():
                 )
 
                 if cli_args:
+                    if not success and sys.stdin.isatty():
+                        from core.ui import wait_for_error
+                        wait_for_error("Press Enter to exit...", force=True)
                     break
 
         except KeyboardInterrupt:
