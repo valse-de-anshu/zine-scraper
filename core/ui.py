@@ -236,6 +236,13 @@ _REVOLT_CURRENT_DONE = False
 _REVOLT_EXIT_LOCK = threading.Lock()
 _REVOLT_EXITING = False
 
+_TRUNCATE_ACTIVE = False
+_TRUNCATE_LIMIT = 0
+_TRUNCATE_TRIGGERING = False
+_TRUNCATE_INPUT_BUFFER = ""
+_TRUNCATE_TRIGGERED_DURING_ITEM = False
+_TRUNCATE_CURRENT_DONE = False
+
 _tty_fd = None
 _old_tty_settings = None
 _is_custom_tty_fd = False
@@ -380,33 +387,58 @@ def global_internet_monitor():
 _monitor_thread = threading.Thread(target=global_internet_monitor, daemon=True)
 _monitor_thread.start()
 
+class TruncateStopException(Exception):
+    """Raised when Ctrl+T early stop limit is reached to gracefully break out of scraping loops."""
+    pass
+
 def inject_revolt_into_renderable(renderable):
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _REVOLT_INPUT_BUFFER
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERING, _TRUNCATE_INPUT_BUFFER
     from rich.tree import Tree
     from rich.console import Group
     from rich.panel import Panel
 
-    if not (_REVOLT_TRIGGERING or _REVOLT_ACTIVE):
+    has_revolt = (_REVOLT_TRIGGERING or _REVOLT_ACTIVE)
+    has_truncate = (_TRUNCATE_TRIGGERING or _TRUNCATE_ACTIVE)
+
+    if not (has_revolt or has_truncate):
         if isinstance(renderable, Tree) and renderable.children:
             renderable.children = [c for c in renderable.children if not getattr(c, "_is_revolt_node", False)]
         return renderable
 
-    if _REVOLT_TRIGGERING:
-        revolt_msg = (
-            f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_REVOLT_INPUT_BUFFER}[/selected]█\n"
-            f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
-        )
+    if has_truncate:
+        tag_title = "[sexy_pink]◆ Stop Early (Ctrl+T)[/sexy_pink]"
+        panel_title = "[sexy_pink]Stop Early (Ctrl+T)[/sexy_pink]"
+        if _TRUNCATE_TRIGGERING:
+            msg = (
+                f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_TRUNCATE_INPUT_BUFFER}[/selected]█\n"
+                f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
+            )
+        else:
+            msg = (
+                f"[warning]Stopping after {_TRUNCATE_LIMIT} more file(s) and wrapping up...[/warning]"
+                if _TRUNCATE_LIMIT > 0
+                else "[warning]Stopping after current file and wrapping up...[/warning]"
+            )
     else:
-        revolt_msg = (
-            f"[warning]Shutting down after {_REVOLT_LIMIT} more file(s)[/warning]"
-            if _REVOLT_LIMIT > 0
-            else "[warning]Shutting down after current file[/warning]"
-        )
+        tag_title = "[sexy_pink]◆ Revolt (Ctrl+R)[/sexy_pink]"
+        panel_title = "[sexy_pink]Revolt (Ctrl+R)[/sexy_pink]"
+        if _REVOLT_TRIGGERING:
+            msg = (
+                f"[unselected]How many more downloads? (0 = current only):[/unselected] [selected]{_REVOLT_INPUT_BUFFER}[/selected]█\n"
+                f"[unselected]Press Enter to confirm, ESC/Empty to cancel[/unselected]"
+            )
+        else:
+            msg = (
+                f"[warning]Shutting down after {_REVOLT_LIMIT} more file(s)[/warning]"
+                if _REVOLT_LIMIT > 0
+                else "[warning]Shutting down after current file[/warning]"
+            )
 
     if isinstance(renderable, Tree):
-        node = Tree("[sexy_pink]◆ Revolt[/sexy_pink]", guide_style="unselected")
+        node = Tree(tag_title, guide_style="unselected")
         node._is_revolt_node = True
-        for line in revolt_msg.split("\n"):
+        for line in msg.split("\n"):
             node.add(line)
         if renderable.children and getattr(renderable.children[0], "_is_revolt_node", False):
             renderable.children[0] = node
@@ -414,8 +446,8 @@ def inject_revolt_into_renderable(renderable):
             renderable.children.insert(0, node)
         return renderable
     else:
-        revolt_panel = Panel(revolt_msg, border_style="warning", title="[sexy_pink]Revolt[/sexy_pink]", title_align="left")
-        return Group(revolt_panel, renderable)
+        panel = Panel(msg, border_style="warning", title=panel_title, title_align="left")
+        return Group(panel, renderable)
 
 def trigger_revolt_exit(title: Optional[str] = None):
     global _REVOLT_EXITING, _LIVE_INSTANCE
@@ -445,8 +477,18 @@ def trigger_revolt_exit(title: Optional[str] = None):
             termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
         except Exception:
             pass
-    console.print("\n[warning]● Revolt shutdown triggered. Exiting cleanly...[/warning]\n")
+    console.print("\n[warning]● Revolt shutdown triggered (Ctrl+R). Exiting cleanly...[/warning]\n")
     sys.stdout.flush()
+
+    # Flush session telemetry and history before exit
+    try:
+        from core.journal import DownloadJournal
+        journal = DownloadJournal.get_active()
+        if journal.current_download:
+            journal.finish_download(journal.current_download.get("url") or "", status="completed")
+        journal.finish_session()
+    except Exception:
+        pass
 
     # Dispatch OS notification for Revolt completion
     try:
@@ -464,20 +506,92 @@ def trigger_revolt_exit(title: Optional[str] = None):
         pass
     os._exit(0)
 
+def trigger_truncate_stop(title: Optional[str] = None):
+    """Gracefully ends current scrape item loop after user-requested limit without terminating process."""
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE, _LIVE_INSTANCE
+    _TRUNCATE_ACTIVE = False
+    _TRUNCATE_LIMIT = 0
+    _TRUNCATE_CURRENT_DONE = False
+
+    if _LIVE_INSTANCE:
+        try:
+            _LIVE_INSTANCE.stop()
+        except Exception:
+            pass
+        _LIVE_INSTANCE = None
+
+    console.show_cursor(True)
+    import sys, os
+    sys.stdout.write("\033[?25h\033[0m\n")
+    sys.stdout.flush()
+    if os.name != 'nt':
+        try:
+            import termios
+            fd = sys.stdin.fileno()
+            attrs = termios.tcgetattr(fd)
+            attrs[3] = attrs[3] | termios.ICANON | termios.ECHO
+            attrs[1] = attrs[1] | termios.OPOST
+            termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+        except Exception:
+            pass
+
+    target_name = f" for [title]{title}[/title]" if title else ""
+    console.print(f"\n[warning]● Stop limit reached (Ctrl+T). Wrapping up{target_name}...[/warning]")
+    console.print("[success]✦ All done! Requested files saved.[/success]\n")
+    sys.stdout.flush()
+
+    # Flush telemetry
+    try:
+        from core.journal import DownloadJournal
+        journal = DownloadJournal.get_active()
+        if journal.current_download:
+            journal.finish_download(journal.current_download.get("url") or "", status="completed")
+    except Exception:
+        pass
+
+    try:
+        from butler.notify import send_os_notification
+        msg = f"Completed requested downloads for {title} and stopped." if title else "Downloads stopped cleanly via Ctrl+T."
+        send_os_notification("Zine Scraper — All Done", msg, is_success=True)
+    except Exception:
+        pass
+
+    try:
+        from core.history import BatchHistoryManager
+        if BatchHistoryManager._instance:
+            BatchHistoryManager._instance.flush()
+    except Exception:
+        pass
+
+    raise TruncateStopException(f"Scrape truncated early via Ctrl+T for {title or 'current item'}")
+
 def check_revolt(title: Optional[str] = None) -> bool:
-    """Check if Revolt mode is active and limit reached. If so, triggers clean exit."""
+    """Check if Revolt or Truncate mode is active and limit reached."""
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_CURRENT_DONE
-    if not _REVOLT_ACTIVE:
-        return False
-    if _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE
+    if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
         trigger_revolt_exit(title=title)
+        return True
+    if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
+        trigger_truncate_stop(title=title)
+        return True
+    return False
+
+def check_truncate(title: Optional[str] = None) -> bool:
+    """Explicit check for Ctrl+T early stop."""
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE
+    if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
+        trigger_truncate_stop(title=title)
         return True
     return False
 
 def global_revolt_listener():
     import time
     import sys
-    global _LIVE_INSTANCE, _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _MENU_ACTIVE, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
+    global _LIVE_INSTANCE, _MENU_ACTIVE
+    global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERING, _REVOLT_INPUT_BUFFER, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERING, _TRUNCATE_INPUT_BUFFER, _TRUNCATE_TRIGGERED_DURING_ITEM, _TRUNCATE_CURRENT_DONE
+
     while True:
         if _LIVE_INSTANCE is None or _MENU_ACTIVE:
             time.sleep(0.04)
@@ -487,8 +601,10 @@ def global_revolt_listener():
         if not key:
             continue
             
-        if not _REVOLT_TRIGGERING:
-            if key == '\x12':  # Ctrl+R
+        is_typing = _REVOLT_TRIGGERING or _TRUNCATE_TRIGGERING
+
+        if not is_typing:
+            if key == '\x12':  # Ctrl+R (Revolt - Shutdown)
                 _REVOLT_TRIGGERING = True
                 _REVOLT_INPUT_BUFFER = ""
                 if _LIVE_INSTANCE is not None:
@@ -496,57 +612,101 @@ def global_revolt_listener():
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-        else:
-            # We are in Revolt typing mode (inline inside Rich Live context)
-            if key in ('\x1b', 'ESC'):  # Escape key cancels Revolt prompt
-                _REVOLT_TRIGGERING = False
-                _REVOLT_INPUT_BUFFER = ""
+            elif key == '\x14':  # Ctrl+T (Truncate - Stop Early & Wrap Up)
+                _TRUNCATE_TRIGGERING = True
+                _TRUNCATE_INPUT_BUFFER = ""
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-            elif key in ('\r', '\n'):  # Enter key confirms
-                val = _REVOLT_INPUT_BUFFER.strip()
-                if val:  # Non-empty input activates Revolt limit
+        else:
+            target_is_truncate = _TRUNCATE_TRIGGERING
+
+            if key in ('\x1b', 'ESC'):  # ESC cancels prompt
+                if target_is_truncate:
+                    _TRUNCATE_TRIGGERING = False
+                    _TRUNCATE_INPUT_BUFFER = ""
+                else:
+                    _REVOLT_TRIGGERING = False
+                    _REVOLT_INPUT_BUFFER = ""
+                if _LIVE_INSTANCE is not None:
+                    try:
+                        _LIVE_INSTANCE.refresh()
+                    except Exception:
+                        pass
+            elif key in ('\r', '\n'):  # Enter confirms
+                buf = _TRUNCATE_INPUT_BUFFER if target_is_truncate else _REVOLT_INPUT_BUFFER
+                val = buf.strip()
+                if val:
                     try:
                         limit = int(val)
                         if limit >= 0:
-                            _REVOLT_ACTIVE = True
-                            _REVOLT_LIMIT = limit
-                            if _LIVE_INSTANCE is not None:
-                                _REVOLT_CURRENT_DONE = False
-                                _REVOLT_TRIGGERED_DURING_ITEM = True
+                            if target_is_truncate:
+                                _TRUNCATE_ACTIVE = True
+                                _TRUNCATE_LIMIT = limit
+                                if _LIVE_INSTANCE is not None:
+                                    _TRUNCATE_CURRENT_DONE = False
+                                    _TRUNCATE_TRIGGERED_DURING_ITEM = True
+                                else:
+                                    _TRUNCATE_CURRENT_DONE = True
+                                    _TRUNCATE_TRIGGERED_DURING_ITEM = False
+                                    if limit == 0:
+                                        trigger_truncate_stop()
                             else:
-                                _REVOLT_CURRENT_DONE = True
-                                _REVOLT_TRIGGERED_DURING_ITEM = False
-                                if limit == 0:
-                                    trigger_revolt_exit()
+                                _REVOLT_ACTIVE = True
+                                _REVOLT_LIMIT = limit
+                                if _LIVE_INSTANCE is not None:
+                                    _REVOLT_CURRENT_DONE = False
+                                    _REVOLT_TRIGGERED_DURING_ITEM = True
+                                else:
+                                    _REVOLT_CURRENT_DONE = True
+                                    _REVOLT_TRIGGERED_DURING_ITEM = False
+                                    if limit == 0:
+                                        trigger_revolt_exit()
                     except ValueError:
                         pass
-                else:  # Empty input cancels/backs out of Revolt mode
-                    _REVOLT_ACTIVE = False
-                    _REVOLT_LIMIT = 0
-                    _REVOLT_CURRENT_DONE = False
-                    _REVOLT_TRIGGERED_DURING_ITEM = False
-                _REVOLT_TRIGGERING = False
-                _REVOLT_INPUT_BUFFER = ""
+                else:
+                    if target_is_truncate:
+                        _TRUNCATE_ACTIVE = False
+                        _TRUNCATE_LIMIT = 0
+                        _TRUNCATE_CURRENT_DONE = False
+                        _TRUNCATE_TRIGGERED_DURING_ITEM = False
+                    else:
+                        _REVOLT_ACTIVE = False
+                        _REVOLT_LIMIT = 0
+                        _REVOLT_CURRENT_DONE = False
+                        _REVOLT_TRIGGERED_DURING_ITEM = False
+
+                if target_is_truncate:
+                    _TRUNCATE_TRIGGERING = False
+                    _TRUNCATE_INPUT_BUFFER = ""
+                else:
+                    _REVOLT_TRIGGERING = False
+                    _REVOLT_INPUT_BUFFER = ""
+
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-            elif key in ('\x7f', '\x08'):  # Backspace key deletes last character
-                _REVOLT_INPUT_BUFFER = _REVOLT_INPUT_BUFFER[:-1]
+            elif key in ('\x7f', '\x08'):  # Backspace
+                if target_is_truncate:
+                    _TRUNCATE_INPUT_BUFFER = _TRUNCATE_INPUT_BUFFER[:-1]
+                else:
+                    _REVOLT_INPUT_BUFFER = _REVOLT_INPUT_BUFFER[:-1]
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
                     except Exception:
                         pass
-            elif key == '\x03':  # Ctrl+C during revolt prompt forces clean exit
+            elif key == '\x03':  # Ctrl+C
                 clean_exit(forceful=True)
-            elif key.isdigit():  # Accept digits only
-                _REVOLT_INPUT_BUFFER += key
+            elif key.isdigit():
+                if target_is_truncate:
+                    _TRUNCATE_INPUT_BUFFER += key
+                else:
+                    _REVOLT_INPUT_BUFFER += key
                 if _LIVE_INSTANCE is not None:
                     try:
                         _LIVE_INSTANCE.refresh()
@@ -561,11 +721,15 @@ _ctrl_r_thread.start()
 def set_active_live(live):
     global _LIVE_INSTANCE, _tty_fd, _old_tty_settings, _is_custom_tty_fd
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERED_DURING_ITEM, _TRUNCATE_CURRENT_DONE
 
     if live is not None:
-        # If revolt is active and limit is 0 (and an item already finished under revolt), halt before starting next!
+        # Check if either Revolt or Truncate reached 0
         if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
             trigger_revolt_exit()
+            return
+        if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
+            trigger_truncate_stop()
             return
 
         _LIVE_INSTANCE = live
@@ -641,6 +805,13 @@ def set_active_live(live):
             else:
                 if _REVOLT_LIMIT > 0:
                     _REVOLT_LIMIT -= 1
+
+        if _TRUNCATE_ACTIVE:
+            if not _TRUNCATE_CURRENT_DONE:
+                _TRUNCATE_CURRENT_DONE = True
+            else:
+                if _TRUNCATE_LIMIT > 0:
+                    _TRUNCATE_LIMIT -= 1
 
 import contextlib
 

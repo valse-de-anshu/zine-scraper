@@ -465,6 +465,33 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             
         logging.info(f"Finished TUI execution for: {url}")
         return True
+    except core.ui.TruncateStopException as tse:
+        logging.info(f"Scrape truncated early via Ctrl+T: {tse}")
+        final_title = getattr(scraper, "title", None) or getattr(scraper, "name", None)
+        final_dest = getattr(scraper, "folder", None) or getattr(scraper, "target_dir", None) or getattr(scraper, "output_dir", None) or batch_path
+        try:
+            journal.update_active(
+                url=url,
+                title=str(final_title).strip() if (final_title and str(final_title).strip() not in ("Unknown", "Videos", "Watch")) else None,
+                destination=str(final_dest) if final_dest else None
+            )
+            journal.finish_download(url=url, status="completed")
+            if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
+                target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
+                from core.history import BatchHistoryManager
+                hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
+                if BatchHistoryManager._instance:
+                    BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
+        except Exception:
+            pass
+        if not is_batch and sys.stdin.isatty():
+            try:
+                sys.stdout.write("\033[38;2;125;207;255m  Press Enter to return...\033[0m ")
+                sys.stdout.flush()
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+        return True
     except Exception as e:
         logging.error(f"Failed to load/execute TUI for {site_folder}: {e}", exc_info=True)
         from core.logger import record_error_log

@@ -1,3 +1,20 @@
+# Progress Report - September 20, 2026 (Feature: Truncate & Graceful Early Stop Keybinding via Ctrl+T)
+
+- **Truncate & Graceful Early Stop Keybinding (`Ctrl+T`) (`core/ui.py`, `core/funnel.py`):**
+  - **Identified Goal**:
+    - Allow users/testers to press `Ctrl+T` during any active scrape across all 48 platforms to stop after a specified number of items (`0` = current file only, `N` = `N` more items), print `✦ All done! Requested files saved.`, flush telemetry logs, and return cleanly to the menu (or proceed to next batch queue item) without terminating the application.
+  - **Resolution**:
+    - **Interactive Inline Visualizer (`inject_revolt_into_renderable`)**:
+      - Pressing `Ctrl+T` (`\x14`) renders `◆ Stop Early (Ctrl+T)` with interactive prompt: `How many more downloads? (0 = current only): [N]█`.
+      - Supports inline typing, Enter confirmation, ESC cancellation, Backspace, and digit entry without interfering with live scrapers.
+    - **Non-Destructive Break Mechanism (`TruncateStopException`)**:
+      - When limit is reached, `trigger_truncate_stop()` prints completion confirmation, dispatches an OS notification, and raises `TruncateStopException`.
+      - `core/funnel.py` catches `TruncateStopException`, syncs final metadata & downloaded chapters to `latest_session.json` and `Download History.json`, and returns cleanly to the menu.
+    - **Telemetry & Log Flushing on Interruptions**:
+      - Both `Ctrl+R` (Revolt / Full Shutdown) and `Ctrl+T` (Truncate / Return to Menu) ensure `DownloadJournal` and `BatchHistoryManager` write all completed items, timestamps, and metadata before stopping.
+
+---
+
 # Progress Report - September 20, 2026 (Professional Download Journal Overhaul & Sessions Subfolder Isolation)
 
 - **Sessions Subfolder Isolation & Clean Downlode 💩 Directory Layout (`core/paths.py`, `core/journal.py`):**
