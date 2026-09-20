@@ -7,8 +7,20 @@ class Hentai20Scraper(BaseScraper):
         super().__init__(url)
         self.domain = "hentai20.io"
 
+    def is_chapter_link(self) -> bool:
+        return bool(re.search(r"chapter-?\d+", self.url, re.I))
+
     def get_title_and_chapters(self) -> tuple[str, list[tuple[str, str]]]:
-        soup = self.get_soup(self.url)
+        is_ch = self.is_chapter_link()
+        series_url = self.url
+
+        if is_ch:
+            temp_soup = self.get_soup(self.url)
+            series_a = temp_soup.select_one(".ts-breadcrumb a[href*='/manga/'], .allc a[href*='/manga/'], .breadcrumb a[href*='/manga/']")
+            if series_a and series_a.get("href"):
+                series_url = series_a["href"]
+
+        soup = self.get_soup(series_url)
 
         title = soup.find("h1", class_="entry-title")
         if not title:

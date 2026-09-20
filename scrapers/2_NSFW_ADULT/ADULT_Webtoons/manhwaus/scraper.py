@@ -8,7 +8,11 @@ class ManhwaUSScraper(BaseScraper):
 
 
     def get_title_and_chapters(self):
-        soup = self.get_soup(self.url)
+        is_ch = self.is_chapter_link()
+        series_url = self.url
+        if is_ch:
+            series_url = re.sub(r"/chapter-.*", "/", self.url)
+        soup = self.get_soup(series_url)
         self.description = ""
         for selector in ["#syn-target", "div.entry-content", "div.manga-excerpt", "div.description-summary", "div.summary-content", "div.post-content", "p.summary"]:
             el = soup.select_one(selector)
