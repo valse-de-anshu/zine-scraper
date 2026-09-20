@@ -297,14 +297,25 @@ zine --batch "my_reading_list.txt"
 
 All downloaded media is cleanly partitioned to eliminate loose root file pollution and redundant nested subfolders:
 
-* **Batch & Vacuum Path (`~/Downloads/Zine/Batch/<Media Title>/`)**:
+* **Batch & Vacuum Path (`~/Downloads/Zine/Batch/<Media Title>/` or `~/Downloads/Zine/Vacuum/<Category>/<Site>/`)**:
   ```text
+  # Video Series:
   ~/Downloads/Zine/Batch/Sei Brunehilde Gakuen Shoujo Kishidan To Junpaku No Panty/
   ├── cover.jpg                   # Full-resolution cover artwork
   ├── metadata.json               # Extracted platform & series metadata
   ├── Episode 1.mp4               # Merged high-definition video + audio
   └── subtitle/                   # Cleanly isolated subtitles
       └── Episode 1.en.srt
+
+  # Music Albums:
+  ~/Downloads/Zine/Vacuum/YouTube Music/LOVELI LORI/Not So Lovely/
+  ├── cover.jpg                   # Full-resolution album artwork
+  ├── .zine/metadata.json         # Complete album & track metadata
+  └── music/                      # Clean audio tracks
+      ├── hate u love u.flac
+      ├── who else.flac
+      └── lyrics/                 # Synced .lrc companion lyrics
+          └── hate u love u.lrc
   ```
   *(Comic/Manhwa chapters download into clean subdirectories like `Chapter 01/`, `Chapter 02/` with zero redundant sub-nesting).*
 * **Quick Grab Path (`~/Downloads/Zine/Quick grab/`)**:
@@ -314,19 +325,36 @@ All downloaded media is cleanly partitioned to eliminate loose root file polluti
 
 ---
 
-### 📋 Industrial Session & Fault-Tolerant Error Logger (`Logs/💩/`)
+### 📋 Industrial Logging & Structured Download Journal (`Logs/`)
 
-Zine features an enterprise-grade dual-tier logging and debugging pipeline located in `Logs/💩/`:
+Zine features an enterprise-grade dual-tier logging and debugging pipeline split into execution traces (`Logs/💩/`) and structured download journals (`Logs/Downlode 💩/`):
 
 ```text
 Logs/
-└── 💩/
-    ├── session_2026-09-19_17-28-24.log   # Detailed execution trace for every run
-    ├── latest_session.log                 # Symlink / pointer to the most recent run
-    ├── error_2026-09-19_17-08-27.log     # Forensic error dumps on failure
-    └── latest_error.log                   # Instant pointer to the last error
+├── Downlode 💩/
+│   ├── session_YYYY-MM-DD_HH-MM-SS.json   # Brand-new unique structured journal per session
+│   ├── latest_session.json                # Live mirror of active/most recent session
+│   ├── Download History.json              # Master enriched history (site, mode, options, metadata, destination)
+│   └── Batch History.json                 # Dedicated batch tracking log
+├── 💩/
+│   ├── session_YYYY-MM-DD_HH-MM-SS.log    # Detailed console & network execution traces
+│   ├── latest_session.log                 # Pointer to the most recent run trace
+│   ├── error_YYYY-MM-DD_HH-MM-SS.log      # Forensic error dumps on failure
+│   └── latest_error.log                   # Instant pointer to the last error
+└── URL History.txt                        # Master test URL bank
 ```
 
+#### 📓 1. Structured Download Journal (`Logs/Downlode 💩/`)
+* **Brand-New JSON Session Per Run**:
+  Every execution (interactive TUI, CLI flag, or batch queue) generates a completely fresh, isolated session JSON file. Prior sessions are never reused or appended to.
+* **Interactive & CLI Choice Recording**:
+  Automatically captures exact choices made in the interactive TUI or passed via CLI flags (e.g., format: `FLAC (Lossless)`, quality: `1080p`, mode: `Vacuum`, continuation counts: `--5`).
+* **Rich Metadata & Item Telemetry**:
+  Records media details shown in the TUI (Artist, Album, Channel, Author, Total Items, Cover status, Destination path) and individual item download states (`downloaded`, `already_exists`, `failed`).
+* **Master History Synchronization**:
+  Synchronizes every run with `Download History.json` and `Batch History.json`, preserving all rich metadata and options.
+
+#### 🛠️ 2. Execution Traces & Fault-Tolerant Error Logger (`Logs/💩/`)
 * **Silent & Clean Terminal Output**:
   Terminal output never gets wrecked by unformatted raw Python stack traces. The screen remains clean with live status updates.
 * **1-Second Root-Cause Diagnosis**:
