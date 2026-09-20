@@ -1495,74 +1495,16 @@ def theme_input(prompt_msg: str = "") -> str:
         sys.stdout.flush()
     return clean_user_input(raw)
 
-def wait_for_return(prompt_msg: str = "Download finished. Press Enter to return...") -> None:
+def wait_for_return(prompt_msg: str = "") -> None:
     """
-    Waits for a single keypress (Enter, Space, Esc, Q, etc.) to return cleanly to menu.
-    - Flushes any lingering input characters from terminal buffer.
-    - Captures the very first keystroke instantly without requiring multiple Enter presses.
-    - Returns immediately in batch/non-interactive mode (when sys.stdin is not a tty).
-    - Preserves Ctrl+C clean exit.
+    Auto-returns immediately — no keypress required.
+    Previously waited for Enter; now scraper auto-exits back to menu after completion.
+    Ctrl+C is still respected via normal signal handling.
     """
-    if not sys.stdin.isatty():
-        return
-
-    # Print prompt
-    if prompt_msg:
-        console.print(f"\n[info]{prompt_msg}[/info]", end="")
-        sys.stdout.flush()
-
-    if os.name != 'nt':
-        import termios, tty, select as _sel
-        try:
-            fd = sys.stdin.fileno()
-            old_settings = termios.tcgetattr(fd)
-        except Exception:
-            try:
-                input()
-            except (EOFError, KeyboardInterrupt):
-                pass
-            console.print()
-            return
-
-        try:
-            termios.tcflush(fd, termios.TCIFLUSH)
-            tty.setcbreak(fd, termios.TCSADRAIN)
-            while True:
-                r, _, _ = _sel.select([fd], [], [], 0.05)
-                if not r:
-                    continue
-                chunk = os.read(fd, 64)
-                if not chunk:
-                    continue
-                if chunk == b'\x03':  # Ctrl+C
-                    clean_exit(forceful=True)
-                # Any single keystroke confirms return
-                break
-        except Exception:
-            pass
-        finally:
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-            except Exception:
-                pass
-            console.print()
-    else:
-        import msvcrt, time
-        try:
-            while msvcrt.kbhit():
-                msvcrt.getch()
-            while True:
-                if msvcrt.kbhit():
-                    ch = msvcrt.getch()
-                    if ch == b'\x03':
-                        clean_exit(forceful=True)
-                    break
-                time.sleep(0.02)
-        except Exception:
-            pass
-        console.print()
+    sys.stdout.flush()
 
 wait_for_enter = wait_for_return
+
 
 
 def _read_tty_chunk(fd: int, timeout: float = 0.05) -> bytes:
