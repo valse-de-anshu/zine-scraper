@@ -518,6 +518,10 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             nonlocal notification_fired
             if notification_fired:
                 return
+            import core.ui
+            if getattr(core.ui, "_TRUNCATE_TRIGGERED", False) or getattr(core.ui, "_REVOLT_TRIGGERED", False):
+                notification_fired = True
+                return
             t = getattr(scraper, "title", None) or url
             has_downloaded = check_has_downloaded()
             try:
@@ -653,6 +657,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         return True
     except core.ui.TruncateStopException as tse:
         logging.info(f"Scrape truncated early via Ctrl+T: {tse}")
+        import core.ui
+        core.ui._TRUNCATE_TRIGGERED = False
         final_title = getattr(scraper, "title", None) or getattr(scraper, "name", None)
         final_dest = getattr(scraper, "folder", None) or getattr(scraper, "target_dir", None) or getattr(scraper, "output_dir", None) or batch_path
         try:

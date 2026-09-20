@@ -450,7 +450,8 @@ def inject_revolt_into_renderable(renderable):
         return Group(panel, renderable)
 
 def trigger_revolt_exit(title: Optional[str] = None):
-    global _REVOLT_EXITING, _LIVE_INSTANCE
+    global _REVOLT_EXITING, _LIVE_INSTANCE, _REVOLT_TRIGGERED
+    _REVOLT_TRIGGERED = True
     with _REVOLT_EXIT_LOCK:
         if _REVOLT_EXITING:
             return
@@ -506,9 +507,13 @@ def trigger_revolt_exit(title: Optional[str] = None):
         pass
     os._exit(0)
 
+_TRUNCATE_TRIGGERED: bool = False
+_REVOLT_TRIGGERED: bool = False
+
 def trigger_truncate_stop(title: Optional[str] = None):
     """Gracefully ends current scrape item loop after user-requested limit without terminating process."""
-    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE, _LIVE_INSTANCE
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE, _LIVE_INSTANCE, _TRUNCATE_TRIGGERED
+    _TRUNCATE_TRIGGERED = True
     _TRUNCATE_ACTIVE = False
     _TRUNCATE_LIMIT = 0
     _TRUNCATE_CURRENT_DONE = False

@@ -9,26 +9,37 @@ logger = logging.getLogger("butler.notify")
 
 _LAST_NOTIFY_TIME: float = 0.0
 _LAST_NOTIFY_MSG: Optional[str] = None
-_DEBOUNCE_SECONDS: float = 2.5
+_GLOBAL_MIN_INTERVAL: float = 3.0
+_DEBOUNCE_SECONDS: float = 4.0
 
 
 def send_os_notification(title: str, message: str, is_success: bool = True):
     """
     Cross-platform OS notification dispatcher (Linux, Windows, macOS).
-    Includes debouncing to prevent spamming/misfires in rapid succession.
+    Includes global throttling and message debouncing to prevent multi-bubble spam.
     """
     global _LAST_NOTIFY_TIME, _LAST_NOTIFY_MSG
 
     now = time.time()
-    msg_key = f"{title}::{message}"
-    if msg_key == _LAST_NOTIFY_MSG and (now - _LAST_NOTIFY_TIME) < _DEBOUNCE_SECONDS:
-        return
-    _LAST_NOTIFY_TIME = now
-    _LAST_NOTIFY_MSG = msg_key
+    elapsed = now - _LAST_NOTIFY_TIME
 
     # Clean message text
     clean_title = str(title).strip()[:100]
     clean_msg = str(message).strip()[:200]
+    msg_key = f"{clean_title}::{clean_msg}"
+
+    # Global debounce & suppression of rapid redundant bubbles
+    if elapsed < _DEBOUNCE_SECONDS:
+        # Exact message match within debounce window -> drop
+        if msg_key == _LAST_NOTIFY_MSG:
+            return
+        # Multiple success notifications dispatched within minimum interval -> drop
+        if is_success and elapsed < _GLOBAL_MIN_INTERVAL:
+            logger.debug(f"Suppressing redundant success notification within {elapsed:.2f}s: {clean_title} - {clean_msg}")
+            return
+
+    _LAST_NOTIFY_TIME = now
+    _LAST_NOTIFY_MSG = msg_key
 
     logger.info(f"Dispatching OS notification ({'SUCCESS' if is_success else 'ERROR'}): {clean_title} - {clean_msg}")
 
