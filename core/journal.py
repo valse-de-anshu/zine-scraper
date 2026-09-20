@@ -429,11 +429,11 @@ class DownloadJournal:
         m_dl = re.search(r"^[●✔✦]\s*([^\n]+)", line)
         if m_dl:
             content = m_dl.group(1).strip()
-            c_lower = content.lower()
             ignore_keywords = (
                 "subtitle", "lyrics", "download finished", "connection", "starting",
                 "done with", "progress", "result", "warning", "info", "skipping",
-                "fetching", "extracting", "found", "searching", "waiting", "bypassing"
+                "fetching", "extracting", "found", "searching", "waiting", "bypassing",
+                "done:", "failed:", "chapters saved"
             )
             if not any(x in c_lower for x in ignore_keywords):
                 fn = content

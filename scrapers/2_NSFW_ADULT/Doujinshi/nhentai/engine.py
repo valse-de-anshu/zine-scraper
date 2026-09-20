@@ -14,6 +14,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
+from core.paths import PathAuthority
 
 try:
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn

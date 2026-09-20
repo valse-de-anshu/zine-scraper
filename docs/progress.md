@@ -1,3 +1,18 @@
+# Progress Report - September 20, 2026 (Fix: Module-Level PathAuthority Import in Comic, Manhwa, Doujinshi & Anime Scrapers)
+
+- **Resolution of `NameError: name 'PathAuthority' is not defined` in `process_chapter_multi`:**
+  - **Identified Problem**:
+    - Recent refactoring routed all intermediate chapter image buffers into the central `💩/` directory via `PathAuthority().get_temp_root()`.
+    - In 14 scraper engines (`weebcentral`, `kunmanga`, `fanfox`, `mangak`, `projectsuki`, `manhuaplus`, `asurascans`, `asmhentai`, `nhentai`, `hentai18`, `hentai20`, `manhwaus`, `oppai_stream_toon`, and `hanime`), `from core.paths import PathAuthority` was either only imported locally inside `download_cover` or missing at the module level.
+    - When downloading comic/manhwa chapters (e.g. `https://weebcentral.com/chapters/01M2NHJ3RX5YR8NZ6G479BS96W`), calling `process_chapter_multi` failed with `NameError`, causing the chapter download to silently report `Failed: No chapters saved`.
+  - **Resolution**:
+    - Added top-level module imports for `from core.paths import PathAuthority` across all 14 affected scraper engines.
+    - Verified complete AST codebase coverage: 0 unimported references remain.
+    - Verified live download end-to-end on WeebCentral: all 16 chapter slices downloaded and merged with `✦ Done: 1/1 chapters saved`.
+    - Added `done:`, `failed:`, and `chapters saved` to `DownloadJournal` ignore filter to prevent summary lines from creating duplicate item entries.
+
+---
+
 # Progress Report - September 20, 2026 (Structured Session Telemetry, Download Journal & Rich Metadata Logging in Logs/Downlode 💩)
 
 - **Download Journal Subsystem (`core/journal.py`, `orchestrator.py`, `core/paths.py`):**

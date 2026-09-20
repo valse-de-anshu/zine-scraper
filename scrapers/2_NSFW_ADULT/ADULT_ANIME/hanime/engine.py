@@ -23,6 +23,7 @@ import requests
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional, List
 from core.video_engine import VideoEngine
+from core.paths import PathAuthority
 
 logger = logging.getLogger(__name__)
 
