@@ -1300,8 +1300,10 @@ def main():
                 prompt_return("Press Enter to return to main menu...")
             elif clean_lower in ["clean", "/clean", "--clean"]:
                 from core.cli_help import run_cli_clean
+                startup_clear()
                 run_cli_clean()
-                time.sleep(1.5)
+                from core.ui import prompt_return
+                prompt_return("Press Enter to return to main menu...")
             elif clean_lower in ["version", "--version", "-v"]:
                 from core.cli_help import print_cli_version
                 startup_clear()

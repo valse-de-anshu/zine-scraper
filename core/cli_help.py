@@ -269,28 +269,47 @@ def run_cli_doctor():
 
 
 def run_cli_clean():
-    """Purges intermediate fragments and cache buffers in 💩/."""
+    """Purges intermediate fragments, orphaned chunks, and cache buffers in 💩/."""
+    print_cli_banner()
+    console.print("[bold white]Purging Zine Temporary Buffers & Cache...[/bold white]\n")
+
     from core.paths import PathAuthority
     pa = PathAuthority()
-    temp_dir = pa.get_project_root() / "💩"
+    
+    clean_targets = [
+        pa.get_project_root() / "💩",
+        pa.get_downloads_root() / "💩",
+    ]
 
-    if not temp_dir.exists():
-        console.print("[dim white]No intermediate buffer directory found (already clean).[/dim white]")
-        return
-
-    purged_count = 0
+    purged_files = 0
+    purged_dirs = 0
     bytes_freed = 0
-    for item in temp_dir.glob("**/*"):
-        if item.is_file() and not item.name.startswith(".git"):
-            try:
-                bytes_freed += item.stat().st_size
-                item.unlink()
-                purged_count += 1
-            except Exception:
-                pass
+
+    for temp_dir in clean_targets:
+        if not temp_dir.exists():
+            continue
+        for item in list(temp_dir.rglob("*")):
+            if item.is_file() and not item.name.startswith(".git"):
+                try:
+                    bytes_freed += item.stat().st_size
+                    item.unlink()
+                    purged_files += 1
+                except Exception:
+                    pass
+        for item in list(temp_dir.rglob("*")):
+            if item.is_dir() and item != temp_dir:
+                try:
+                    if not any(item.iterdir()):
+                        item.rmdir()
+                        purged_dirs += 1
+                except Exception:
+                    pass
 
     mb_freed = bytes_freed / (1024 * 1024)
-    console.print(f"[bold green]✔ Purged {purged_count} temporary buffer files ({mb_freed:.2f} MB freed) in 💩/.[/bold green]")
+    if purged_files > 0:
+        console.print(f"[bold green]✔ Successfully purged {purged_files} temporary buffer files ({mb_freed:.2f} MB freed) in 💩/.[/bold green]\n")
+    else:
+        console.print("[dim green]✔ Temporary buffer (💩/) is completely clean. No orphaned files found.[/dim green]\n")
 
 
 def handle_unknown_flag(flag: str):
