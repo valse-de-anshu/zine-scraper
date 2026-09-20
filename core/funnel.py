@@ -95,10 +95,19 @@ def clear_lines(num_lines: int):
         sys.stdout.write("\033[1A\033[2K")
     sys.stdout.flush()
 
-def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = None):
+def handle_vacuum_queue(
+    hist_layer,
+    store_layer,
+    custom_file: Optional[Path] = None,
+    default_only_metadata: bool = False,
+    default_flags: Optional[List[str]] = None,
+    default_chapter_limit: Optional[int] = None,
+    default_quick_grab: bool = False,
+    default_all: bool = False
+):
     """Process a URL queue file headlessly — the successor to batch mode.
     Each URL is routed individually using its own vacuum/quick-grab destination.
-    Completed URLs are removed from the queue file atomically for safe resume."""
+    Completed URLs are removed from the queue file atomically for safe resume (unless running in --meta mode)."""
     target_file = Path(custom_file) if custom_file else URLS_FILE
     urls = load_urls(target_file)
     if not urls:
@@ -109,7 +118,8 @@ def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = N
 
     startup_clear()
     print_banner()
-    console.print(f"[menu]Menu:[/menu] [site]Vacuum Queue[/site]")
+    mode_label = "Metadata Extractor Queue (--meta)" if default_only_metadata else "Vacuum Queue"
+    console.print(f"[menu]Menu:[/menu] [site]{mode_label}[/site]")
     if custom_file:
         console.print(f"[menu]Source File:[/menu] [sexy_pink]{target_file.resolve()}[/sexy_pink]")
     console.print(f"[info]Queue: {len(urls)} URLs loaded.[/info]")
@@ -122,30 +132,35 @@ def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = N
             continue
 
         url = raw_url_clean
-        flags = []
-        batch_quick_grab = False
-        chapter_limit = None
-        batch_all = False
+        flags = list(default_flags or [])
+        batch_quick_grab = default_quick_grab
+        chapter_limit = default_chapter_limit
+        batch_all = default_all
+        only_metadata = default_only_metadata
 
         # Parse inline flags: --0 (Quick grab), --<N> (chapter limit), --A/--a (vacuum all), --meta/--metadata
-        only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE))
-        if only_metadata:
-            flags.append("--meta")
+        if re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE):
+            only_metadata = True
+            if "--meta" not in flags:
+                flags.append("--meta")
         url = re.sub(r"\s*--(?:meta|metadata)\b", "", url, flags=re.IGNORECASE).strip()
 
         flag_matches = re.findall(r"--(\d+|[aA])\b", url)
         for flag_str in flag_matches:
             if flag_str.lower() == 'a':
                 batch_all = True
-                flags.append("--a")
+                if "--a" not in flags:
+                    flags.append("--a")
             else:
                 val = int(flag_str)
                 if val == 0:
                     batch_quick_grab = True
-                    flags.append("--0")
+                    if "--0" not in flags:
+                        flags.append("--0")
                 else:
                     chapter_limit = val
-                    flags.append(f"--{val}")
+                    if f"--{val}" not in flags:
+                        flags.append(f"--{val}")
         url = re.sub(r"\s*--(\d+|[aA])\b", "", url).strip()
 
         if batch_all:
@@ -169,24 +184,26 @@ def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = N
         )
 
         if success:
-            # Atomically remove completed URL from the queue file so a Revolt/crash can safely resume
-            try:
-                current_urls = load_urls(target_file)
-                remaining = [u for u in current_urls if u.strip() != raw_url_clean]
-                content = "\n".join(remaining) + ("\n" if remaining else "")
-                store_layer.write_file(target_file, content)
-                console.print(f"[success]✔ Done: {raw_url_clean}[/success]")
-            except Exception as e:
-                logging.error(f"Failed to update {target_file.name}: {e}")
+            if not only_metadata:
+                # Atomically remove completed URL from the queue file so a Revolt/crash can safely resume
+                try:
+                    current_urls = load_urls(target_file)
+                    remaining = [u for u in current_urls if u.strip() != raw_url_clean]
+                    content = "\n".join(remaining) + ("\n" if remaining else "")
+                    store_layer.write_file(target_file, content)
+                except Exception as e:
+                    logging.error(f"Failed to update {target_file.name}: {e}")
+            console.print(f"[success]✔ Done: {raw_url_clean}[/success]\n")
         else:
-            console.print(f"[error]✘ Failed: {raw_url_clean}[/error]")
+            console.print(f"[error]✘ Failed: {raw_url_clean}[/error]\n")
 
         import core.ui
         if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
             core.ui.trigger_revolt_exit()
 
-    from core.ui import wait_for_return
-    wait_for_return("Press Enter to return...")
+    if sys.stdin.isatty():
+        from core.ui import wait_for_return
+        wait_for_return("Press Enter to return...")
 
 
 # Backward-compat alias so any external callers still work
@@ -1187,19 +1204,46 @@ def main():
                 continue
             
             logging.info(f"User Input: '{url}'")
-            # Match commands
-            url_lower = url.lower()
-            if url_lower in ["exit", "quit", "q", "/exit"]:
+            # Extract flags from url input
+            flags = []
+            batch_quick_grab = False
+            chapter_limit = None
+            batch_all = False
+            only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE))
+            if only_metadata:
+                flags.append("--meta")
+
+            flag_matches = re.findall(r"--(\d+|[aA])\b", url)
+            for flag_str in flag_matches:
+                if flag_str.lower() == 'a':
+                    batch_all = True
+                    if "--a" not in flags:
+                        flags.append("--a")
+                else:
+                    val = int(flag_str)
+                    if val == 0:
+                        batch_quick_grab = True
+                        if "--0" not in flags:
+                            flags.append("--0")
+                    else:
+                        chapter_limit = val
+                        if f"--{val}" not in flags:
+                            flags.append(f"--{val}")
+
+            # Strip all flags to get pure command / path / url candidate
+            clean_candidate = re.sub(r"(?i)\s*--(?:meta|metadata|vacuum|batch|all|\d+|[aA])\b", "", url).strip()
+            clean_lower = clean_candidate.lower()
+
+            # 1. Exit Commands
+            if clean_lower in ["exit", "quit", "q", "/exit"]:
                 logging.info("User requested exit.")
                 clean_exit(forceful=False)
-            elif url_lower in ["vacuum", "/vacuum", "batch", "/batch"]:
-                logging.info("User launched vacuum queue mode.")
-                handle_vacuum_queue(history, storage)
 
-            elif re.search(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", url.strip()) or url_lower.startswith(("vacuum ", "/vacuum ", "batch ", "/batch ")):
-                url_input = url.strip()
-                if any(url_lower.startswith(pfx) for pfx in ("vacuum ", "/vacuum ", "batch ", "/batch ")):
-                    cleaned_path = url.split(" ", 1)[1].strip()
+            # 2. Explicit Queue Commands
+            elif clean_lower in ["vacuum", "/vacuum", "batch", "/batch"] or clean_lower.startswith(("vacuum ", "/vacuum ", "batch ", "/batch ")) or re.search(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", url):
+                url_input = clean_candidate
+                if any(clean_lower.startswith(pfx) for pfx in ("vacuum ", "/vacuum ", "batch ", "/batch ")):
+                    cleaned_path = clean_candidate.split(" ", 1)[1].strip()
                 else:
                     cleaned_path = re.sub(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", "", url_input).strip()
 
@@ -1208,42 +1252,51 @@ def main():
                     custom_file = Path(sanitized).expanduser().resolve()
                     if custom_file.exists() and custom_file.is_file():
                         logging.info(f"User launched vacuum queue with file: {custom_file}")
-                        handle_vacuum_queue(history, storage, custom_file=custom_file)
+                        handle_vacuum_queue(history, storage, custom_file=custom_file, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
                     else:
                         console.print(f"[error]● Queue file not found:[/error] [site]{escape(str(custom_file))}[/site]")
                         time.sleep(2)
                 else:
-                    handle_vacuum_queue(history, storage)
+                    handle_vacuum_queue(history, storage, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
 
-            elif url_lower in ["settings", "/settings"]:
+            # 3. Direct File Path Queue Detection (e.g. "path/to/file.txt" --meta)
+            elif (lambda p: p.exists() and p.is_file())(Path(sanitize_user_path(clean_candidate)).expanduser().resolve()):
+                custom_file = Path(sanitize_user_path(clean_candidate)).expanduser().resolve()
+                logging.info(f"User launched file queue: {custom_file} (only_metadata={only_metadata})")
+                handle_vacuum_queue(history, storage, custom_file=custom_file, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
+                if cli_args:
+                    break
+
+            # 4. Built-in Tools & Menus
+            elif clean_lower in ["settings", "/settings"]:
                 launch_settings_tui()
-            elif url_lower in ["help", "/help", "--help", "-h"]:
+            elif clean_lower in ["help", "/help", "--help", "-h"]:
                 show_help_tui()
-            elif url_lower in ["site", "/site", "sites"]:
+            elif clean_lower in ["site", "/site", "sites"]:
                 show_site_tui()
-            elif url_lower in ["doctor", "/doctor", "--doctor"]:
+            elif clean_lower in ["doctor", "/doctor", "--doctor"]:
                 from core.cli_help import run_cli_doctor
                 startup_clear()
                 run_cli_doctor()
                 from core.ui import prompt_return
                 prompt_return("Press Enter to return to main menu...")
-            elif url_lower in ["clean", "/clean", "--clean"]:
+            elif clean_lower in ["clean", "/clean", "--clean"]:
                 from core.cli_help import run_cli_clean
                 run_cli_clean()
                 time.sleep(1.5)
-            elif url_lower in ["version", "--version", "-v"]:
+            elif clean_lower in ["version", "--version", "-v"]:
                 from core.cli_help import print_cli_version
                 startup_clear()
                 print_cli_version()
                 from core.ui import prompt_return
                 prompt_return("Press Enter to return to main menu...")
-            elif url_lower in ["slice", "/slice", "slicer"]:
+            elif clean_lower in ["slice", "/slice", "slicer"]:
                 from core.image_slicer import run_image_slicer_tui
                 run_image_slicer_tui()
-            elif url_lower in ["subs", "/subs", "subtitles"]:
+            elif clean_lower in ["subs", "/subs", "subtitles"]:
                 from core.subtitle_engine import run_subtitle_tui
                 run_subtitle_tui()
-            elif url_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
+            elif clean_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
                 startup_clear()
                 print_banner()
                 tts_opts = [
@@ -1264,46 +1317,23 @@ def main():
                         sys.path.insert(0, qwen_path)
                     import book_tts
                     book_tts.run_tts_tui()
-            elif url_lower in ["lyrs", "/lyrs", "lyrics", "/lyrics"]:
+            elif clean_lower in ["lyrs", "/lyrs", "lyrics", "/lyrics"]:
                 from core.lyrics_engine import run_lyrics_tui
                 run_lyrics_tui()
-            elif url_lower in ["bake", "/bake"]:
+            elif clean_lower in ["bake", "/bake"]:
                 from core.bake_engine import run_bake_tui
                 run_bake_tui()
-            elif url_lower in ["sc-lyrics", "/sc-lyrics", "sc_lyrics", "sclyrs"]:
+            elif clean_lower in ["sc-lyrics", "/sc-lyrics", "sc_lyrics", "sclyrs"]:
                 from core.lyrics_engine import run_batch_lyrics_tui
                 run_batch_lyrics_tui()
+
+            # 5. Media URL Execution
             else:
-                url_input = url.strip()
-                flags = []
-                batch_quick_grab = False
-                chapter_limit = None
-                batch_all = False
-                only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url_input, re.IGNORECASE))
-                if only_metadata:
-                    flags.append("--meta")
-                clean_url = re.sub(r"\s*--(?:meta|metadata)\b", "", url_input, flags=re.IGNORECASE).strip()
-
-                flag_matches = re.findall(r"--(\d+|[aA])\b", clean_url)
-                for flag_str in flag_matches:
-                    if flag_str.lower() == 'a':
-                        batch_all = True
-                        flags.append("--a")
-                    else:
-                        val = int(flag_str)
-                        if val == 0:
-                            batch_quick_grab = True
-                            flags.append("--0")
-                        else:
-                            chapter_limit = val
-                            flags.append(f"--{val}")
-                clean_url = re.sub(r"\s*--(\d+|[aA])\b", "", clean_url).strip()
-
                 # Headless if launched via CLI args (no interactive TUI needed in that path)
                 is_headless = bool(cli_args)
 
                 route_url(
-                    clean_url,
+                    clean_candidate,
                     history,
                     storage,
                     batch_path=None,
