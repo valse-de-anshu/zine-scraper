@@ -22,7 +22,17 @@ class Hentai18Scraper(BaseScraper):
 
 
     def get_title_and_chapters(self):
-        soup = self.get_soup(self.url)
+        is_ch = self.is_chapter_link()
+        series_url = self.url
+        if is_ch:
+            temp_soup = self.get_soup(self.url)
+            series_a = temp_soup.select_one(".breadcrumb a[href*='/read-hentai/'], .allc a[href*='/read-hentai/']")
+            if series_a and series_a.get("href"):
+                series_url = urljoin(self.url, series_a["href"])
+            else:
+                series_url = re.sub(r"-chapter-.*", "", self.url)
+
+        soup = self.get_soup(series_url)
         self.description = ""
         for selector in ["div.desc", "div.entry-content", "div.panel-story-info-description", "div.manga-excerpt", "div.description-summary", "#syn-target", "div.post-content", "p.summary", "div.summary-content"]:
             el = soup.select_one(selector)

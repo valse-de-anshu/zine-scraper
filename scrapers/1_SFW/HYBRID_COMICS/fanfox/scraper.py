@@ -18,8 +18,23 @@ class FanFoxScraper(BaseScraper):
         })
 
     def get_title_and_chapters(self):
-        # Extract info (will need soup)
-        soup = getattr(self, "soup", None) or self.get_soup(self.url)
+        if "m.fanfox.net" in self.url:
+            self.url = self.url.replace("m.fanfox.net", "fanfox.net")
+
+        is_ch = self.is_chapter_link()
+        series_url = self.url
+        if is_ch:
+            temp_soup = self.get_soup(self.url)
+            series_a = temp_soup.select_one("div.reader-header-title a, a.reader-header-title-2, .bread-crumbs a[href*='/manga/']")
+            if series_a and series_a.get("href"):
+                series_url = urljoin(self.url, series_a["href"])
+            else:
+                m = re.match(r"(https?://[^/]+/manga/[^/]+)", self.url)
+                if m:
+                    series_url = m.group(1)
+            self.series_url = series_url
+
+        soup = getattr(self, "soup", None) or self.get_soup(series_url)
         self.description = ""
         for selector in [".fullcontent", ".detail-info-right-content", "#syn-target", "div.description-summary", "div.summary-content", "div.post-content", "div.manga-excerpt", "p.summary"]:
             el = soup.select_one(selector)

@@ -12,8 +12,16 @@ class KunMangaScraper(BaseScraper):
 
 
     def get_title_and_chapters(self):
+        is_ch = self.is_chapter_link()
+        series_url = self.url
+        if is_ch:
+            m = re.match(r"(https?://[^/]+/manga/[^/]+)", self.url)
+            if m:
+                series_url = m.group(1)
+                self.series_url = series_url
+
         # Extract info (will need soup)
-        soup = getattr(self, "soup", None) or self.get_soup(self.url)
+        soup = getattr(self, "soup", None) or self.get_soup(series_url)
         self.description = ""
         for selector in ["#syn-target", "div.description-summary", "div.summary-content", "div.post-content", "div.manga-excerpt", "p.summary"]:
             el = soup.select_one(selector)
@@ -42,10 +50,9 @@ class KunMangaScraper(BaseScraper):
         if author_links:
             self.author = ", ".join(list(dict.fromkeys(author_links)))
         # Get series slug
-        series_slug = self.url.rstrip("/").split("/")[-1]
+        series_slug = series_url.rstrip("/").split("/")[-1]
         
         # 1. Fetch Title
-        soup = self.get_soup(self.url)
         title_tag = soup.select_one("div.post-title h1, h1")
         title_text = title_tag.get_text(strip=True) if title_tag else "Unknown"
         title = re.sub(r"(?i)(read|online|raw|eng|free|manga|manhua|manhwa).*", "", title_text)

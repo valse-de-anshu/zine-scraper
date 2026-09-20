@@ -9,7 +9,16 @@ class WeebCentralScraper(BaseScraper):
 
     def get_title_and_chapters(self):
         original_url = self.url
-        # Extract info (will need soup)
+
+        # 1. Handle Chapter URL to Series URL conversion
+        if "/chapters/" in self.url:
+            temp_soup = self.get_soup(self.url)
+            series_a = temp_soup.select_one("main a[href*='/series/'], a.overflow-hidden[href*='/series/']")
+            if series_a:
+                self.url = urljoin("https://weebcentral.com", series_a["href"])
+                logger.info(f"Converted chapter link to series: {self.url}")
+
+        # Extract info from Series Page
         soup = getattr(self, "soup", None) or self.get_soup(self.url)
         self.description = ""
         for strong in soup.find_all("strong"):
@@ -42,17 +51,8 @@ class WeebCentralScraper(BaseScraper):
                     author_links.append(t)
         if author_links:
             self.author = ", ".join(list(dict.fromkeys(author_links)))
-        # 1. Handle Chapter URL to Series URL conversion
-        if "/chapters/" in self.url:
-            soup = self.get_soup(self.url)
-            # Find the link that has the series name, usually in the reader nav
-            series_a = soup.select_one("main a[href*='/series/'], a.overflow-hidden[href*='/series/']")
-            if series_a:
-                self.url = urljoin("https://weebcentral.com", series_a["href"])
-                logger.info(f"Converted chapter link to series: {self.url}")
 
         # 2. Get Title and Cover from Series Page
-        soup = self.get_soup(self.url)
         title_tag = soup.select_one("h1")
         title_text = title_tag.get_text(strip=True) if title_tag else "Unknown"
         title = re.sub(r"[^\w\s-]", "", title_text).strip().title()
