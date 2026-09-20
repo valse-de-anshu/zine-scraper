@@ -1072,60 +1072,102 @@ class Selector:
         old_menu_active = _MENU_ACTIVE
         _MENU_ACTIVE = True
         console.show_cursor(False)
-        try:
-            with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
-                _LIVE_INSTANCE = live
-                live.update(self._render(), refresh=True)
-                while True:
-                    key = self._get_key()
-                    if not key:
-                        try:
-                            from core.paths import PathAuthority
-                            error_log = PathAuthority().get_logs_root() / "💩" / "error.log"
-                            error_log.parent.mkdir(parents=True, exist_ok=True)
-                            with open(error_log, "a") as f:
-                                f.write("Selector.select: _get_key returned empty key\n")
-                                f.write(f"sys.stdin: {sys.stdin}, isatty: {sys.stdin.isatty()}\n")
-                        except Exception:
-                            pass
-                        return self.select_fallback()
-                    if key in ('[D', 'OD') or key in ('[A', 'OA'):
-                        self.index = (self.index - 1) % len(self.options)
-                        live.update(self._render(), refresh=True)
-                    elif key in ('[C', 'OC') or key in ('[B', 'OB'):
-                        self.index = (self.index + 1) % len(self.options)
-                        live.update(self._render(), refresh=True)
-                    elif key in ('\r', '\n'):
-                        chosen_label = self.options[self.index][0]
-                        chosen_val = self.options[self.index][1]
-                        try:
-                            from core.journal import DownloadJournal
-                            DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
-                        except Exception:
-                            pass
-                        return chosen_val
-                    elif key == '=':
-                        return "="
-                    elif key == 'ESC':
-                        return "ESC"
-                    elif key == '\x03':
-                        clean_exit(forceful=True)
-        except Exception as e:
+
+        if os.name != 'nt' and sys.stdin.isatty():
+            import tty, termios, select as _sel
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
             try:
-                import traceback
-                from core.paths import PathAuthority
-                error_log = PathAuthority().get_logs_root() / "💩" / "error.log"
-                error_log.parent.mkdir(parents=True, exist_ok=True)
-                with open(error_log, "a") as f:
-                    f.write("=== Exception in Selector.select ===\n")
-                    traceback.print_exc(file=f)
-            except Exception:
-                pass
-            return self.select_fallback()
-        finally:
-            _LIVE_INSTANCE = None
-            console.show_cursor(True)
-            _MENU_ACTIVE = old_menu_active
+                tty.setcbreak(fd, termios.TCSADRAIN)
+                with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
+                    _LIVE_INSTANCE = live
+                    live.update(self._render(), refresh=True)
+                    while True:
+                        r, _, _ = _sel.select([fd], [], [], 0.05)
+                        if not r:
+                            continue
+                        chunk = os.read(fd, 64)
+                        if not chunk:
+                            continue
+
+                        if chunk in (b'\r', b'\n'):
+                            chosen_label = self.options[self.index][0]
+                            chosen_val = self.options[self.index][1]
+                            try:
+                                from core.journal import DownloadJournal
+                                DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                            except Exception:
+                                pass
+                            return chosen_val
+
+                        if chunk in (b'\x1b', b'q', b'Q'):
+                            return "ESC"
+
+                        if chunk == b'=':
+                            return "="
+
+                        if chunk == b'\x03':
+                            clean_exit(forceful=True)
+
+                        raw = chunk.decode('utf-8', errors='ignore')
+                        if any(raw == p or raw.startswith(p) for p in ['\x1b[A', '\x1bOA', '[A', 'OA', 'k', '\x1b[D', '\x1bOD']):
+                            self.index = (self.index - 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif any(raw == p or raw.startswith(p) for p in ['\x1b[B', '\x1bOB', '[B', 'OB', 'j', '\x1b[C', '\x1bOC']):
+                            self.index = (self.index + 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif '\r' in raw or '\n' in raw:
+                            chosen_label = self.options[self.index][0]
+                            chosen_val = self.options[self.index][1]
+                            try:
+                                from core.journal import DownloadJournal
+                                DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                            except Exception:
+                                pass
+                            return chosen_val
+            except Exception as e:
+                return self.select_fallback()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                _LIVE_INSTANCE = None
+                console.show_cursor(True)
+                _MENU_ACTIVE = old_menu_active
+        else:
+            try:
+                with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
+                    _LIVE_INSTANCE = live
+                    live.update(self._render(), refresh=True)
+                    while True:
+                        key = self._get_key()
+                        if not key:
+                            return self.select_fallback()
+                        if key in ('[D', 'OD') or key in ('[A', 'OA'):
+                            self.index = (self.index - 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif key in ('[C', 'OC') or key in ('[B', 'OB'):
+                            self.index = (self.index + 1) % len(self.options)
+                            live.update(self._render(), refresh=True)
+                        elif key in ('\r', '\n'):
+                            chosen_label = self.options[self.index][0]
+                            chosen_val = self.options[self.index][1]
+                            try:
+                                from core.journal import DownloadJournal
+                                DownloadJournal.get_active().record_choice(self.title, chosen_label, chosen_val)
+                            except Exception:
+                                pass
+                            return chosen_val
+                        elif key == '=':
+                            return "="
+                        elif key == 'ESC':
+                            return "ESC"
+                        elif key == '\x03':
+                            clean_exit(forceful=True)
+            except Exception as e:
+                return self.select_fallback()
+            finally:
+                _LIVE_INSTANCE = None
+                console.show_cursor(True)
+                _MENU_ACTIVE = old_menu_active
 
     def _render(self) -> Text:
         full_text = Text()
