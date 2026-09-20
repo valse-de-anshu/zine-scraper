@@ -1,3 +1,14 @@
+# Progress Report - September 20, 2026 (Bugfix: Idagio Music Scraper `is_music` NameError)
+
+- **Idagio Scraper Scope Correction (`scrapers/1_SFW/MUSIC/idagio/workflow.py`):**
+  - **Identified Problem**:
+    - `scrapers/1_SFW/MUSIC/idagio/workflow.py` referenced `is_music` during audio format resolution (`audio_fmt = cfg.get(...) if is_music else ...`) and verification without defining the variable in `run_workflow()`.
+    - This resulted in `Video Extraction Failed: name 'is_music' is not defined`.
+  - **Resolution**:
+    - Explicitly defined `is_music = getattr(scraper, "scraper_type", "music") == "music"` at the entry point of `run_workflow()`.
+
+---
+
 # Progress Report - September 20, 2026 (Bugfix: Retain Error Displays & Failure Panels — Prevent Premature Screen Clearing)
 
 - **Failure Display Retention & Error Pause Control (`core/ui.py`, `core/funnel.py`, all `workflow.py` / `tui.py` files, `core/image_slicer.py`, `core/lyrics_engine.py`):**

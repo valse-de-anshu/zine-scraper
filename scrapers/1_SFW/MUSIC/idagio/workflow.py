@@ -30,6 +30,7 @@ def run_workflow(
     info: Dict[str, Any]
 ):
     """Orchestrates the high-level workflow download loop for Idagio tracks."""
+    is_music = getattr(scraper, "scraper_type", "music") == "music"
     title = metadata.get("Channel/Series", "Unknown")
     scraper.title = title
     scraper.metadata = metadata
