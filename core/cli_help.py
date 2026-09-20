@@ -285,7 +285,6 @@ def purge_logs_and_temp(silent: bool = False, preserve_active_session: bool = Tr
         pa.get_sessions_dir(),                       # Logs/Downlode 💩/Sessions
         pa.get_logs_root() / "💩",                   # Logs/💩
         pa.get_project_root() / "💩",               # 💩 (project root)
-        pa.get_downloads_root() / "💩",             # 💩 (downloads root)
     ]
 
     # Collect active session files that must NEVER be deleted while Zine is running
@@ -319,10 +318,6 @@ def purge_logs_and_temp(silent: bool = False, preserve_active_session: bool = Tr
 
     for target_dir in targets:
         if not target_dir.exists():
-            try:
-                target_dir.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                pass
             continue
         for item in list(target_dir.rglob("*")):
             if item.is_file() and not item.name.startswith(".gitkeep"):
