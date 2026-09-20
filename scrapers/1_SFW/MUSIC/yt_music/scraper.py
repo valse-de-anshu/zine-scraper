@@ -132,6 +132,8 @@ class YoutubeMusicScraper:
 
         if link_type == "single":
             info = self.engine.extract_track_info(self.url, fast=False)
+            if not info:
+                raise RuntimeError(f"Could not retrieve metadata for track: {self.url}")
             self.is_playlist = False
 
             raw_artist = info.get("artist") or info.get("uploader") or info.get("channel") or info.get("creator")
@@ -182,6 +184,8 @@ class YoutubeMusicScraper:
         else:
             # Playlist or Album
             info = self.engine.extract_playlist_info(self.url, playlist_limit=playlist_limit, playlist_start=playlist_start)
+            if not info:
+                raise RuntimeError(f"Could not retrieve metadata for playlist: {self.url}")
             self.is_playlist = True
 
             raw_title = info.get("title") or "Playlist"

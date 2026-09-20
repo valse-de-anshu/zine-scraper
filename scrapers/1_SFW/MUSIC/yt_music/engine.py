@@ -30,23 +30,34 @@ class YoutubeMusicEngine:
             'nocheckcertificate': True,
             'cachedir': False,
             'no_warnings': True,
-            'ignoreerrors': True,
+            'ignoreerrors': False,
             'retries': 10,
             'fragment_retries': 10,
             'timeout': 60,
             'http_headers': self.headers,
             'concurrent_fragment_downloads': 5,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios', 'web']
+                },
+                'youtubetab': {
+                    'skip': ['authcheck']
+                }
+            }
         }
+        try:
+            from core.config import ConfigLayer
+            from core.paths import PathAuthority
+            from core.storage import StorageLayer
+            cfg = ConfigLayer(PathAuthority(), StorageLayer())
+            browser = cfg.get("cookies_browser")
+            if browser and browser != "None":
+                self.common_ydl_opts['cookiesfrombrowser'] = (str(browser), None, None, None)
+        except Exception:
+            pass
 
     def extract_playlist_info(self, url: str, playlist_limit: Optional[int] = None, playlist_start: Optional[int] = None) -> Dict[str, Any]:
-        """Extracts flat info for a YT Music playlist or album."""
-        ydl_opts = self.common_ydl_opts.copy()
-        ydl_opts.update({
-            'quiet': True,
-            'extract_flat': True,
-            'dump_single_json': True,
-            'ignoreconfig': True,
-        })
+        """Extracts flat info for a YT Music playlist or album with multi-client rotation."""
         if playlist_limit is None:
             try:
                 from core.config import ConfigLayer
@@ -57,31 +68,88 @@ class YoutubeMusicEngine:
             except Exception:
                 playlist_limit = 200
 
-        if playlist_limit and playlist_limit > 0:
-            ydl_opts['playlistend'] = playlist_limit
-        if playlist_start and playlist_start > 0:
-            ydl_opts['playliststart'] = playlist_start
+        client_waterfall = [
+            ['android', 'ios', 'web'],
+            ['web_creator', 'mweb', 'android'],
+            ['ios', 'mweb', 'web'],
+            ['android_music', 'android', 'web']
+        ]
+        last_exc = None
+        for chain in client_waterfall:
+            ydl_opts = self.common_ydl_opts.copy()
+            ydl_opts.update({
+                'quiet': True,
+                'extract_flat': True,
+                'dump_single_json': True,
+                'ignoreconfig': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': chain
+                    },
+                    'youtubetab': {
+                        'skip': ['authcheck']
+                    }
+                }
+            })
+            if playlist_limit and playlist_limit > 0:
+                ydl_opts['playlistend'] = playlist_limit
+            if playlist_start and playlist_start > 0:
+                ydl_opts['playliststart'] = playlist_start
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Could not extract playlist metadata from {url}")
 
     def extract_track_info(self, url: str, fast: bool = False) -> Dict[str, Any]:
-        """Extracts metadata for a single YouTube Music track."""
-        ydl_opts = self.common_ydl_opts.copy()
-        ydl_opts.update({
-            'quiet': True,
-            'dump_single_json': True,
-            'noplaylist': True,
-        })
-        if fast:
+        """Extracts metadata for a single YouTube Music track with multi-client rotation."""
+        client_waterfall = [
+            ['android', 'ios', 'web'],
+            ['web_creator', 'mweb', 'android'],
+            ['ios', 'mweb', 'web'],
+            ['android_music', 'android', 'web']
+        ]
+        last_exc = None
+        for chain in client_waterfall:
+            ydl_opts = self.common_ydl_opts.copy()
             ydl_opts.update({
-                'extract_flat': True,
-                'check_formats': False,
-                'ignoreconfig': True,
-                'noplugins': True,
+                'quiet': True,
+                'dump_single_json': True,
+                'noplaylist': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': chain
+                    },
+                    'youtubetab': {
+                        'skip': ['authcheck']
+                    }
+                }
             })
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url, download=False)
+            if fast:
+                ydl_opts.update({
+                    'extract_flat': True,
+                    'check_formats': False,
+                    'ignoreconfig': True,
+                    'noplugins': True,
+                })
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception as e:
+                last_exc = e
+                continue
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"Could not extract track metadata from {url}")
 
     def download_cover_art(
         self,
