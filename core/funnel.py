@@ -696,7 +696,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["bake", "batch", "breeze", "clean", "doctor", "exit", "help", "lyrs", "qwen", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "version"]
+        commands = ["bake", "batch", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -765,11 +765,6 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
-            tip_text.append("breeze", style="warning")
-            tip_text.append(" to launch Breeze TTS 2 (voice cloning).\n", style="info")
-            
-            tip_text.append("● ", style="success")
-            tip_text.append("Type ", style="info")
             tip_text.append("clean", style="warning")
             tip_text.append(" to purge temp files & cache.\n", style="info")
             
@@ -792,11 +787,6 @@ class MainPrompt:
             tip_text.append("Type ", style="info")
             tip_text.append("lyrs", style="warning")
             tip_text.append(" to search & download synced lyrics (.lrc).\n", style="info")
-            
-            tip_text.append("● ", style="success")
-            tip_text.append("Type ", style="info")
-            tip_text.append("qwen", style="warning")
-            tip_text.append(" to launch Qwen3 TTS (ComfyUI).\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -1030,18 +1020,6 @@ def main():
             elif url_lower in ["subs", "/subs", "subtitles"]:
                 from core.subtitle_engine import run_subtitle_tui
                 run_subtitle_tui()
-            elif url_lower in ["breeze", "/breeze", "breeze-tts", "breeze_tts", "breezetts"]:
-                breeze_path = str(paths.get_breeze_tts_dir())
-                if breeze_path not in sys.path:
-                    sys.path.insert(0, breeze_path)
-                import breeze_engine
-                breeze_engine.run_breeze_tui()
-            elif url_lower in ["qwen", "/qwen", "qwen-tts", "qwen_tts", "qwents"]:
-                qwen_path = str(paths.get_qwen_tts_dir())
-                if qwen_path not in sys.path:
-                    sys.path.insert(0, qwen_path)
-                import book_tts
-                book_tts.run_tts_tui()
             elif url_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
                 startup_clear()
                 print_banner()

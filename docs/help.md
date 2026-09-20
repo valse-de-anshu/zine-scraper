@@ -14,9 +14,6 @@ You can type any of the following commands directly at the main prompt:
 - **`batch`** or **`/batch`**
   Process all queued URLs listed inside your `Batch URL.txt` file automatically.
 
-- **`breeze`** or **`/breeze`**
-  Launch the Breeze-TTS-2 Suite. High-performance C++/GGUF instruction-following neural TTS with Vulkan GPU acceleration. Features Voice Design, Voice Cloning, Emotional Direction, Saved Voice profiles, Vocal Event Tags `(sigh)`, `(laugh)`, `(whispering)`, and Voice Conversion.
-
 - **`exit`** or **`quit`** or **`q`**
   Gracefully exit the Zine Scraper Suite and instantly flush all active AI models from system memory.
 
@@ -25,9 +22,6 @@ You can type any of the following commands directly at the main prompt:
 
 - **`lyrs`** or **`/lyrs`** or **`lyrics`**
   Search, fetch, and download synchronized `.lrc` lyrics for any song via a 6-tier waterfall (LRCLIB, NetEase, Megalobiz).
-
-- **`qwen`** or **`/qwen`**
-  Launch the Qwen-TTS Audiobook Generator directly via local ComfyUI.
 
 - **`sc-lyrics`** or **`/sc-lyrics`** or **`sclyrs`**
   Batch scanner for your music library. Automatically finds missing `.lrc` lyrics files and fetches synced lyrics across all tracks.

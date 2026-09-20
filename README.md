@@ -152,7 +152,6 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 | **`bake`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
 | **`lyrs`** | **Audio** | Synced `.lrc` Lyrics Search & Downloader (6-tier waterfall: LRCLIB, NetEase, Megalobiz) |
 | **`sc-lyrics`** | **Audio** | Batch music folder scanner and automated `.lrc` lyrics synchronization |
-| **`breeze`** | **AI Speech** | Breeze-TTS-2 Neural Speech Hub (C++/GGUF Vulkan, Voice Design, Cloning, Vocal Events) |
 | **`tts`** | **AI Speech** | Universal Audiobook TTS Hub (select between Breeze-TTS-2 or Qwen3-TTS) |
 | **`subs`** | **AI Tools** | AI Subtitle Generator (`faster-whisper` local GPU transcription & translation) |
 | **`slice`** | **Tools** | Webtoon & Manhua Image Slicer (splits long vertical strips into standard pages) |
