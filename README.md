@@ -11,20 +11,20 @@
 
 # Zine Scraper Suite
 
-**A high-performance CLI tool build to save the media you love permanently onto your hard drive.**
+**A high-performance media archiving suite built to save the content you love permanently onto your local storage.**
 
 <p align="center">
-  🎵 <b>Music:</b> Full-quality audio with proper artist metadata, album art, and scrolling lyrics.<br>
-  📖 <b>Manga, Manhua, Novels & Comics:</b> Complete series archiving with neatly organized chapters.<br>
+  🎵 <b>Music:</b> Lossless FLAC audio with high-res cover art, full artist metadata, and synced scrolling <code>.lrc</code> lyrics.<br>
+  📖 <b>Manga, Manhua, Novels & Comics:</b> Complete franchise archiving with clean chapters and zero clutter.<br>
   🎬 <b>Adult Anime & Videos (18+):</b> Multi-season series, playlists, and 1080p/4K streams without ads or popups.<br>
-  📚 <b>Books & Images:</b> Web serials, public domain classics, and AI-powered audiobooks.
+  📚 <b>Books & AI Voice:</b> Web serials, public domain classics, and GPU-accelerated neural audiobook synthesis.
 </p>
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-red?style=for-the-badge" alt="CC BY-NC-SA 4.0 License"></a>
   <a href="https://discord.gg/suJD5xtFj"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Community"></a>
-  <a href="https://github.com/valse-de-anshu/zine-scraper/releases"><img src="https://img.shields.io/badge/Release-v1.0.0-orange?style=for-the-badge" alt="v1.0.0"></a>
+  <a href="https://github.com/valse-de-anshu/zine-scraper/releases"><img src="https://img.shields.io/badge/Release-v1.2.0-orange?style=for-the-badge" alt="v1.2.0"></a>
 </p>
 
 </div>
@@ -103,8 +103,11 @@ zine "https://hentaihaven.xxx/watch/sei-brunehilde-gakuen.../" --a
 # Sequential chapter continuation (--5)
 zine "https://asurascans.com/comics/series-title" --5
 
-# Custom batch file processing
-zine --batch "my_reading_list.txt"
+# Vacuum queue processing (defaults to vacuum.txt)
+zine --vacuum
+
+# Custom queue file processing
+zine --vacuum "my_reading_list.txt"
 
 # Or directly with Python:
 python3 orchestrator.py "https://example.com/media/title" --0
@@ -149,20 +152,25 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 | Command | Category | Description |
 |---|---|---|
-| **`bake`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
+| **`vacuum`** / **`batch`** | **Automation** | Headless Queue Runner (processes all links in `vacuum.txt` or a custom text file) |
+| **`bake`** / **`metadata`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
 | **`lyrs`** | **Audio** | Synced `.lrc` Lyrics Search & Downloader (6-tier waterfall: LRCLIB, NetEase, Megalobiz) |
 | **`sc-lyrics`** | **Audio** | Batch music folder scanner and automated `.lrc` lyrics synchronization |
 | **`tts`** | **AI Speech** | Universal Audiobook TTS Hub (select between Breeze-TTS-2 or Qwen3-TTS) |
 | **`subs`** | **AI Tools** | AI Subtitle Generator (`faster-whisper` local GPU transcription & translation) |
 | **`slice`** | **Tools** | Webtoon & Manhua Image Slicer (splits long vertical strips into standard pages) |
-| **`batch`** | **System** | Batch Downloader (auto-processes all queued links in `Batch URL.txt`) |
 | **`doctor`** | **System** | System Diagnostic Health Check (Python, FFmpeg, Aria2, Deno, Playwright, paths) |
 | **`clean`** | **System** | Purges temporary fragments, chunks, and cache buffers in `💩/` |
 | **`version`** | **System** | Display detailed version, runtime telemetry, and dependency status |
-| **`settings`** | **System** | Interactive Settings Configurator (download paths, 80+ themes, network delays) |
+| **`settings`** | **System** | Interactive Settings Configurator (download paths, audio format, 80+ themes) |
 | **`site`** | **System** | Interactive Supported Sites Database & Catalog viewer |
 | **`help`** | **System** | In-app documentation and quick guide browser |
 | **`exit` / `q`** | **System** | Clean exit from Zine Scraper Suite |
+
+> [!IMPORTANT]
+> **💡 Pro-Tip on Social Media Scrapers (Instagram, Facebook & Pinterest):**
+> When scraping Instagram, Facebook, or Pinterest (profiles, reels, highlights, albums, and boards), the scraper initially takes a few moments to negotiate sessions, solve anti-bot challenges / captchas, parse infinite-scroll post streams, and hydrate DOM assets in the headless browser engine.
+> **Please give the scraper a little time to work through this initial anti-bot negotiation phase!** Once solved and indexed, Zine rapidly downloads all requested media at maximum multithreaded connection speed.
 
 > [!TIP]
 > **💡 Pro-Tip on TUI Performance & Smooth Riding:**
@@ -174,7 +182,8 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 | Key | Context | Action |
 |---|---|---|
-| **`Ctrl + R`** | **Any Active Download** | **Global Revolt Mode** — Interactively halt downloads after current file (`0`) or `N` more files. Exits cleanly and dispatches an OS completion notification. |
+| **`Ctrl + R`** | **Any Active Download** | **Global Revolt Mode** — Gracefully halt downloads after current file (`0`) or `N` more files. Exits cleanly with an OS notification. |
+| **`Ctrl + T`** | **Any Active Download** | **Global Truncate Mode** — Stop active download early after current item and return cleanly to the main menu without terminating Zine. |
 | **`Ctrl + C`** | **Global** | **Force Clean Exit** — Immediately cancels active operations, restores terminal cursor & raw mode, and unloads AI models from VRAM. |
 | **`↑` / `↓`** | **Menus & Prompt** | Navigate menu items, selector options, and cycle through previous URL command history. |
 | **`←` / `→`** | **Input & Menus** | Move cursor left/right within input prompts and switch between horizontal menu buttons. |
@@ -188,13 +197,13 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 ### 🏷️ Smart URL Flags & Chapter Continuation
 
-You can append smart flags directly to URLs at the main prompt or inside `Batch URL.txt`:
+You can append smart flags directly to URLs at the main prompt or inside `vacuum.txt`:
 
 * **`--0` (Quick Grab Mode)**:
   * Forces the download directly into the `Quick grab/` directory, bypassing series indexing and vacuum directory creation.
   * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664/chapter/211 --0`
-* **`--A` / `--a` (Vacuum All Mode)**:
-  * Forces full vacuum download of all episodes, chapters, and materials for the series into the `Batch/` destination folder, bypassing single-item quick grab and interactive selection.
+* **`--A` / `--a` / `--all` (Vacuum All Mode)**:
+  * Forces full vacuum download of all episodes, chapters, and materials for the series into the `Vacuum/` destination folder, bypassing single-item quick grab and interactive selection.
   * Automatically scrapes complete metadata, cover art, and creates the proper series folder structure.
   * *Examples:*
     * `https://hentaihaven.xxx/watch/shoujo-ramune/episode-1/ --a`
@@ -204,27 +213,21 @@ You can append smart flags directly to URLs at the main prompt or inside `Batch 
   * Continues from where you last left off in `Download History.json` and downloads exactly **`N`** chapters in systematic order (e.g. `--2`, `--4`, `--5`, `--10`).
   * Seamlessly processes decimal chapters (e.g. `Chapter 2.5`) in proper sequence without annoying confirmation prompts.
   * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5` *(downloads the next 5 unread chapters sequentially).*
-* **`--batch` (Custom File Batch Mode)**:
-  * Paste any custom text file path with `--batch` (or `batch <file>`) directly into the main prompt to run batch processing from that file instead of the default `Batch URL.txt`.
-  * Automatically retrieves all URLs, processes them with full batch automation (honoring per-line `--0` and `--N` flags), and automatically removes/checks off completed URLs from your custom file.
-  * Ensures custom batch files and their links are never recorded or cluttered into `Logs/URL History.txt`.
-  * *Examples:*
-    * `"/home/valse/my_queue.txt" --batch`
-    * `my_reading_list.txt --batch`
-    * `batch "/home/valse/downloads.txt"`
-* **Flag Combinations in Batch Mode**:
-  * Flags can be mixed freely inside your batch text file per-line:
-    ```text
-    https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5
-    https://omegascans.org/series/my-lewd-college-friends/chapter-58 --0
-    https://mangadex.org/title/a1c7c817-4e59-43b7-9365-09675a149a6f --3
+* **`--vacuum` / `--batch` (Headless Queue File Mode)**:
+  * Paste any custom text file path with `--vacuum` (or `vacuum <file>`) directly into the main prompt or CLI:
+    ```bash
+    zine --vacuum "my_reading_list.txt"
+    # or inside the interactive prompt:
+    vacuum "/path/to/my_queue.txt"
     ```
+  * Automatically retrieves all URLs, processes them with full automation (honoring per-line `--0`, `--a`, and `--N` flags), and automatically removes/checks off completed URLs from the queue file for safe resume.
+  * If no custom file is specified, it automatically processes `vacuum.txt` located in your project root (auto-generated if missing).
 
 ---
 
 ### ⚡ Industry-Grade Developer CLI & Diagnostics
 
-Zine Scraper is built for professional developers, terminal power-users, and scriptable headless automation. It features a complete suite of standard POSIX-compliant flags and subcommands that execute with sub-second responsiveness (< 0.1s):
+Zine Scraper is built for professional developers, terminal power-users, and scriptable headless automation with sub-second responsiveness (< 0.1s):
 
 #### 📖 Master Help Manual (`zine --help` or `zine -h`)
 Displays a comprehensive, color-coded manual covering CLI syntax, download control flags, built-in power tools, and copy-paste examples:
@@ -262,7 +265,7 @@ zine --version
 ```
 
 #### 🌐 Non-Interactive Supported Sites Directory (`zine sites`)
-Prints a clean terminal catalog of all 48+ supported platforms, engines, and domains grouped by category without launching the interactive TUI:
+Prints a clean terminal catalog of all 48 supported platforms, engines, and domains grouped by category without launching the interactive TUI:
 ```bash
 zine sites
 ```
@@ -273,34 +276,20 @@ Purges all orphaned video segments, fragments (`.part`, `.ytdl`, `.ts`), and sli
 zine clean
 ```
 
-#### ⚡ Headless Media Downloads & Batch Flags
-Pass URLs and flags directly from your terminal. Zine executes immediately without blocking prompts:
-```bash
-# Quick single chapter/episode grab (--0)
-zine "https://hanime.red/watch/episode-1" --0
-
-# Full series vacuum archiving (--a or --A)
-zine "https://hentaihaven.xxx/watch/series-slug/" --a
-
-# Sequential chapter continuation (--5)
-zine "https://asurascans.com/comics/series-slug" --5
-
-# Headless custom batch queue processing
-zine --batch "my_reading_list.txt"
-```
-* **Visual Telemetry**: CLI launches display the signature Zine banner, echo parsed CLI flags, and show live single-line progress spinners (`⠋`, `⠙`, `⠸`) without screen jitter or ANSI code leaks.
-* **Notification Debounce**: Desktop notifications are debounced through `butler/notify.py` to dispatch strictly once on final completion or critical failure, preventing spam during large headless batches.
+#### ⚡ Zero-Friction Return & Error Retention
+* **Zero Extra Keystrokes on Success**: When a download completes successfully, Zine automatically returns to the menu without demanding redundant Enter keypresses.
+* **Full Error Retention**: If a download fails or an upstream platform errors, Zine **never** clears the screen automatically. The failure card, reason, and error logs stay visible until you explicitly dismiss them.
 
 ---
 
-### 📂 Zero-Clutter Isolated Directory Hierarchy
+### 📂 Clean Directory Hierarchy (`Vacuum/` & `Quick grab/`)
 
 All downloaded media is cleanly partitioned to eliminate loose root file pollution and redundant nested subfolders:
 
-* **Batch & Vacuum Path (`~/Downloads/Zine/Batch/<Media Title>/` or `~/Downloads/Zine/Vacuum/<Category>/<Site>/`)**:
+* **Vacuum Series Archiving (`~/Downloads/Zine/Vacuum/<Category>/<Site>/<Media Title>/`)**:
   ```text
   # Video Series:
-  ~/Downloads/Zine/Batch/Sei Brunehilde Gakuen Shoujo Kishidan To Junpaku No Panty/
+  ~/Downloads/Zine/Vacuum/ADULT_ANIME/HentaiHaven/Sei Brunehilde Gakuen Shoujo Kishidan/
   ├── cover.jpg                   # Full-resolution cover artwork
   ├── metadata.json               # Extracted platform & series metadata
   ├── Episode 1.mp4               # Merged high-definition video + audio
@@ -308,10 +297,10 @@ All downloaded media is cleanly partitioned to eliminate loose root file polluti
       └── Episode 1.en.srt
 
   # Music Albums:
-  ~/Downloads/Zine/Vacuum/YouTube Music/LOVELI LORI/Not So Lovely/
+  ~/Downloads/Zine/Vacuum/MUSIC/YouTube Music/LOVELI LORI/Not So Lovely/
   ├── cover.jpg                   # Full-resolution album artwork
   ├── .zine/metadata.json         # Complete album & track metadata
-  └── music/                      # Clean audio tracks
+  └── music/                      # Lossless audio tracks (FLAC default)
       ├── hate u love u.flac
       ├── who else.flac
       └── lyrics/                 # Synced .lrc companion lyrics
@@ -321,7 +310,7 @@ All downloaded media is cleanly partitioned to eliminate loose root file polluti
 * **Quick Grab Path (`~/Downloads/Zine/Quick grab/`)**:
   Single one-off downloads are routed directly into `Quick grab/` without generating series scaffolding.
 * **Intermediate Cache (`/zine scraper/💩/`)**:
-  Temporary video chunks (`.part`, `.ytdl`, `.ts`) and image slices reside in the gitignored temp buffer during assembly and are atomically purged upon completion.
+  Temporary video chunks (`.part`, `.ytdl`, `.ts`) and image slices reside in the gitignored temp buffer during assembly and are automatically purged upon completion.
 
 ---
 
@@ -332,10 +321,10 @@ Zine features an enterprise-grade dual-tier logging and debugging pipeline split
 ```text
 Logs/
 ├── Downlode 💩/
-│   ├── session_YYYY-MM-DD_HH-MM-SS.json   # Brand-new unique structured journal per session
+│   ├── session_YYYY-MM-DD_HH-MM-SS.json   # Unique structured journal per session
 │   ├── latest_session.json                # Live mirror of active/most recent session
 │   ├── Download History.json              # Master enriched history (site, mode, options, metadata, destination)
-│   └── Batch History.json                 # Dedicated batch tracking log
+│   └── Batch History.json                 # Master batch progress & URL tracking
 ├── 💩/
 │   ├── session_YYYY-MM-DD_HH-MM-SS.log    # Detailed console & network execution traces
 │   ├── latest_session.log                 # Pointer to the most recent run trace
@@ -345,20 +334,13 @@ Logs/
 ```
 
 #### 📓 1. Structured Download Journal (`Logs/Downlode 💩/`)
-* **Brand-New JSON Session Per Run**:
-  Every execution (interactive TUI, CLI flag, or batch queue) generates a completely fresh, isolated session JSON file. Prior sessions are never reused or appended to.
-* **Interactive & CLI Choice Recording**:
-  Automatically captures exact choices made in the interactive TUI or passed via CLI flags (e.g., format: `FLAC (Lossless)`, quality: `1080p`, mode: `Vacuum`, continuation counts: `--5`).
-* **Rich Metadata & Item Telemetry**:
-  Records media details shown in the TUI (Artist, Album, Channel, Author, Total Items, Cover status, Destination path) and individual item download states (`downloaded`, `already_exists`, `failed`).
-* **Master History Synchronization**:
-  Synchronizes every run with `Download History.json` and `Batch History.json`, preserving all rich metadata and options.
+* **Fresh JSON Session Per Run**: Every execution generates a fresh session record capturing interactive choices, CLI parameters, item breakdown, and summaries.
+* **Interactive & CLI Choice Recording**: Records exact choices (format: `FLAC (Lossless)`, quality: `1080p`, mode: `Vacuum`, continuation counts: `--5`).
+* **Rich Metadata & Item Telemetry**: Records media details (Artist, Album, Channel, Author, Total Items, Cover status, Destination path) and individual item states (`downloaded`, `already_exists`, `failed`).
 
 #### 🛠️ 2. Execution Traces & Fault-Tolerant Error Logger (`Logs/💩/`)
-* **Silent & Clean Terminal Output**:
-  Terminal output never gets wrecked by unformatted raw Python stack traces. The screen remains clean with live status updates.
-* **1-Second Root-Cause Diagnosis**:
-  If an upstream platform fails (e.g. Cloudflare challenge, 404, or expired CDN domain like Porkbun auctions), Zine instantly catches it, prints an elegant failure card in terminal, and writes the full contextual traceback with request headers directly to `Logs/💩/latest_error.log`:
+* **Silent & Clean Terminal Output**: Unformatted raw Python tracebacks never clutter the UI.
+* **1-Second Root-Cause Diagnosis**: If an upstream platform fails, Zine renders an elegant failure card and writes the full contextual traceback with request headers directly to `Logs/💩/latest_error.log`:
   ```text
   ╭─ 🔴 Download Incomplete / Failed ──────────────────────────────────────────╮
   │                                                                            │
@@ -374,9 +356,9 @@ Logs/
 
 ---
 
-## 🌐 Supported Platforms
+## 🌐 Supported Platforms (48 Scrapers)
 
-Zine natively supports 48+ platforms across 12 structured categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
+Zine natively supports 48 platforms across 12 structured categories (80+ supported domains), with automatic platform detection, multi-mirror failover, and strict site-level isolation (browse interactively via `site` in-app):
 
 ### 📺 1. Anime, Torrents & Direct Indexers
 > [!NOTE]
@@ -384,96 +366,97 @@ Zine natively supports 48+ platforms across 12 structured categories (80+ suppor
 > Unofficial free streaming sites suffer from relentless takedowns, anti-bot Cloudflare challenges, and aggressive CDN throttling. Zine maintains an encyclopedic database of premier anime indexers (Nyaa, SeaDex, TsukiHime, AnimeTosho) accessible via the in-app `site` command. Direct downloading is not handled by Zine for torrents; users are advised to use an external desktop client such as [qBittorrent](https://www.qbittorrent.org/). Adult anime (Hentai) streaming remains fully supported via native scrapers in Section 8 below.
 
 ### 📖 2. Manga (`1_SFW/MANGA`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **MangaDex** | `mangadex.org` | `api.mangadex.org` | Official REST API v5, MangaDex@Home, multi-language, decimal parsing ([Guide](docs/ManaDex.md)) |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **MangaDex** | `mangadex.org`<br>`api.mangadex.org` | Official REST API v5, MangaDex@Home, multi-language, decimal parsing ([Guide](docs/ManaDex.md)) |
 
 ### 🇰🇷 3. Manhwa (`1_SFW/MANHWA`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **Asura Scans** | `asurascans.com` | `asuracomic.net`, `asuratoon.com` | Manhwa/Webtoons, decimal chapter resolution |
-| **Project Suki** | `projectsuki.com` | — | Clean ad-free comic scans and chapter batches |
-| **Manhuaplus** | `manhuaplus.org` | — | Chinese manhua, cultivation & martial arts releases |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **Asura Scans** | `asurascans.com`<br>`asuracomic.net`, `asuratoon.com` | Manhwa/Webtoons, decimal chapter resolution |
+| **Project Suki** | `projectsuki.com` | Clean ad-free comic scans and chapter batches |
+| **Manhuaplus** | `manhuaplus.org` | Chinese manhua, cultivation & martial arts releases |
 
 ### 📑 4. Hybrid Comics (`1_SFW/HYBRID_COMICS`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **Weeb Central** | `weebcentral.com` | — | High-speed CDN reader scans, series archiving |
-| **Kunmanga** | `kunmanga.com` | `kunmanga.co.uk` | Fast chapter image extraction & auto-retry |
-| **Topmanhua** | `topmanhua.fan` | — | High-res manhua/webtoon strip reader, full metadata extraction |
-| **Fanfox** | `fanfox.net` | `m.fanfox.net` | Global manga directory and complete classic series |
-| **MangaK** | `mangak.io` | — | Historic manga archive, high-res chapter reader |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **Weeb Central** | `weebcentral.com` | High-speed CDN reader scans, series archiving |
+| **Kunmanga** | `kunmanga.com`<br>`kunmanga.co.uk` | Fast chapter image extraction & auto-retry |
+| **Topmanhua** | `topmanhua.fan` | High-res manhua/webtoon strip reader, full metadata extraction |
+| **Fanfox** | `fanfox.net`<br>`m.fanfox.net` | Global manga directory and complete classic series |
+| **MangaK** | `mangak.io` | Historic manga archive, high-res chapter reader |
 
 ### 📚 5. Light Novels & Web Serials (`1_SFW/NOVELS`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **Chikari** | `chikari.moe` | — | SvelteKit REST API extraction, ultra-fast 1,400+ chapters indexing |
-| **NovelPhoenix** | `novelphoenix.com` | — | Translated Asian web novels, cultivation epics, clean pagination |
-| **NovelFire** | `novelfire.net` | `novelfire.docs` | Sanitized chapter extraction, ad-filtered text exports |
-| **NovelBuddy** | `novelbuddy.me` | `novelbuddy.com` | Next.js API chapter discovery, rich synopsis & cover grabs |
-| **NovelArchive** | `novelarchive.cc` | — | Lightweight REST API web novel repository |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **Chikari** | `chikari.moe` | SvelteKit REST API extraction, ultra-fast 1,400+ chapters indexing |
+| **NovelPhoenix** | `novelphoenix.com` | Translated Asian web novels, cultivation epics, clean pagination |
+| **NovelFire** | `novelfire.net`<br>`novelfire.docs` | Sanitized chapter extraction, ad-filtered text exports |
+| **NovelBuddy** | `novelbuddy.me`<br>`novelbuddy.com` | Next.js API chapter discovery, rich synopsis & cover grabs |
+| **NovelArchive** | `novelarchive.cc` | Lightweight REST API web novel repository |
 
 ### 🏛 6. Books & Public Archives (`1_SFW/KNOWLEDGE_STUDY`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **Project Gutenberg** | `gutenberg.org` | — | 70,000+ public domain e-books, classic literature, philosophy |
-| **Internet Archive** | `archive.org` | — | Scanned texts, rare manuscripts, permanent open access archives |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **Project Gutenberg** | `gutenberg.org` | 70,000+ public domain e-books, classic literature, philosophy |
+| **Internet Archive** | `archive.org` | Scanned texts, rare manuscripts, permanent open access archives |
 
 ### 🎵 7. Music & Audio (`1_SFW/MUSIC`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **SoundCloud** | `soundcloud.com` | — | High-bitrate audio, track metadata, automated lyrics synchronization |
-| **Idagio** | `idagio.com` | — | Classical music streams, conductor/orchestra/opus metadata tagging |
-| **YouTube Music** | `music.youtube.com` | — | Lossless FLAC, Vorbis tagging, embedded cover art, auto synced `.lrc` lyrics |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **SoundCloud** | `soundcloud.com` | High-bitrate audio, track metadata, automated lyrics synchronization |
+| **Idagio** | `idagio.com` | Classical music streams, conductor/orchestra/opus metadata tagging |
+| **YouTube Music** | `music.youtube.com` | Lossless FLAC, Vorbis tagging, embedded cover art, auto synced `.lrc` lyrics |
 
 ### 🌐 8. Video & Social Platforms (`1_SFW/SOCIAL_MEDIA`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **YouTube** | `youtube.com` | `youtu.be` | Videos, playlists, channels, shorts, auto-subs & rolling ASR sync |
-| **Instagram** | `instagram.com` | — | High-resolution photos, multi-image carousels, reels, stories |
-| **Facebook** | `facebook.com` | `fb.watch` | Public photo albums, full-resolution profile media, video reels |
-| **Pinterest** | `pinterest.com` | `pin.it` | Ultra-high-resolution boards, aesthetic pins, concept art |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **YouTube** | `youtube.com`<br>`youtu.be` | Videos, playlists, channels, shorts, auto-subs & rolling ASR sync |
+| **Instagram** | `instagram.com` | High-resolution photos, multi-image carousels, reels, stories |
+| **Facebook** | `facebook.com`<br>`fb.watch` | Public photo albums, full-resolution profile media, video reels |
+| **Pinterest** | `pinterest.com`<br>`pin.it` | Ultra-high-resolution boards, aesthetic pins, concept art |
 
 ### 🔞 9. Adult Anime (`2_NSFW_ADULT/ADULT_ANIME`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **Hanime** | `hanime1.me` | `hanime.tv` | Full HD 1080p uncensored video streams, playlist feeds |
-| **Hanime Red** | `hanime.red` | — | Franchise collections, tagged releases, subtitle extraction |
-| **Hentai Haven** | `hentaihaven.xxx` | `hentaihaven.red`, `hentaihaven.online`, `hentaihaven.club` | Multi-mirror stream extraction |
-| **HentaiHaven Co** | `hentaihaven.co` | — | Headless browser bridge extraction via nhplayer |
-| **Hentaimama** | `hentaimama.io` | — | Translated adult anime releases, episode archiving |
-| **HStream** | `hstream.moe` | — | HD adult anime streaming, clean direct streams |
-| **OHentai** | `ohentai.org` | — | Vintage OVA and classic adult anime archives |
-| **HentaiCity** | `hentaicity.com` | — | Comprehensive video repository, multi-episode series tracking |
-| **Oppai Stream** | `oppai.stream` | — | Fast direct HLS adult video streaming |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **Hanime** | `hanime1.me`<br>`hanime.tv` | Full HD 1080p uncensored video streams, playlist feeds |
+| **Hanime Red** | `hanime.red` | Franchise collections, tagged releases, subtitle extraction |
+| **Hentai Haven** | `hentaihaven.xxx`<br>`hentaihaven.red`, `hentaihaven.online`, `hentaihaven.club` | Multi-mirror stream extraction |
+| **HentaiHaven Co** | `hentaihaven.co` | Headless browser bridge extraction via nhplayer |
+| **Hentaimama** | `hentaimama.io` | Translated adult anime releases, episode archiving |
+| **HStream** | `hstream.moe` | HD adult anime streaming, clean direct streams |
+| **OHentai** | `ohentai.org` | Vintage OVA and classic adult anime archives |
+| **HentaiCity** | `hentaicity.com` | Comprehensive video repository, multi-episode series tracking |
+| **Oppai Stream** | `oppai.stream` | Fast direct HLS adult video streaming |
 
 ### 🔞 10. Adult Video (`2_NSFW_ADULT/ADULT_PORN`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **Pornhub** | `pornhub.com` | `phncdn.com` | Multi-resolution video downloads (up to 1080p/4K), playlists |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **Pornhub** | `pornhub.com`<br>`phncdn.com` | Multi-resolution video downloads (up to 1080p/4K), playlists |
 
 ### 🔞 11. Doujinshi (`2_NSFW_ADULT/Doujinshi`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **NHentai** | `nhentai.net` | — | Fast 6-digit ID lookups, complete tag indexing, tankōbon archives |
-| **AsmHentai** | `asmhentai.com` | — | Curated doujinshi and adult comics with extensive tag matrix |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **NHentai** | `nhentai.net` | Fast 6-digit ID lookups, complete tag indexing, tankōbon archives |
+| **AsmHentai** | `asmhentai.com` | Curated doujinshi and adult comics with extensive tag matrix |
 
 ### 🔞 12. Adult Webtoons (`2_NSFW_ADULT/ADULT_Webtoons`)
-| Platform | Primary Domain | Alternate Domains | Capabilities |
-|---|---|---|---|
-| **ManhwaUS** | `manhwaus.net` | — | Adult Korean webtoons, romance & drama ongoing manhwa |
-| **Omega Scans** | `omegascans.org` | — | Uncensored adult manhwa & webtoons, English scanlations |
-| **Hentai20** | `hentai20.io` | — | Western adult comics, webtoons, and doujinshi releases |
-| **Manga18fx** | `manga18fx.com` | — | Mixed SFW & NSFW manhwa/webtoons, vertical strip slicing |
-| **Hentai18** | `hentai18.net` | — | Uncensored adult manhwa & webtoons, multi-server feeds |
-| **Oppai Stream Toon** | `read.oppai.stream` | — | Dedicated webtoon and comic vertical strip reader |
+| Scraper | Primary & Alternate Domains | Capabilities |
+|---|---|---|
+| **ManhwaUS** | `manhwaus.net` | Adult Korean webtoons, romance & drama ongoing manhwa |
+| **Omega Scans** | `omegascans.org` | Uncensored adult manhwa & webtoons, English scanlations |
+| **Hentai20** | `hentai20.io` | Western adult comics, webtoons, and doujinshi releases |
+| **Manga18fx** | `manga18fx.com` | Mixed SFW & NSFW manhwa/webtoons, vertical strip slicing |
+| **Hentai18** | `hentai18.net` | Uncensored adult manhwa & webtoons, multi-server feeds |
+| **Oppai Stream Toon** | `read.oppai.stream` | Dedicated webtoon and comic vertical strip reader |
 
 ---
 
 ## 🛠️ Feature Toolkit Deep Dive
 
 ### 1. Audio Suite & Metadata Baking (`bake`, `lyrs`, `sc-lyrics`)
-* **Metadata & Cover Art Baker (`bake`)**: Inspects, edits, and injects ID3/Vorbis tags (**Title**, **Artist**, **Album**, **Year**, **Genre**, **Track Number**) and attaches uncompressed **Cover Art** into `.flac`, `.mp3`, `.m4a`, `.wav`, `.ogg`, and `.opus` files with zero quality degradation.
+* **Default Lossless FLAC (`.flac`)**: All music downloads default to pristine Lossless FLAC with dynamic format switching (FLAC, MP3, OPUS, M4A, WAV, AAC) configurable in `settings`.
+* **Metadata & Cover Art Baker (`bake` / `metadata`)**: Inspects, edits, and injects ID3/Vorbis tags (**Title**, **Artist**, **Album**, **Year**, **Genre**, **Track Number**) and attaches uncompressed **Cover Art** into `.flac`, `.mp3`, `.m4a`, `.wav`, `.ogg`, and `.opus` files with zero quality degradation.
 * **Synced Lyrics Engine (`lyrs`)**: Multi-tier waterfall search (LRCLIB $\rightarrow$ NetEase $\rightarrow$ Megalobiz $\rightarrow$ YouTube ASR auto-captions) with timestamp preview and instant `.lrc` companion export.
 * **Folder Lyrics Scanner (`sc-lyrics`)**: Recursively scans existing music folders, detects tracks missing lyrics, and downloads synchronized `.lrc` files automatically.
 
@@ -497,25 +480,19 @@ Zine natively supports 48+ platforms across 12 structured categories (80+ suppor
 * Automatically detects tall continuous vertical image strips common in Korean Manhwa and Chinese Manhua.
 * Intelligently slices them into uniform 2000px height pages (numbered `001.jpg`, `002.jpg`), leaving normal ratio pages untouched.
 
-### 5. Automated Batch Pipeline (`batch`)
-* Drop any combination of URLs (manga, anime, songs, channels, playlists, e-books) into `Batch URL.txt`.
-* Run `batch` (or launch in headless mode). Zine iterates through the queue sequentially with automatic error recovery and zero manual intervention.
-* **Dual History Logging & State Checkpointing**: Atomically updates `Batch URL.txt` by checking off finished items, while writing dual-target JSON history records to `Logs/Batch History.json` and `Logs/💩/batch_history.json` so you can safely resume interrupted batches.
+### 5. Automated Vacuum Queue Pipeline (`vacuum`)
+* Drop any combination of URLs (manga, anime, songs, channels, playlists, e-books) into `vacuum.txt`.
+* Run `vacuum` (or launch in headless mode with `--vacuum`). Zine iterates through the queue sequentially with automatic error recovery and zero manual intervention.
+* **Atomic State Checkpointing**: Automatically updates `vacuum.txt` by removing finished items, while writing detailed JSON history records to `Logs/Downlode 💩/Batch History.json` and session logs so you can safely resume interrupted batches.
 
-### 6. Global Revolt Mode (`Ctrl + R`)
-* Universal graceful download limiter and emergency stop integrated across all 47 scrapers.
-* Press **`Ctrl + R`** during active downloads to trigger the inline Revolt prompt:
-  * Enter **`0`** to finish the active file/chapter and immediately shut down.
-  * Enter **`N`** (e.g. `2`, `5`) to download $N$ more items sequentially before exiting.
-  * Press **`Esc`** or submit an empty input to cancel Revolt mode.
-* **Native Desktop Notification**: Automatically triggers a cross-platform OS notification (`Zine Scraper — Revolt`) upon completion with series title context.
-* Restores terminal cursor visibility (`\033[?25h`) and raw mode settings without lingering listener threads.
+### 6. Global Revolt (`Ctrl + R`) & Truncate (`Ctrl + T`)
+* **Ctrl + R (Revolt Mode)**: Gracefully halts downloads after current item (`0`) or `N` more items, shuts down cleanly, and triggers an OS notification.
+* **Ctrl + T (Truncate Mode)**: Immediately finishes the active file/chapter and returns straight back to the main interactive menu without closing Zine.
 
 ### 7. MangaDex Multi-Language Archiving
 * Full integration with official MangaDex REST API v5 and MangaDex@Home CDN infrastructure.
 * **Interactive Multi-Language Selector**: Use **`Space`** in the `MultiSelector` prompt to choose multiple language translations at once.
 * **Isolated Folder Architecture**: Automatically routes distinct translations into separated directories (e.g. `MangaDex/Title [en]`, `MangaDex/Title [ja]`) with per-language history tracking.
-* **Smooth 12Hz Braille Spinners**: Rotating braille animations (`⠋`, `⠙`, `⠹`, `⠸`...) during stream loading and metadata baking.
 
 ### 8. Butler Whistleblower & Network Auto-Recovery
 * Continuous background network connection monitor running alongside the download engine.
@@ -530,7 +507,7 @@ Zine natively supports 48+ platforms across 12 structured categories (80+ suppor
 zine-scraper/
 ├── orchestrator.py          ← Main entry point — launches CLI and TUI
 ├── core/
-│   ├── funnel.py            ← Universal CLI/batch ingestion funnel & path routing
+│   ├── funnel.py            ← Universal CLI/queue ingestion funnel & path routing
 │   ├── logger.py            ← Dual-tier session & contextual error logging engine
 │   ├── site_map.py          ← Centralized site-to-category domain mapper
 │   ├── domain_manager.py    ← Dynamic site_config.json discovery loader
@@ -555,13 +532,14 @@ zine-scraper/
 │   │   ├── MUSIC/           ← idagio, soundcloud, yt_music
 │   │   └── SOCIAL_MEDIA/    ← facebook, instagram, pinterest, youtube
 │   ├── 2_NSFW_ADULT/
-│   │   ├── ADULT_ANIME/     ← hanime, hanime_red, hentaihaven, hentaihaven_co, hentaimama, hstream, ohentai, hentaicity, oppai_stream
+│   │   ├── ADULT_ANIME/     ← hanime, hanime_red, hentaicity, hentaihaven, hentaihaven_co, hentaimama, hstream, ohentai, oppai_stream
 │   │   ├── ADULT_PORN/      ← pornhub
 │   │   ├── Doujinshi/       ← asmhentai, nhentai
 │   │   └── ADULT_Webtoons/  ← manhwaus, omegascans, hentai20, manga18fx, hentai18, oppai_stream_toon
 │   └── 3_SYSTEM/            ← hls_extractor.py, playwright_extractor.py, ytdlp/
 ├── Logs/                    ← Operational logging, download registry & debug forensics
 │   ├── 💩/                  ← Timestamped session traces & latest_error.log dumps
+│   ├── Downlode 💩/         ← Structured JSON download journals & session logs
 │   ├── Batch History.json   ← Checkpointed history of completed batch jobs
 │   ├── Download History.json← Permanent media index preventing duplicate grabs
 │   └── URL History.txt      ← In-app command history and URL suggestions
@@ -577,8 +555,8 @@ zine-scraper/
 
 ### Key Engineering Principles
 * **Dual-Tier Forensic Logging**: Every run records clean telemetry to `Logs/💩/latest_session.log`. When upstream CDNs or servers fail, full stack traces and request contexts are captured to `Logs/💩/latest_error.log` while the terminal displays a concise status card.
-* **Scriptable Headless CLI**: Direct URL invocation bypasses interactive selector prompts when flags (`--0`, `--a`, `--<N>`, `--batch`) are passed, enabling seamless automation via terminal or scripts.
-* **Isolated Media Packaging**: Downloads are strictly organized in `~/Downloads/Zine/Batch/<Media Title>/` with cover art, metadata, and subtitle folders without polluting root directories or creating nested `/video/` subfolders.
+* **Scriptable Headless CLI**: Direct URL invocation bypasses interactive selector prompts when flags (`--0`, `--a`, `--<N>`, `--vacuum`) are passed, enabling seamless automation via terminal or scripts.
+* **Isolated Media Packaging**: Downloads are strictly organized in `~/Downloads/Zine/Vacuum/<Category>/<Site>/<Media Title>/` with cover art, metadata, and subtitle folders without polluting root directories.
 * **Single-Session cbreak Event Processing**: Replaced per-keystroke `tty.setraw()` invocations with a single persistent `tty.setcbreak()` session, eliminating stdin blocking locks and 30Hz loop latency.
 * **Zero ANSI Sequence Leaks**: Multi-byte escape sequences (`\x1b[A`, `\x1b[B`, `\x1b[C`, `\x1b[D`) are cleanly buffered so arrow keys, `Backspace`, `Home`, and `End` never print control artifacts into the terminal.
 * **Universal Rich Markup Sanitization**: All pasted inputs and exception messages are passed through `rich.markup.escape()` to prevent syntax crashes from square brackets or URL tags.
@@ -596,9 +574,9 @@ zine-scraper/
   │ Contributor       │ Role & Primary Contributions                                                                │
   ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
   │ Anshu / Valse     │ Creator, Lead Architect & Solo Core Developer                                               │
-  │                   │ • Designed & built 100% of all scraping logic, engines, and 34+ site scrapers from scratch. │
+  │                   │ • Designed & built 100% of all scraping logic, engines, and 48 site scrapers from scratch.  │
   │                   │ • Engineered the core architecture, Rich TUI framework, funnel router, and settings suite.  │
-  │                   │ • Dedicated 3 months of solo engineering to create and perfect the Zine Scraper Suite.      │
+  │                   │ • Dedicated months of solo engineering to create and perfect the Zine Scraper Suite.        │
   ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
   │ Antigravity AI    │ AI Pair Programming Assistant                                                               │
   │ (Google DeepMind) │ • Debugged codebase issues, conducted empirical runtime verification & test suites.         │
