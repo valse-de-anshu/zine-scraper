@@ -4,7 +4,6 @@
 
 <img src="assets/zine%20banner.png" alt="Zine Scraper Logo Banner" width="100%">
 
-# Zine Scraper Suite
 
 **A high-performance media archiving suite built to save the content you love permanently onto your local storage.**
 
