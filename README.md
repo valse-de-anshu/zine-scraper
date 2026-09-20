@@ -103,14 +103,19 @@ zine "https://hentaihaven.xxx/watch/sei-brunehilde-gakuen.../" --a
 # Sequential chapter continuation (--5)
 zine "https://asurascans.com/comics/series-title" --5
 
+# Extract & save series metadata and cover art only (--meta)
+zine "https://chikari.moe/novels/endless-extraction-in-a-game-like-world" --meta
+
 # Vacuum queue processing (defaults to vacuum.txt)
 zine --vacuum
 
-# Custom queue file processing
+# Custom queue file processing with optional flags
+zine "my_reading_list.txt" --meta
 zine --vacuum "my_reading_list.txt"
 
 # Or directly with Python:
 python3 orchestrator.py "https://example.com/media/title" --0
+python3 orchestrator.py "my_reading_list.txt" --meta
 ```
 
 #### 🖥️ Interactive TUI Mode
@@ -213,14 +218,22 @@ You can append smart flags directly to URLs at the main prompt or inside `vacuum
   * Continues from where you last left off in `Download History.json` and downloads exactly **`N`** chapters in systematic order (e.g. `--2`, `--4`, `--5`, `--10`).
   * Seamlessly processes decimal chapters (e.g. `Chapter 2.5`) in proper sequence without annoying confirmation prompts.
   * *Example:* `https://asurascans.com/comics/the-return-of-the-crazy-demon-08677664 --5` *(downloads the next 5 unread chapters sequentially).*
-* **`--vacuum` / `--batch` (Headless Queue File Mode)**:
-  * Paste any custom text file path with `--vacuum` (or `vacuum <file>`) directly into the main prompt or CLI:
+* **`--meta` / `--metadata` (Metadata Extraction Mode)**:
+  * Headlessly scrapes and extracts all series metadata (Title, Type, Box Purpose, Author/Artist, Studio, Status, Rating, Views, Likes, Tags, Genres, Canonical URL, and Full Synopsis) along with the high-resolution Cover Art into `.zine/metadata.json` without downloading chapters or videos.
+  * Compatible with Hwaran (Android) and universal media players.
+  * *Examples:*
+    * `zine "https://chikari.moe/novels/endless-extraction-in-a-game-like-world" --meta`
+    * `zine "https://www.pornhub.com/model/berrybabe69/videos" --meta`
+* **`--vacuum` / `--batch` or Direct File Input (Headless Queue Mode)**:
+  * Pass any custom text file path directly from the terminal or main prompt with optional flags:
     ```bash
+    zine "my_reading_list.txt" --meta
+    zine "my_reading_list.txt" --0
     zine --vacuum "my_reading_list.txt"
     # or inside the interactive prompt:
     vacuum "/path/to/my_queue.txt"
     ```
-  * Automatically retrieves all URLs, processes them with full automation (honoring per-line `--0`, `--a`, and `--N` flags), and automatically removes/checks off completed URLs from the queue file for safe resume.
+  * Automatically retrieves all URLs, processes them sequentially (honoring per-line inline `--0`, `--a`, `--N`, and `--meta` flags), and automatically checkpoints completed URLs from the queue file for safe resume.
   * If no custom file is specified, it automatically processes `vacuum.txt` located in your project root (auto-generated if missing).
 
 ---
@@ -286,18 +299,18 @@ zine clean
 
 All downloaded media is cleanly partitioned to eliminate loose root file pollution and redundant nested subfolders:
 
-* **Vacuum Series Archiving (`~/Downloads/Zine/Vacuum/<Category>/<Site>/<Media Title>/`)**:
+* **Vacuum Series Archiving (`~/Downloads/Zine/Vacuum/<Site>/<Media Title>/`)**:
   ```text
   # Video Series:
-  ~/Downloads/Zine/Vacuum/ADULT_ANIME/HentaiHaven/Sei Brunehilde Gakuen Shoujo Kishidan/
+  ~/Downloads/Zine/Vacuum/HentaiHaven/Sei Brunehilde Gakuen Shoujo Kishidan/
   ├── cover.jpg                   # Full-resolution cover artwork
-  ├── metadata.json               # Extracted platform & series metadata
+  ├── .zine/metadata.json         # Standardized series & video metadata
   ├── Episode 1.mp4               # Merged high-definition video + audio
   └── subtitle/                   # Cleanly isolated subtitles
       └── Episode 1.en.srt
 
   # Music Albums:
-  ~/Downloads/Zine/Vacuum/MUSIC/YouTube Music/LOVELI LORI/Not So Lovely/
+  ~/Downloads/Zine/Vacuum/YouTube Music/LOVELI LORI/Not So Lovely/
   ├── cover.jpg                   # Full-resolution album artwork
   ├── .zine/metadata.json         # Complete album & track metadata
   └── music/                      # Lossless audio tracks (FLAC default)
@@ -305,8 +318,22 @@ All downloaded media is cleanly partitioned to eliminate loose root file polluti
       ├── who else.flac
       └── lyrics/                 # Synced .lrc companion lyrics
           └── hate u love u.lrc
+
+  # Comics / Webtoons:
+  ~/Downloads/Zine/Vacuum/Hentai20/Heart-Pounding S-Matching/
+  ├── cover.png                   # Full-resolution cover artwork
+  ├── .zine/metadata.json         # Standardized series metadata
+  ├── Chapter 01/                 # Clean page archives
+  └── Chapter 02/
+
+  # Web Novels:
+  ~/Downloads/Zine/Vacuum/Chikari/Endless Extraction in a Game-Like World/
+  ├── cover.webp                  # Cover artwork
+  ├── .zine/metadata.json         # Standardized novel metadata
+  └── novel chapter/              # Formatted text chapters
+      ├── chapter_0001.txt
+      └── chapter_0002.txt
   ```
-  *(Comic/Manhwa chapters download into clean subdirectories like `Chapter 01/`, `Chapter 02/` with zero redundant sub-nesting).*
 * **Quick Grab Path (`~/Downloads/Zine/Quick grab/`)**:
   Single one-off downloads are routed directly into `Quick grab/` without generating series scaffolding.
 * **Intermediate Cache (`/zine scraper/💩/`)**:
@@ -508,6 +535,7 @@ zine-scraper/
 ├── orchestrator.py          ← Main entry point — launches CLI and TUI
 ├── core/
 │   ├── funnel.py            ← Universal CLI/queue ingestion funnel & path routing
+│   ├── metadata_engine.py   ← Standardized JSON metadata serialization & schema engine
 │   ├── logger.py            ← Dual-tier session & contextual error logging engine
 │   ├── site_map.py          ← Centralized site-to-category domain mapper
 │   ├── domain_manager.py    ← Dynamic site_config.json discovery loader
