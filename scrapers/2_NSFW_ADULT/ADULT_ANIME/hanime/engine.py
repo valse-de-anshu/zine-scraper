@@ -192,7 +192,6 @@ class HanimeEngine(VideoEngine):
                 "upload_date": _fmt_date(v.get("upload_date", "") or ""),
                 "view_count":  v.get("view_count", 0) or 0,
                 "like_count":  v.get("like_count",  0) or 0,
-                "duration":    v.get("duration",    0) or 0,
                 "url":         v.get("url", ""),
             }
 
@@ -215,12 +214,6 @@ class HanimeEngine(VideoEngine):
             [e for e in all_entries if e["upload_date"]],
             key=lambda e: e["upload_date"], reverse=True
         )[:10]
-
-        # longest — descending duration in seconds
-        longest = sorted(
-            [e for e in all_entries if e["duration"] > 0],
-            key=lambda e: e["duration"], reverse=True
-        )[:10] or all_entries[:10]
 
         # ── Build clean metadata dict ─────────────────────────────────
         url = ""

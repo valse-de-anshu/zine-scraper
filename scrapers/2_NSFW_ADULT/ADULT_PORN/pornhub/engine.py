@@ -236,7 +236,6 @@ class PornHubEngine(VideoEngine):
                 "upload_date": str(_fmt_date(v.get("upload_date") or "")),
                 "view_count":  _safe_num(v.get("view_count")),
                 "like_count":  _safe_num(v.get("like_count")),
-                "duration":    _safe_num(v.get("duration")),
                 "url":         str(v.get("url") or ""),
             }
 
@@ -259,12 +258,6 @@ class PornHubEngine(VideoEngine):
             [e for e in all_entries if e["upload_date"]],
             key=lambda e: e["upload_date"], reverse=True
         )[:10]
-
-        # longest — descending duration in seconds
-        longest = sorted(
-            [e for e in all_entries if e["duration"] > 0],
-            key=lambda e: e["duration"], reverse=True
-        )[:10] or all_entries[:10]
 
         # ── Calculate views and likes ──────────────────────────────────
         total_v = sum(int(e["view_count"]) for e in all_entries if e.get("view_count"))
