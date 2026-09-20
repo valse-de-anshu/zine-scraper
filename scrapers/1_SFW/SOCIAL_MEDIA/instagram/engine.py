@@ -162,8 +162,10 @@ class InstagramEngine:
                 )
             except Exception:
                 import traceback
-                Path("Logs/💩").mkdir(parents=True, exist_ok=True)
-                Path("Logs/💩/playwright_debug.txt").write_text(traceback.format_exc())
+                from core.paths import PathAuthority
+                logs_dir = PathAuthority().get_logs_root() / "💩"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                (logs_dir / "playwright_debug.txt").write_text(traceback.format_exc(), encoding="utf-8")
                 logger.error(f"Playwright failed for '{username}'")
                 return {"Channel/Series": username, "Source": "Instagram"}, []
 
@@ -451,28 +453,12 @@ class InstagramEngine:
         """
         Scroll page to bottom.
         Waits 2.5s per scroll to allow Instagram's paginator to fire.
-        Takes a screenshot every scroll for debugging.
         """
-        import time
-        from pathlib import Path
-        
-        # Create screenshot directory
-        debug_dir = Path("💩")
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        
         for idx in range(max_scrolls):
             try:
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             except Exception:
                 pass
-            
-            # Take a screenshot
-            try:
-                ts = int(time.time())
-                await page.screenshot(path=str(debug_dir / f"scroll_{idx}_{ts}.png"), full_page=False)
-            except Exception as e:
-                logger.debug(f"Screenshot failed: {e}")
-                
             await page.wait_for_timeout(2500)
 
     # ── TUI-facing board listing ──────────────────────────────────────────────
