@@ -17,6 +17,9 @@
       - `get_default_batch_path()`, `get_batch_root()`, and `get_batch_save_path()` all redirect transparently to `Vacuum/`.
       - Scraper workflows updated to render `[site]Vacuum Mode[/site]`.
       - `core/cli_help.py` manuals and doctor storage checks updated to reflect `Vacuum/`.
+    - **`vacuum.txt` Queue File Auto-Generation**:
+      - `paths.get_urls_file()` now resolves to `vacuum.txt` with backward-compatible fallback/migration for existing `Batch URL.txt`.
+      - `core/library.py:scaffold_library()` and `core/funnel.py:load_urls()` automatically generate `vacuum.txt` with helpful template comments whenever missing or deleted.
 
 ---
 

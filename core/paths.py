@@ -137,8 +137,16 @@ class PathAuthority:
         return self._secrets_file
 
     def get_urls_file(self) -> Path:
-        return self._downloads_root / "Batch URL.txt"
-        
+        """Returns the primary queue file (vacuum.txt) in the downloads root."""
+        vacuum_file = self._downloads_root / "vacuum.txt"
+        legacy_file = self._downloads_root / "Batch URL.txt"
+        if not vacuum_file.exists() and legacy_file.exists():
+            return legacy_file
+        return vacuum_file
+
+    def get_vacuum_urls_file(self) -> Path:
+        return self.get_urls_file()
+
     def get_url_history_file(self) -> Path:
         return self._url_history_file
 

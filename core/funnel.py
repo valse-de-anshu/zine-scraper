@@ -54,6 +54,11 @@ from core.paths import sanitize_user_path
 def load_urls(file_path: Optional[Path] = None) -> List[str]:
     target_file = Path(file_path) if file_path else URLS_FILE
     urls = []
+    if not target_file.exists():
+        try:
+            storage.write_file(target_file, "# Add URLs here to download sequentially in vacuum mode.\n# Example: https://site.com/series-url --5\n")
+        except Exception:
+            pass
     if target_file.exists():
         try:
             content = storage.read_file(target_file)
@@ -64,6 +69,7 @@ def load_urls(file_path: Optional[Path] = None) -> List[str]:
         except Exception:
             pass
     return urls
+
 
 from core.site_map import get_site_folder
 
@@ -794,7 +800,7 @@ class MainPrompt:
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
             tip_text.append("vacuum", style="warning")
-            tip_text.append(" to run all URLs from the queue file.\n", style="info")
+            tip_text.append(" to download all from vacuum.txt.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")

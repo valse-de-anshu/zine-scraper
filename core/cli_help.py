@@ -57,7 +57,7 @@ def print_cli_help():
     opt_table.add_row("--0", "Quick Grab mode: downloads single chapter/episode directly into 'Quick grab/' without series folder.")
     opt_table.add_row("-a, --a, --A, --all", "Vacuum mode: downloads entire franchise/series with full metadata, cover art & directory hierarchy into 'Vacuum/'.")
     opt_table.add_row("-<N>, --<N>", "Sequential limit: continues from last read chapter in history and grabs exactly N chapters (e.g. --5, --10).")
-    opt_table.add_row("--vacuum [FILE]\n--batch [FILE]", "Vacuum queue mode: processes URLs from specified text file headlessly into Vacuum/ (defaults to URL History.txt).")
+    opt_table.add_row("--vacuum [FILE]\n--batch [FILE]", "Vacuum queue mode: processes URLs from specified text file headlessly into Vacuum/ (defaults to 'vacuum.txt').")
     opt_table.add_row("-h, --help", "Display this comprehensive CLI manual and exit.")
     opt_table.add_row("-v, --version", "Print version, system environment, and tool dependency status.")
     opt_table.add_row("sites, --sites", "List all supported categories, platforms, and primary domains.")

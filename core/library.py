@@ -47,6 +47,17 @@ def scaffold_library(root: Path, storage) -> None:
 
     # Vacuum
     storage.create_directory(root / "Vacuum")
+    vacuum_file = root / "vacuum.txt"
+    legacy_file = root / "Batch URL.txt"
+    if legacy_file.exists() and not vacuum_file.exists():
+        try:
+            content = legacy_file.read_text(encoding="utf-8")
+            storage.write_file(vacuum_file, content)
+            legacy_file.unlink()
+        except Exception:
+            pass
+    if not vacuum_file.exists():
+        storage.write_file(vacuum_file, "# Add URLs here to download sequentially in vacuum mode.\n# Example: https://site.com/series-url --5\n")
 
     # temp (centralized in 💩)
     from core.paths import PathAuthority
