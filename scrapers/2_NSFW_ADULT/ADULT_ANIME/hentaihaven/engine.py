@@ -223,6 +223,7 @@ class HentaiHavenEngine(VideoEngine):
                 "upload_date": _fmt_date(v.get("upload_date", "") or ""),
                 "view_count":  v.get("view_count", 0) or 0,
                 "like_count":  v.get("like_count",  0) or 0,
+                "duration":    v.get("duration",    0) or 0,
                 "url":         v.get("url", ""),
             }
 

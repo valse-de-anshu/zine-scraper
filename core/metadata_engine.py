@@ -138,7 +138,7 @@ class MetadataEngine:
             # Clean and unescape title
             clean_title = _clean_str(payload.title)
 
-            # Build clean dictionary from payload without duplicate keys
+            # Build clean dictionary from payload
             data: Dict[str, Any] = {
                 "title": clean_title,
                 "type": payload.type,
@@ -149,16 +149,20 @@ class MetadataEngine:
                 clean_cls = _clean_str(payload.classification_type)
                 if clean_cls:
                     data["classification"] = clean_cls
+                    data["classification_type"] = clean_cls
 
             if payload.publication_status:
                 clean_pub = _clean_str(payload.publication_status)
                 if clean_pub:
                     data["publication_status"] = clean_pub
+                    if not payload.status:
+                        data["status"] = clean_pub
 
             if payload.alt_title:
                 clean_alt = _clean_str(payload.alt_title)
                 if clean_alt:
                     data["alt_title"] = clean_alt
+                    data["altTitle"] = clean_alt
 
             if payload.author:
                 clean_author = _clean_str(payload.author)
@@ -209,6 +213,7 @@ class MetadataEngine:
                             clean_tags.append(str_t)
                 if clean_tags:
                     data["tags"] = clean_tags
+                    data["genres"] = clean_tags
 
             if payload.year:
                 clean_year = _clean_str(str(payload.year))
@@ -218,7 +223,7 @@ class MetadataEngine:
             if payload.url:
                 data["url"] = payload.url.strip()
 
-            # Video channel / creator specific metrics
+            # YouTube / Pornhub channel specific metrics
             if payload.views:
                 data["views"] = str(payload.views)
 
