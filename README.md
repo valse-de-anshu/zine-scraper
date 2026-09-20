@@ -1,13 +1,8 @@
 <div align="center">
 
-<pre>
-███████╗██╗███╗   ██╗███████╗
-╚══███╔╝██║████╗  ██║██╔════╝
-  ███╔╝ ██║██╔██╗ ██║█████╗  
- ███╔╝  ██║██║╚██╗██║██╔══╝  
-███████╗██║██║ ╚████║███████╗
-╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝
-</pre>
+<img src="assets/banner.png" alt="Zine Scraper Banner" width="100%">
+
+<img src="assets/zine%20banner.png" alt="Zine Scraper Logo Banner" width="100%">
 
 # Zine Scraper Suite
 
@@ -33,13 +28,31 @@
 
 <div align="center">
 
-## 🖼️ Preview & Showcase
+## 🖼️ Live Previews & Interactive Showcase
 
-| Interactive Command Prompt | Chapter & Episode Selector |
+### ⚡ Live Interactive Workflows
+
+| 🎮 Interactive TUI & Quality Selector | 🚀 Automated Headless & Batch Pipeline |
 | :---: | :---: |
-| <img src="preview/01-home-tui-quick-guide.png" width="440" alt="Command Prompt"> | <img src="preview/03-interactive-tui-quick-grab.png" width="440" alt="Chapter Selector"> |
-| **Live Multi-Threaded Download Pipeline** | **Download Summary & Finished Media** |
-| <img src="preview/04-download-log-tui-01.png" width="440" alt="Download Pipeline"> | <img src="preview/06-download-complete-tui.png" width="440" alt="Download Complete"> |
+| <img src="preview/interactive%20tui.gif" width="480" alt="Interactive TUI & Chapter Selector"> | <img src="preview/auto%20downlode.gif" width="480" alt="Automated Download Pipeline"> |
+
+<br>
+
+### 🎨 80+ Themes Dynamic Showcase
+
+<img src="preview/theme%20preview.gif" width="85%" alt="80+ Dark Themes Dynamic Preview">
+
+<br>
+
+### 🖥️ Interface & Progress Views
+
+| 🏠 Home Interactive Dashboard | 🧭 Universal 48-Site Selector |
+| :---: | :---: |
+| <img src="preview/home.png" width="480" alt="Home TUI Menu"> | <img src="preview/site%20tui.png" width="480" alt="Universal Site TUI"> |
+| **📊 Real-time Dual Progress Engine** | **⚙️ Live Theme Settings** |
+| <img src="preview/progress%20bar.png" width="480" alt="Dual Progress Gauge"> | <img src="preview/theme%20setting.png" width="480" alt="Theme Settings"> |
+| **✨ Minimal Home Mode** | **⚡ Minimal Progress Mode** |
+| <img src="preview/minimal%20home.png" width="480" alt="Minimal Home Mode"> | <img src="preview/minimal%20progress%20bar.png" width="480" alt="Minimal Progress Bar"> |
 
 </div>
 
@@ -590,28 +603,6 @@ zine-scraper/
 * **Universal Rich Markup Sanitization**: All pasted inputs and exception messages are passed through `rich.markup.escape()` to prevent syntax crashes from square brackets or URL tags.
 * **Intermediate Temp Buffer (`💩/`)**: All video fragments, image chunks, and tag buffers remain safely inside the centralized temp directory until validation is verified.
 * **Site-Level Isolation**: Scrapers never share cross-dependencies, keeping each extraction platform fully self-contained.
-
----
-
-## ❤️ Credits & Acknowledgments
-
-```text
-  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │  CREDITS & ACKNOWLEDGMENTS                                                                                      │
-  ├───────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Contributor       │ Role & Primary Contributions                                                                │
-  ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Anshu / Valse     │ Creator, Lead Architect & Solo Core Developer                                               │
-  │                   │ • Designed & built 100% of all scraping logic, engines, and 48 site scrapers from scratch.  │
-  │                   │ • Engineered the core architecture, Rich TUI framework, funnel router, and settings suite.  │
-  │                   │ • Dedicated months of solo engineering to create and perfect the Zine Scraper Suite.        │
-  ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Antigravity AI    │ AI Pair Programming Assistant                                                               │
-  │ (Google DeepMind) │ • Debugged codebase issues, conducted empirical runtime verification & test suites.         │
-  │                   │ • Refactored TUI event processing to zero-leak raw TTY cbreak loops for high responsiveness.|
-  │                   │ • Assisted in architecture refactoring for site-level scraper isolation & crashproofing.    |
-  └───────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
-```
 
 ---
 
