@@ -202,6 +202,9 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         except Exception:
             pass
         
+    from core.ui import reset_error_wait
+    reset_error_wait()
+
     try:
         scraper = get_scraper_instance(url)
     except Exception as e:
@@ -213,12 +216,12 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
     if not scraper:
         logging.error(f"Unsupported URL: {url}")
         from core.logger import record_error_log
-        from core.ui import print_failure_box, wait_for_return
+        from core.ui import print_failure_box, wait_for_error
         record_error_log("Unsupported URL or command", context={"url": url})
         print_failure_box(safe_url, reason="Domain or URL format is not supported by any active scraper in Zine.")
         if not is_batch:
             if sys.stdin.isatty() and not getattr(scraper, "_is_cli", False):
-                wait_for_return("Press Enter to return...")
+                wait_for_error("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -228,8 +231,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         console.print(f"[warning]Unsupported site folder for URL: {safe_url}[/warning]")
         if not is_batch:
             if sys.stdin.isatty():
-                from core.ui import wait_for_return
-                wait_for_return("Press Enter to return...")
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -238,11 +241,11 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
         tui_module = importlib.import_module(f"scrapers.{site_folder}.tui")
     except Exception as e:
         logging.error(f"Failed to import TUI module for {site_folder}: {e}")
-        console.print(f"[error]Site handler error for {site_folder}[/error]")
+        console.print(f"[error]Site handler error for {site_folder}: {e}[/error]")
         if not is_batch:
             if sys.stdin.isatty():
-                from core.ui import wait_for_return
-                wait_for_return("Press Enter to return...")
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -432,6 +435,11 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             if original_mark_downloaded:
                 hist_layer.mark_downloaded = original_mark_downloaded
             
+        has_downloaded = check_has_downloaded()
+        if not (has_downloaded or already_up_to_date) and not is_batch and sys.stdin.isatty():
+            from core.ui import wait_for_error
+            wait_for_error("Press Enter to return...")
+
         logging.info(f"Finished TUI execution for: {url}")
         return True
     except core.ui.TruncateStopException as tse:
@@ -457,7 +465,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
     except Exception as e:
         logging.error(f"Failed to load/execute TUI for {site_folder}: {e}", exc_info=True)
         from core.logger import record_error_log
-        from core.ui import print_failure_box, wait_for_return
+        from core.ui import print_failure_box, wait_for_error
         record_error_log(e, context={"url": url, "site_folder": site_folder, "batch_path": str(batch_path) if batch_path else None})
         try:
             journal.finish_download(url=url, status="failed", error=str(e))
@@ -472,7 +480,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             
         console.print(f"[error]Failed to load TUI for {escape(str(site_folder))}: {escape(str(e))}[/error]")
         if not is_batch:
-            wait_for_return("Press Enter to return...")
+            wait_for_error("Press Enter to return...")
         else:
             time.sleep(1.5)
         return False
@@ -1041,8 +1049,8 @@ def main():
                 from core.cli_help import run_cli_doctor
                 startup_clear()
                 run_cli_doctor()
-                from core.ui import wait_for_return
-                wait_for_return("Press Enter to return to main menu...")
+                from core.ui import prompt_return
+                prompt_return("Press Enter to return to main menu...")
             elif url_lower in ["clean", "/clean", "--clean"]:
                 from core.cli_help import run_cli_clean
                 run_cli_clean()
@@ -1051,8 +1059,8 @@ def main():
                 from core.cli_help import print_cli_version
                 startup_clear()
                 print_cli_version()
-                from core.ui import wait_for_return
-                wait_for_return("Press Enter to return to main menu...")
+                from core.ui import prompt_return
+                prompt_return("Press Enter to return to main menu...")
             elif url_lower in ["slice", "/slice", "slicer"]:
                 from core.image_slicer import run_image_slicer_tui
                 run_image_slicer_tui()

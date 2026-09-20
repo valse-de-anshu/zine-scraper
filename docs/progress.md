@@ -1,3 +1,26 @@
+# Progress Report - September 20, 2026 (Bugfix: Retain Error Displays & Failure Panels — Prevent Premature Screen Clearing)
+
+- **Failure Display Retention & Error Pause Control (`core/ui.py`, `core/funnel.py`, all `workflow.py` / `tui.py` files, `core/image_slicer.py`, `core/lyrics_engine.py`):**
+  - **Identified Problem**:
+    - When downloads succeeded, `wait_for_return()` was streamlined to auto-return immediately to eliminate redundant keypresses.
+    - However, because all error handlers, failure boxes (`print_failure_box`), metadata failure catch blocks, unsupported URL handlers, and unhandled exception catchers also called `wait_for_return()`, any error or failure would instantly return to the main funnel loop.
+    - The main loop immediately executed `startup_clear()`, clearing the terminal and wiping out the error traceback and failure box before the user had a chance to read it.
+  - **Resolution**:
+    - **Dedicated `wait_for_error()` with Single-Keypress Reader (`core/ui.py`)**:
+      - Implemented `wait_for_error(prompt_msg="Press Enter to return to menu...", force=False)`.
+      - Captures a single keystroke (Enter, Space, Esc, etc.) while running interactively on a TTY, keeping the failure box and traceback on screen until user dismissal.
+      - Integrated `_error_wait_consumed` flag with `reset_error_wait()` per URL cycle to prevent multiple duplicate pauses if both a workflow and the funnel trigger on the same failure.
+    - **Added `prompt_return()` for Interactive Diagnostic/Tool Screens (`core/ui.py`, `core/funnel.py`, `core/image_slicer.py`, `core/lyrics_engine.py`)**:
+      - `doctor`, `version`, `image_slicer`, and `lyrics_engine` batch sync now pause using `prompt_return()` so users can review diagnostics and results before the screen is cleared.
+    - **Universal Routing Error & Failure Guards (`core/funnel.py`)**:
+      - `route_url()` now resets error wait state at startup via `reset_error_wait()`.
+      - Failure branches (unsupported URL, missing site handler, module import error, scraper crash exception) explicitly pause via `wait_for_error()`.
+      - Post-execution check: if a scrape finishes without downloads (`not (has_downloaded or already_up_to_date)`) and is not batch, it automatically invokes `wait_for_error()` to ensure the rendered failure box stays visible.
+    - **Updated Scraper Metadata Failure Blocks (`scrapers/*/*/workflow.py`, `tui.py`)**:
+      - Updated 26 scrapers where metadata extraction fails to use `wait_for_error()`.
+
+---
+
 # Progress Report - September 20, 2026 (Refactor: Music Scrapers Zero-Friction Automation & Settings-Connected Audio Processor)
 
 - **Music Scrapers Zero-Friction & Dynamic Format Processor (`scrapers/1_SFW/MUSIC/*`, `core/config.py`, `core/settings_tui.py`, `core/video_engine.py`):**

@@ -732,8 +732,8 @@ def run_lyrics_tui():
         )
         console.print(no_lyr_panel)
         console.print("")
-        from core.ui import wait_for_return
-        wait_for_return("Press Enter to return...")
+        from core.ui import prompt_return
+        prompt_return("Press Enter to return...")
         return
 
     # Render Preview Panel
@@ -800,8 +800,8 @@ def run_lyrics_tui():
         save_path.parent.mkdir(parents=True, exist_ok=True)
         save_path.write_text(format_lrc(lines), encoding="utf-8")
         console.print(f"\n[success]✔ Synced .lrc saved to: {save_path}[/success]\n")
-        from core.ui import wait_for_return
-        wait_for_return("Press Enter to return...")
+        from core.ui import prompt_return
+        prompt_return("Press Enter to return...")
 
 
 # ─── Interactive TUI: sc-lyrics ──────────────────────────────────────────────
@@ -864,8 +864,8 @@ def run_batch_lyrics_tui():
 
     if not audio_files:
         console.print(f"\n[success]✔ All audio files in '{target_dir.name}' already have synced .lrc files![/success]\n")
-        from core.ui import wait_for_return
-        wait_for_return("Press Enter to return...")
+        from core.ui import prompt_return
+        prompt_return("Press Enter to return...")
         return
 
     console.print(f"\n[info]Found {len(audio_files)} audio file(s) missing .lrc lyrics.[/info]")
@@ -892,5 +892,5 @@ def run_batch_lyrics_tui():
     console.print(f"  [success]Synced .LRC:[/success] {synced_count} track(s)")
     console.print(f"  [unselected]No Lyrics / Instrumental:[/unselected] {no_lyrics_count} track(s)\n")
 
-    from core.ui import wait_for_return
-    wait_for_return("Press Enter to return...")
+    from core.ui import prompt_return
+    prompt_return("Press Enter to return...")

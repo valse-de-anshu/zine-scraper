@@ -1495,10 +1495,87 @@ def theme_input(prompt_msg: str = "") -> str:
         sys.stdout.flush()
     return clean_user_input(raw)
 
+_error_wait_consumed = False
+
+def reset_error_wait() -> None:
+    global _error_wait_consumed
+    _error_wait_consumed = False
+
+def wait_for_error(prompt_msg: str = "Press Enter to return to menu...", force: bool = False) -> None:
+    """
+    Waits for a single keypress (Enter, Space, Esc, Q, etc.) when an error/failure occurs.
+    Guarantees that failure messages and error panels stay on screen until user dismissal.
+    Prevents duplicate pause prompts within the same failure cycle.
+    """
+    global _error_wait_consumed
+    if not sys.stdin.isatty():
+        return
+    if _error_wait_consumed and not force:
+        return
+    _error_wait_consumed = True
+
+    if prompt_msg:
+        console.print(f"\n[menu]{prompt_msg}[/menu]", end="")
+        sys.stdout.flush()
+
+    if os.name != 'nt':
+        import termios, tty, select as _sel
+        try:
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+        except Exception:
+            try:
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+            console.print()
+            return
+
+        try:
+            termios.tcflush(fd, termios.TCIFLUSH)
+            tty.setcbreak(fd, termios.TCSADRAIN)
+            while True:
+                r, _, _ = _sel.select([fd], [], [], 0.05)
+                if not r:
+                    continue
+                chunk = os.read(fd, 64)
+                if not chunk:
+                    continue
+                if chunk == b'\x03':  # Ctrl+C
+                    clean_exit(forceful=True)
+                # Any single keystroke confirms return
+                break
+        except Exception:
+            pass
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
+            console.print()
+    else:
+        import msvcrt, time
+        try:
+            while msvcrt.kbhit():
+                msvcrt.getch()
+            while True:
+                if msvcrt.kbhit():
+                    ch = msvcrt.getch()
+                    if ch == b'\x03':
+                        clean_exit(forceful=True)
+                    break
+                time.sleep(0.02)
+        except Exception:
+            pass
+        console.print()
+
+def prompt_return(prompt_msg: str = "Press Enter to return to main menu...") -> None:
+    """Explicit pause for informational/utility screens (doctor, version, lyrics tools, etc.)."""
+    wait_for_error(prompt_msg=prompt_msg, force=True)
+
 def wait_for_return(prompt_msg: str = "") -> None:
     """
-    Auto-returns immediately — no keypress required.
-    Previously waited for Enter; now scraper auto-exits back to menu after completion.
+    Auto-returns immediately for successful workflows — no keypress required.
     Ctrl+C is still respected via normal signal handling.
     """
     sys.stdout.flush()

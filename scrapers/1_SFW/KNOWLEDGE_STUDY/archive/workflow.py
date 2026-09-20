@@ -25,8 +25,8 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
         except Exception as e:
             console.print(f"[error]Failed to fetch metadata: {e}[/error]")
             if not is_batch:
-                from core.ui import wait_for_return
-                wait_for_return("Press Enter to return...")
+                from core.ui import wait_for_error
+                wait_for_error("Press Enter to return...")
             else:
                 time.sleep(1.5)
             return
