@@ -48,21 +48,6 @@ def scaffold_library(root: Path, storage) -> None:
     # Vacuum
     storage.create_directory(root / "Vacuum")
 
-    # Batch
-    batch_dir = root / "Batch"
-    storage.create_directory(batch_dir)
-    batch_file = root / "Batch URL.txt"
-    legacy_batch_file = batch_dir / "Batch URL.txt"
-    if legacy_batch_file.exists() and not batch_file.exists():
-        try:
-            content = legacy_batch_file.read_text(encoding="utf-8")
-            storage.write_file(batch_file, content)
-            legacy_batch_file.unlink()
-        except Exception:
-            pass
-    if not batch_file.exists():
-        storage.write_file(batch_file, "")
-
     # temp (centralized in 💩)
     from core.paths import PathAuthority
     temp_dir = PathAuthority().get_temp_root()

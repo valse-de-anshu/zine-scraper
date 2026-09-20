@@ -1,4 +1,27 @@
-# Progress Report - September 20, 2026 (Bugfix: Universal Single-Keypress Return & Instant Confirmation Across All TUIs)
+# Progress Report - September 20, 2026 (Refactor: Batch Mode Removed — Unified Into Vacuum Queue)
+
+- **Batch → Vacuum Queue Unification (`core/funnel.py`, `core/journal.py`, `core/library.py`, `orchestrator.py`):**
+  - **Identified Problem**:
+    - "Batch mode" and "Vacuum mode" were doing the same job under different names (processing a queue of URLs headlessly). The `Batch/` download folder, `BatchHistoryManager`, and the "Apply Global / Ask Individual" TUI were unnecessary complexity.
+  - **Resolution**:
+    - **Removed `handle_batch()` → replaced with `handle_vacuum_queue()`** (`core/funnel.py`):
+      - Eliminated the interactive "Apply Global / Ask Individual" Cat Mode TUI step.
+      - Removed per-run `BatchHistoryManager` instantiation.
+      - Each URL now routes to its own vacuum/quick-grab destination via the scraper's location logic (no global `Batch/` folder override).
+      - Completed URLs still removed atomically from the queue file for safe Revolt/crash resume.
+      - `handle_batch` kept as a backward-compat alias.
+    - **`vacuum` command** now triggers the queue runner in the interactive prompt (plus `batch` kept as alias).
+    - **`--vacuum` CLI flag** recognized alongside `--batch` in orchestrator/funnel fast-path.
+    - **`Batch/` folder** removed from `core/library.py` scaffold (`Quick grab/` and `Vacuum/` remain).
+    - **`BatchHistoryManager` calls** removed from `route_url()` success/truncate paths — everything flows into `Download History.json`.
+    - **`init_mode`** label changed from `"Batch"` to `"Vacuum"` in `route_url()`.
+    - **Session type** `"Batch"` → `"Vacuum"` in `core/journal.py`.
+    - **Quick Guide tip** updated from `batch` to `vacuum`.
+    - **Autocomplete** updated to suggest `vacuum` instead of `batch`.
+
+---
+
+# Progress Report - September 20, 2026 (Bugfix: Universal Single-Keypress Return &amp; Instant Confirmation Across All TUIs)
 
 - **Universal Single-Keypress Return (`core/ui.py:wait_for_return`, `core/funnel.py`, all `workflow.py` / `tui.py` files):**
   - **Identified Problem**:

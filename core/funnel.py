@@ -89,7 +89,10 @@ def clear_lines(num_lines: int):
         sys.stdout.write("\033[1A\033[2K")
     sys.stdout.flush()
 
-def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
+def handle_vacuum_queue(hist_layer, store_layer, custom_file: Optional[Path] = None):
+    """Process a URL queue file headlessly — the successor to batch mode.
+    Each URL is routed individually using its own vacuum/quick-grab destination.
+    Completed URLs are removed from the queue file atomically for safe resume."""
     target_file = Path(custom_file) if custom_file else URLS_FILE
     urls = load_urls(target_file)
     if not urls:
@@ -97,33 +100,16 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
         console.print(f"[warning]No URLs found in {file_label}![/warning]")
         time.sleep(1.5)
         return
-    
+
     startup_clear()
     print_banner()
-    console.print(f"[menu]Menu:[/menu] [site]Batch Mode[/site]")
+    console.print(f"[menu]Menu:[/menu] [site]Vacuum Queue[/site]")
     if custom_file:
         console.print(f"[menu]Source File:[/menu] [sexy_pink]{target_file.resolve()}[/sexy_pink]")
-    console.print(f"[info]Batch: {len(urls)} URLs loaded.[/info]")
-    
-    if not sys.stdin.isatty():
-        cat_mode = "ALL"
-    else:
-        cat_mode = Selector([("Apply Global", "ALL"), ("Ask Individual", "PER"), ("Back", "BACK")], "Cat Mode").select()
-    if cat_mode == "BACK":
-        return
+    console.print(f"[info]Queue: {len(urls)} URLs loaded.[/info]")
+    console.print()
 
-    global_path = None
-    if cat_mode == "ALL":
-        from core.ui import get_batch_save_path
-        global_path = get_batch_save_path(store_layer)
-        if not global_path:
-            return
-
-    from core.paths import PathAuthority
-    from core.history import BatchHistoryManager
-    batch_mgr = BatchHistoryManager(PathAuthority(), store_layer)
-
-    # Process each URL sequentially with atomic per-item persistence and resume checkpointing
+    # Process each URL sequentially — no global path override, each scraper picks its own vacuum destination
     for raw_url in list(urls):
         raw_url_clean = raw_url.strip()
         if not raw_url_clean:
@@ -134,8 +120,8 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
         batch_quick_grab = False
         chapter_limit = None
         batch_all = False
-        
-        # Parse flags: --0 (Quick grab), --<N> (chapter limit e.g. --2, --4, --5), --A/--a (Vacuum all)
+
+        # Parse inline flags: --0 (Quick grab), --<N> (chapter limit), --A/--a (vacuum all)
         flag_matches = re.findall(r"--(\d+|[aA])\b", url)
         for flag_str in flag_matches:
             if flag_str.lower() == 'a':
@@ -154,23 +140,15 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
         if batch_all:
             batch_quick_grab = False
             chapter_limit = None
-            mode = "Vacuum"
-        else:
-            mode = "Quick grab" if batch_quick_grab else "Vacuum"
 
         canonical_url = HistoryLayer.normalize_url(url)
 
-        # Record start in Batch History (both Logs/Batch History.json and Logs/💩/batch_history.json)
-        batch_mgr.record_start(raw_input=raw_url_clean, url=canonical_url, flags=flags, mode=mode)
-
-        from core.paths import get_default_batch_path
-        item_batch_path = global_path if global_path is not None else (get_default_batch_path() if batch_all else None)
-
+        # Route without a global batch_path — let each scraper decide its own vacuum/quick-grab folder
         success = route_url(
             url,
             hist_layer,
             store_layer,
-            batch_path=item_batch_path,
+            batch_path=None,
             is_batch=True,
             batch_quick_grab=batch_quick_grab,
             batch_all=batch_all,
@@ -179,19 +157,17 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
         )
 
         if success:
-            batch_mgr.record_finish(canonical_url, status="completed")
-            # Immediately remove completed URL from the active batch file so a Revolt exit or crash can safely resume
+            # Atomically remove completed URL from the queue file so a Revolt/crash can safely resume
             try:
                 current_urls = load_urls(target_file)
                 remaining = [u for u in current_urls if u.strip() != raw_url_clean]
                 content = "\n".join(remaining) + ("\n" if remaining else "")
                 store_layer.write_file(target_file, content)
-                console.print(f"[success]✔ Completed & checked off: {raw_url_clean}[/success]")
+                console.print(f"[success]✔ Done: {raw_url_clean}[/success]")
             except Exception as e:
                 logging.error(f"Failed to update {target_file.name}: {e}")
         else:
-            batch_mgr.record_finish(canonical_url, status="failed")
-            console.print(f"[error]✘ Incomplete or failed: {raw_url_clean}[/error]")
+            console.print(f"[error]✘ Failed: {raw_url_clean}[/error]")
 
         import core.ui
         if core.ui._REVOLT_ACTIVE and core.ui._REVOLT_LIMIT <= 0 and getattr(core.ui, "_REVOLT_CURRENT_DONE", False):
@@ -199,6 +175,11 @@ def handle_batch(hist_layer, store_layer, custom_file: Optional[Path] = None):
 
     from core.ui import wait_for_return
     wait_for_return("Press Enter to return...")
+
+
+# Backward-compat alias so any external callers still work
+handle_batch = handle_vacuum_queue
+
 
 def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, batch_path: Optional[Path] = None, is_batch: bool = False, batch_quick_grab: bool = False, batch_all: bool = False, flags: Optional[List[str]] = None, chapter_limit: Optional[int] = None) -> bool:
     import core.ui
@@ -262,7 +243,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
     from core.journal import DownloadJournal
     journal = DownloadJournal.get_active()
-    init_mode = "Batch" if is_batch else ("Quick grab" if batch_quick_grab else "Vacuum")
+    init_mode = "Quick grab" if batch_quick_grab else "Vacuum"
     initial_title = getattr(scraper, "title", None) or getattr(scraper, "name", None) or "Unknown"
     journal.start_download(
         url=url,
@@ -431,14 +412,8 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
 
                 if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
                     target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
-                    from core.history import BatchHistoryManager
                     if has_downloaded or already_up_to_date:
                         hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
-                        if BatchHistoryManager._instance:
-                            BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
-                    elif final_status == "failed":
-                        if BatchHistoryManager._instance:
-                            BatchHistoryManager._instance.record_finish(target_url, status="failed", title=str(final_title).strip())
             except Exception:
                 pass
         finally:
@@ -466,10 +441,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             journal.finish_download(url=url, status="completed")
             if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
                 target_url = getattr(scraper, "series_url", None) or getattr(scraper, "url", None) or url
-                from core.history import BatchHistoryManager
                 hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
-                if BatchHistoryManager._instance:
-                    BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
         except Exception:
             pass
         if not is_batch and sys.stdin.isatty():
@@ -757,7 +729,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["bake", "batch", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "version"]
+        commands = ["bake", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -821,8 +793,8 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
-            tip_text.append("batch", style="warning")
-            tip_text.append(" to download all from Batch URL.txt.\n", style="info")
+            tip_text.append("vacuum", style="warning")
+            tip_text.append(" to run all URLs from the queue file.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -1000,7 +972,7 @@ def main():
             from core.cli_help import run_cli_clean
             run_cli_clean()
             sys.exit(0)
-        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith("--batch"):
+        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum")):
             from core.cli_help import handle_unknown_flag
             handle_unknown_flag(raw_arg)
             sys.exit(2)
@@ -1030,28 +1002,28 @@ def main():
             if url_lower in ["exit", "quit", "q", "/exit"]:
                 logging.info("User requested exit.")
                 clean_exit(forceful=False)
-            elif url_lower in ["batch", "/batch"]:
-                logging.info("User launched batch mode.")
-                handle_batch(history, storage)
+            elif url_lower in ["vacuum", "/vacuum", "batch", "/batch"]:
+                logging.info("User launched vacuum queue mode.")
+                handle_vacuum_queue(history, storage)
 
-            elif re.search(r"(?i)(?:^|\s)(?:--batch|-batch|/batch)\b", url.strip()) or url_lower.startswith("batch ") or url_lower.startswith("/batch "):
+            elif re.search(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", url.strip()) or url_lower.startswith(("vacuum ", "/vacuum ", "batch ", "/batch ")):
                 url_input = url.strip()
-                if url_lower.startswith("batch ") or url_lower.startswith("/batch "):
+                if any(url_lower.startswith(pfx) for pfx in ("vacuum ", "/vacuum ", "batch ", "/batch ")):
                     cleaned_path = url.split(" ", 1)[1].strip()
                 else:
-                    cleaned_path = re.sub(r"(?i)(?:^|\s)(?:--batch|-batch|/batch)\b", "", url_input).strip()
+                    cleaned_path = re.sub(r"(?i)(?:^|\s)(?:--vacuum|--batch|-vacuum|-batch|/vacuum|/batch)\b", "", url_input).strip()
 
                 if cleaned_path:
                     sanitized = sanitize_user_path(cleaned_path)
                     custom_file = Path(sanitized).expanduser().resolve()
                     if custom_file.exists() and custom_file.is_file():
-                        logging.info(f"User launched custom batch mode with file: {custom_file}")
-                        handle_batch(history, storage, custom_file=custom_file)
+                        logging.info(f"User launched vacuum queue with file: {custom_file}")
+                        handle_vacuum_queue(history, storage, custom_file=custom_file)
                     else:
-                        console.print(f"[error]● Custom batch file not found:[/error] [site]{escape(str(custom_file))}[/site]")
+                        console.print(f"[error]● Queue file not found:[/error] [site]{escape(str(custom_file))}[/site]")
                         time.sleep(2)
                 else:
-                    handle_batch(history, storage)
+                    handle_vacuum_queue(history, storage)
 
             elif url_lower in ["settings", "/settings"]:
                 launch_settings_tui()
@@ -1132,47 +1104,24 @@ def main():
                             flags.append(f"--{val}")
                 clean_url = re.sub(r"\s*--(\d+|[aA])\b", "", url_input).strip()
 
-                from core.paths import PathAuthority, get_default_batch_path
-                default_batch = get_default_batch_path()
+                # Headless if launched via CLI args (no interactive TUI needed in that path)
+                is_headless = bool(cli_args)
 
-                if batch_all:
-                    from core.history import BatchHistoryManager
-                    batch_path = default_batch
-                    batch_mgr = BatchHistoryManager(PathAuthority(), storage)
-                    canonical_url = HistoryLayer.normalize_url(clean_url)
-                    batch_mgr.record_start(raw_input=url_input, url=canonical_url, flags=flags, mode="Vacuum")
-                    success = route_url(
-                        clean_url,
-                        history,
-                        storage,
-                        batch_path=batch_path,
-                        is_batch=True,
-                        batch_quick_grab=False,
-                        batch_all=True,
-                        flags=flags,
-                        chapter_limit=None
-                    )
-                    if success:
-                        batch_mgr.record_finish(canonical_url, status="completed")
-                    else:
-                        batch_mgr.record_finish(canonical_url, status="failed")
-                else:
-                    is_auto_batch = bool(batch_quick_grab or chapter_limit is not None or cli_args)
-                    target_batch_path = default_batch if (is_auto_batch or cli_args) else None
-                    route_url(
-                        clean_url,
-                        history,
-                        storage,
-                        batch_path=target_batch_path,
-                        is_batch=is_auto_batch,
-                        batch_quick_grab=batch_quick_grab,
-                        batch_all=False,
-                        flags=flags,
-                        chapter_limit=chapter_limit
-                    )
+                route_url(
+                    clean_url,
+                    history,
+                    storage,
+                    batch_path=None,
+                    is_batch=is_headless,
+                    batch_quick_grab=batch_quick_grab,
+                    batch_all=batch_all,
+                    flags=flags,
+                    chapter_limit=chapter_limit
+                )
 
                 if cli_args:
                     break
+
         except KeyboardInterrupt:
             clean_exit(forceful=True)
 

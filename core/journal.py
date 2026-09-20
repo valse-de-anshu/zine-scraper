@@ -128,8 +128,8 @@ class DownloadJournal:
 
         if session_type:
             self.session_type = session_type
-        elif any(a.startswith("--batch") for a in self.cli_args):
-            self.session_type = "Batch"
+        elif any(a.startswith("--batch") or a.startswith("--vacuum") for a in self.cli_args):
+            self.session_type = "Vacuum"
         elif any(a.startswith("-") or a.startswith("http") for a in self.cli_args):
             self.session_type = "CLI"
         else:
@@ -218,7 +218,7 @@ class DownloadJournal:
             "site": friendly_site,
             "category": final_cat,
             "title": title or "Unknown",
-            "menu_mode": menu_mode or ("Batch" if self.session_type == "Batch" else "Quick grab"),
+            "menu_mode": menu_mode or "Quick grab",
             "execution_mode": "CLI" if (flags and self.session_type == "CLI") else self.session_type,
             "flags": list(flags) if flags else [],
             "destination": dest_str,
@@ -345,8 +345,8 @@ class DownloadJournal:
         self._save_session()
 
     def finish_download(self, url: str, status: str = "completed", error: Optional[str] = None):
-        """Finalizes a download entry and syncs with Download History / Batch History."""
-        from core.history import HistoryLayer, BatchHistoryManager
+        """Finalizes a download entry and syncs with Download History."""
+        from core.history import HistoryLayer
         canon = HistoryLayer.normalize_url(url)
         target = next((d for d in self.downloads if d.get("canonical_url") == canon), None)
         if target is None:
@@ -361,18 +361,12 @@ class DownloadJournal:
 
         self._save_session()
 
-        # Seamlessly update Download History.json with enriched details
+        # Sync to Download History.json
         try:
             self._sync_to_download_history(target)
         except Exception as e:
             logger.debug(f"Failed to sync to Download History: {e}")
 
-        # Seamlessly update Batch History.json if batch
-        try:
-            if target.get("menu_mode") == "Batch" or self.session_type == "Batch" or BatchHistoryManager._instance:
-                self._sync_to_batch_history(target)
-        except Exception as e:
-            logger.debug(f"Failed to sync to Batch History: {e}")
 
     def _sync_to_download_history(self, target: Dict[str, Any]):
         """Persists enriched metadata and chosen options into Download History.json."""
@@ -442,7 +436,7 @@ class DownloadJournal:
         entry["url"] = url
         entry["site"] = target.get("site") or entry.get("site") or "Unknown"
         entry["category"] = target.get("category") or entry.get("category") or "Media"
-        entry["mode"] = target.get("menu_mode") or entry.get("mode") or "Batch"
+        entry["mode"] = target.get("menu_mode") or entry.get("mode") or "Vacuum"
         entry["status"] = target.get("status", "completed")
         entry["date"] = target.get("finish_time") or target.get("start_time") or entry.get("date")
         if target.get("start_time"):
