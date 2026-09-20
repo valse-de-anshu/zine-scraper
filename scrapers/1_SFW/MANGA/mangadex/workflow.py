@@ -407,10 +407,15 @@ def run_workflow(url: str, tracker: Any, location_manager: Any, scraper: Any, ba
                 "color": color_str
             })
 
+            scraper.success_count = getattr(scraper, "success_count", 0) + success_count
             if success_count > 0:
                 console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved for {lang_display_name}\n")
             else:
-                console.print(f"\n[error]✘[/error] Failed: No chapters saved for {lang_display_name}\n")
+                err_msg = _chapter_error[0] if '_chapter_error' in locals() and _chapter_error and _chapter_error[0] else f"No chapters saved for {lang_display_name}"
+                from core.logger import record_error_log
+                from core.ui import print_failure_box
+                record_error_log(err_msg, context={"url": url, "scraper": "MangaDex", "title": title, "language": lang_display_name})
+                print_failure_box(title or url, reason=str(err_msg))
 
         if len(chosen_langs) > 1 and multilang_summary:
             startup_clear()

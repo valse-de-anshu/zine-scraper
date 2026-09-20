@@ -343,10 +343,11 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                 elif already_up_to_date:
                     send_os_notification("Zine Scraper", f"Already up to date: {t}", is_success=True)
                     notification_fired = True
-                elif last_error:
-                    send_os_notification("Zine Scraper Error", f"Download failed: {last_error}", is_success=False)
-                    print_failure_box(str(t), reason=str(last_error))
-                    record_error_log(last_error, context={"url": url, "scraper": site_folder})
+                else:
+                    err_msg = last_error or "Download incomplete / No items saved"
+                    send_os_notification("Zine Scraper Error", f"Download failed: {err_msg}", is_success=False)
+                    print_failure_box(str(t), reason=str(err_msg))
+                    record_error_log(err_msg, context={"url": url, "scraper": site_folder})
                     notification_fired = True
             except Exception as e:
                 logging.error(f"Notification failed: {e}")
@@ -376,7 +377,7 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             text = " ".join(str(a) for a in args)
             text_lower = text.lower()
 
-            if "download failed" in text_lower or "error:" in text_lower or "error downloading" in text_lower:
+            if "[error]" in text or "failed:" in text_lower or "error:" in text_lower or "could not" in text_lower or "no chapters saved" in text_lower or "download failed" in text_lower or "cannot download" in text_lower:
                 last_error = clean_error_text(text)
             elif "already downloaded" in text_lower or "already up to date" in text_lower:
                 already_up_to_date = True
@@ -423,12 +424,13 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
             try:
                 final_title = getattr(scraper, "title", None)
                 has_downloaded = check_has_downloaded()
-                final_status = "completed" if (has_downloaded or already_up_to_date) else ("failed" if last_error else "completed")
+                final_status = "completed" if (has_downloaded or already_up_to_date) else "failed"
+                err_msg = last_error if final_status == "failed" else None
                 
                 journal.finish_download(
                     url=url,
                     status=final_status,
-                    error=last_error if final_status == "failed" else None
+                    error=err_msg
                 )
 
                 if final_title and str(final_title).strip() and str(final_title).strip() not in ("Unknown", "Videos", "Watch"):
@@ -438,12 +440,13 @@ def route_url(url: str, hist_layer: HistoryLayer, store_layer: StorageLayer, bat
                         hist_layer.set_title(target_url, str(final_title).strip(), flags=flags)
                         if BatchHistoryManager._instance:
                             BatchHistoryManager._instance.record_finish(target_url, status="completed", title=str(final_title).strip())
-                    elif last_error:
+                    elif final_status == "failed":
                         if BatchHistoryManager._instance:
                             BatchHistoryManager._instance.record_finish(target_url, status="failed", title=str(final_title).strip())
             except Exception:
                 pass
         finally:
+            fire_notification()
             time.sleep = original_sleep
             hist_layer._active_batch_flags = []
             console.input = original_input

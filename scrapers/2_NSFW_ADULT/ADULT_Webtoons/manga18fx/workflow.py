@@ -272,10 +272,15 @@ def run_workflow(
         completed_history.append(status_line)
         time.sleep(CHAPTER_DELAY)
 
+    scraper.success_count = success_count
     if success_count > 0:
         console.print(f"\n[success]✦[/success] Done: {success_count}/{len(to_process)} chapters saved\n")
     else:
-        console.print(f"\n[error]✘[/error] Failed: No chapters saved\n")
+        err_msg = _chapter_error[0] if '_chapter_error' in locals() and _chapter_error and _chapter_error[0] else "No chapters saved"
+        from core.logger import record_error_log
+        from core.ui import print_failure_box
+        record_error_log(err_msg, context={"url": url, "scraper": getattr(scraper, '__class__', type(scraper)).__name__, "title": title})
+        print_failure_box(title or url, reason=str(err_msg))
 
     if not is_batch:
         if __import__("sys").stdin.isatty():

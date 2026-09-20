@@ -45,6 +45,20 @@ class DownloadJournal:
         self.session_file = self._journal_dir / f"session_{self.session_id}.json"
         self.latest_file = self._journal_dir / "latest_session.json"
 
+        hist_file = self._paths.get_history_file()
+        if not hist_file.exists():
+            try:
+                hist_file.write_text("{}", encoding="utf-8")
+            except Exception:
+                pass
+
+        batch_file = self._paths.get_batch_history_file()
+        if not batch_file.exists():
+            try:
+                batch_file.write_text("{}", encoding="utf-8")
+            except Exception:
+                pass
+
         raw_args = cli_args if cli_args is not None else sys.argv[1:]
         self.cli_args = list(raw_args)
 

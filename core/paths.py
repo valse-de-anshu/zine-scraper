@@ -148,6 +148,16 @@ class PathAuthority:
     def get_download_logs_root(self) -> Path:
         """Returns the primary JSON history and journal directory (Logs/Downlode 💩)."""
         self._download_logs_root.mkdir(parents=True, exist_ok=True)
+        if not self._history_file.exists():
+            try:
+                self._history_file.write_text("{}", encoding="utf-8")
+            except Exception:
+                pass
+        if not self._batch_history_file.exists():
+            try:
+                self._batch_history_file.write_text("{}", encoding="utf-8")
+            except Exception:
+                pass
         return self._download_logs_root
 
     # ── Library structure paths (all rooted at downloads_root) ──────────────
