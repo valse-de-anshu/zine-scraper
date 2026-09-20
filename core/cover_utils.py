@@ -4,7 +4,7 @@ import time
 import importlib
 import logging
 from pathlib import Path
-from typing import Optional, Union, Dict, Any
+from typing import Optional, Union, Dict, Any, Tuple
 from bs4 import BeautifulSoup
 from PIL import Image
 import requests

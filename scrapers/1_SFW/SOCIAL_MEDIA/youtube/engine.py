@@ -8,7 +8,7 @@ import html
 import time
 import requests
 from pathlib import Path
-from typing import Dict, Any, Callable, Optional, List
+from typing import Dict, Any, Callable, Optional, List, Tuple
 from bs4 import BeautifulSoup
 from core.video_engine import VideoEngine
 
