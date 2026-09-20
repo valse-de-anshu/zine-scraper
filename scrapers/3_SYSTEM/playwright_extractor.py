@@ -51,7 +51,7 @@ from datetime import datetime
 from core.paths import PathAuthority
 
 paths = PathAuthority()
-log_dir = paths.get_library_temp_root()
+log_dir = paths.get_logs_root() / "💩"
 log_dir.mkdir(parents=True, exist_ok=True)
 log_file = log_dir / f"scraper_{datetime.now().strftime('%Y-%m-%d')}.log"
 

@@ -183,68 +183,69 @@ class BaseScraper:
         temp_dir = PathAuthority().get_temp_root() / f"h18_ch_{safe_num}_{int(time.time() * 1000)}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
+        try:
         
-        clean_urls = [u for u in img_urls if u and isinstance(u, str) and u.strip().startswith("http")]
-        total_pages = len(clean_urls)
+            clean_urls = [u for u in img_urls if u and isinstance(u, str) and u.strip().startswith("http")]
+            total_pages = len(clean_urls)
         
-        if total_pages == 0:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
+            if total_pages == 0:
+                return {"total": 0, "downloaded": 0, "missing": 0, "success": False}
         
-        # Fire initial callback so UI knows total pages immediately
-        if stats_callback:
-            stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
+            # Fire initial callback so UI knows total pages immediately
+            if stats_callback:
+                stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
         
-        def dl_task(idx, src):
-            p = temp_dir / f"{idx+1:03d}.bin"
-            res = self.download_image(src, p, referer=ch_url)
-            if res == 1:
-                candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
-                actual_p = candidates[0] if candidates else p
-                return (1, actual_p)
-            return (-1, None)
+            def dl_task(idx, src):
+                p = temp_dir / f"{idx+1:03d}.bin"
+                res = self.download_image(src, p, referer=ch_url)
+                if res == 1:
+                    candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
+                    actual_p = candidates[0] if candidates else p
+                    return (1, actual_p)
+                return (-1, None)
 
-        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
-            futures = [executor.submit(dl_task, i, src) for i, src in enumerate(clean_urls)]
-            valid_pages = total_pages
-            for future in as_completed(futures):
-                res_code, p = future.result()
-                if res_code == 1: 
-                    paths.append(p)
-                else:
-                    valid_pages -= 1
+            with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+                futures = [executor.submit(dl_task, i, src) for i, src in enumerate(clean_urls)]
+                valid_pages = total_pages
+                for future in as_completed(futures):
+                    res_code, p = future.result()
+                    if res_code == 1: 
+                        paths.append(p)
+                    else:
+                        valid_pages -= 1
                     
-                if stats_callback:
-                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": max(0, valid_pages - len(paths))})
+                    if stats_callback:
+                        stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": max(0, valid_pages - len(paths))})
         
-        missing = max(0, valid_pages - len(paths))
-        final_chunks = 0
-        if paths:
-            is_toon = getattr(self, "is_toon", False)
-            if is_toon:
-                if stats_callback:
-                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
-                with ThreadPoolExecutor(max_workers=1) as slice_exec:
-                    slice_future = slice_exec.submit(self.slice_and_save, paths, folder)
-                    while not slice_future.done():
-                        if stats_callback:
-                            stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
-                        time.sleep(0.1)
-                    final_chunks = slice_future.result()
-            else:
-                paths.sort()
-                for idx, p in enumerate(paths):
-                    ext = p.suffix
-                    dest = folder / f"{(idx+1):03d}{ext}"
-                    shutil.move(str(p), str(dest))
-                final_chunks = len(paths)
+            missing = max(0, valid_pages - len(paths))
+            final_chunks = 0
+            if paths:
+                is_toon = getattr(self, "is_toon", False)
+                if is_toon:
+                    if stats_callback:
+                        stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
+                    with ThreadPoolExecutor(max_workers=1) as slice_exec:
+                        slice_future = slice_exec.submit(self.slice_and_save, paths, folder)
+                        while not slice_future.done():
+                            if stats_callback:
+                                stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
+                            time.sleep(0.1)
+                        final_chunks = slice_future.result()
+                else:
+                    paths.sort()
+                    for idx, p in enumerate(paths):
+                        ext = p.suffix
+                        dest = folder / f"{(idx+1):03d}{ext}"
+                        shutil.move(str(p), str(dest))
+                    final_chunks = len(paths)
             
-        min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else 1
-        success = (len(paths) >= valid_pages and len(paths) > 0) or (len(paths) >= min_ok and final_chunks > 0)
+            min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else 1
+            success = (len(paths) >= valid_pages and len(paths) > 0) or (len(paths) >= min_ok and final_chunks > 0)
             
-        shutil.rmtree(temp_dir, ignore_errors=True)
         
-        return {"total": final_chunks if success else valid_pages, "downloaded": len(paths), "missing": missing, "success": success}
+            return {"total": final_chunks if success else valid_pages, "downloaded": len(paths), "missing": missing, "success": success}
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def slice_and_save(self, paths: List[Path], output_dir: Path):
         """Combine images into a vertical canvas, slice into 2000px chunks.

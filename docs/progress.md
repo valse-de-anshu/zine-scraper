@@ -1,3 +1,23 @@
+# Progress Report - September 20, 2026 (Fix: Engine Temp Directory Cleanup via Try-Finally & Playwright Log Redirection)
+
+- **Chapter Temp Directory Cleanup in `try...finally` (All Comic/Manga/Webtoon/Doujin Engines):**
+  - **Identified Problem**:
+    - Temporary folders in `💩/` (e.g. `weebcentral_ch_140_...`) remained orphaned if a chapter download encountered an error or network timeout before reaching the manual `shutil.rmtree(temp_dir)` call.
+    - If `process_chapter_multi` raised an exception or was interrupted, `temp_dir` was never cleaned up.
+  - **Resolution**:
+    - Wrapped the entire download, execution, and image slicing pipeline inside `try: ... finally: shutil.rmtree(temp_dir, ignore_errors=True)` across all 16 comic/manga/manhwa/webtoon/doujin engines:
+      - `weebcentral`, `kunmanga`, `fanfox`, `mangak`, `topmanhua`, `projectsuki`, `manhuaplus`, `asurascans`, `mangadex`
+      - `asmhentai`, `nhentai`, `hentai18`, `oppai_stream_toon`, `manhwaus`, `hentai20`, `manga18fx`.
+    - Guarantees zero orphaned temporary folders remain in `💩/` under any failure or interruption condition.
+
+- **System Playwright Log Path Correction (`scrapers/3_SYSTEM/playwright_extractor.py`):**
+  - **Identified Problem**:
+    - `playwright_extractor.py` wrote `scraper_YYYY-MM-DD.log` to `paths.get_library_temp_root()` (`💩/`), polluting the temporary media processing buffer with logs.
+  - **Resolution**:
+    - Redirected `log_dir` in `playwright_extractor.py` to `paths.get_logs_root() / "💩"` (`Logs/💩/`), keeping `💩/` strictly dedicated to active in-flight media processing buffers.
+
+---
+
 # Progress Report - September 20, 2026 (Fix: Module-Level PathAuthority Import & Universal Failure Box & Error Log Propagation)
 
 - **Universal Failure Box & Forensic Error Log Triggering across All Scraper Workflows (`core/funnel.py`, all `workflow.py`):**

@@ -254,94 +254,95 @@ class BaseScraper:
         """Download all chapter pages into centralized temp buffer, process/slice strips, and atomically commit."""
         temp_dir = PathAuthority().get_temp_root() / f"md_ch_{ch_num}_{int(time.time()*1000)}"
         temp_dir.mkdir(parents=True, exist_ok=True)
+        try:
         
-        total_pages = len(img_urls)
-        valid_pages = total_pages
-        if stats_callback:
-            stats_callback({"total": total_pages, "downloaded": 0, "missing": 0, "status": ""})
+            total_pages = len(img_urls)
+            valid_pages = total_pages
+            if stats_callback:
+                stats_callback({"total": total_pages, "downloaded": 0, "missing": 0, "status": ""})
 
-        downloaded_files = {}
+            downloaded_files = {}
 
-        def dl_task(idx: int, src: str):
-            temp_img_path = temp_dir / f"page_{idx:04d}.tmp"
-            status = self.download_image(src, temp_img_path)
-            # Find the actual written file (extension might have been altered by MIME)
-            found = list(temp_dir.glob(f"page_{idx:04d}.*"))
-            actual_path = found[0] if found else None
-            return idx, status, actual_path
+            def dl_task(idx: int, src: str):
+                temp_img_path = temp_dir / f"page_{idx:04d}.tmp"
+                status = self.download_image(src, temp_img_path)
+                # Find the actual written file (extension might have been altered by MIME)
+                found = list(temp_dir.glob(f"page_{idx:04d}.*"))
+                actual_path = found[0] if found else None
+                return idx, status, actual_path
 
-        dl_count = 0
+            dl_count = 0
 
-        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
-            futures = [executor.submit(dl_task, i + 1, url) for i, url in enumerate(img_urls)]
-            for future in as_completed(futures):
-                idx, status, actual_path = future.result()
-                if status == 1 and actual_path and actual_path.exists():
-                    downloaded_files[idx] = actual_path
-                    dl_count += 1
-                else:
-                    valid_pages -= 1
-                if stats_callback:
-                    cur_missing = max(0, valid_pages - dl_count)
-                    stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": cur_missing, "status": ""})
-
-        if dl_count == 0:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            return {"total": total_pages, "downloaded": 0, "missing": total_pages, "success": False}
-
-        # Slicing & Final Renaming Pipeline inside temp buffer
-        missing = max(0, valid_pages - dl_count)
-        if stats_callback:
-            stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": missing, "status": "baking"})
-        final_pages_dir = temp_dir / "final"
-        final_pages_dir.mkdir(parents=True, exist_ok=True)
-        
-        current_page_idx = 1
-        sorted_indices = sorted(downloaded_files.keys())
-
-        for idx in sorted_indices:
-            img_file = downloaded_files[idx]
-            try:
-                with Image.open(img_file) as img:
-                    width, height = img.size
-                    # Check for tall webtoon strips
-                    if height > CHUNK_HEIGHT and height > (width * 2.2):
-                        # Slice into 2000px height chunks
-                        num_chunks = (height + CHUNK_HEIGHT - 1) // CHUNK_HEIGHT
-                        for c in range(num_chunks):
-                            top = c * CHUNK_HEIGHT
-                            bottom = min((c + 1) * CHUNK_HEIGHT, height)
-                            box = (0, top, width, bottom)
-                            chunk_img = img.crop(box)
-                            out_name = f"{current_page_idx:03d}.jpg"
-                            chunk_img.convert("RGB").save(final_pages_dir / out_name, quality=95)
-                            current_page_idx += 1
+            with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+                futures = [executor.submit(dl_task, i + 1, url) for i, url in enumerate(img_urls)]
+                for future in as_completed(futures):
+                    idx, status, actual_path = future.result()
+                    if status == 1 and actual_path and actual_path.exists():
+                        downloaded_files[idx] = actual_path
+                        dl_count += 1
                     else:
-                        out_name = f"{current_page_idx:03d}{img_file.suffix}"
-                        shutil.copy2(img_file, final_pages_dir / out_name)
-                        current_page_idx += 1
-            except Exception as e:
-                logger.warning(f"Error checking/slicing image {img_file.name}: {e}")
-                out_name = f"{current_page_idx:03d}{img_file.suffix}"
-                shutil.copy2(img_file, final_pages_dir / out_name)
-                current_page_idx += 1
+                        valid_pages -= 1
+                    if stats_callback:
+                        cur_missing = max(0, valid_pages - dl_count)
+                        stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": cur_missing, "status": ""})
 
-        # Commit to chapter directory without creating duplicate nested folders
-        dest_dir = folder if folder.name == f"Chapter{ch_num}" else (folder / f"Chapter{ch_num}")
-        dest_dir.mkdir(parents=True, exist_ok=True)
+            if dl_count == 0:
+                return {"total": total_pages, "downloaded": 0, "missing": total_pages, "success": False}
 
-        for final_f in final_pages_dir.iterdir():
-            if final_f.is_file():
-                dest = dest_dir / final_f.name
-                shutil.copy2(final_f, dest)
+            # Slicing & Final Renaming Pipeline inside temp buffer
+            missing = max(0, valid_pages - dl_count)
+            if stats_callback:
+                stats_callback({"total": valid_pages, "downloaded": dl_count, "missing": missing, "status": "baking"})
+            final_pages_dir = temp_dir / "final"
+            final_pages_dir.mkdir(parents=True, exist_ok=True)
+        
+            current_page_idx = 1
+            sorted_indices = sorted(downloaded_files.keys())
 
-        # Cleanup centralized temp directory
-        shutil.rmtree(temp_dir, ignore_errors=True)
+            for idx in sorted_indices:
+                img_file = downloaded_files[idx]
+                try:
+                    with Image.open(img_file) as img:
+                        width, height = img.size
+                        # Check for tall webtoon strips
+                        if height > CHUNK_HEIGHT and height > (width * 2.2):
+                            # Slice into 2000px height chunks
+                            num_chunks = (height + CHUNK_HEIGHT - 1) // CHUNK_HEIGHT
+                            for c in range(num_chunks):
+                                top = c * CHUNK_HEIGHT
+                                bottom = min((c + 1) * CHUNK_HEIGHT, height)
+                                box = (0, top, width, bottom)
+                                chunk_img = img.crop(box)
+                                out_name = f"{current_page_idx:03d}.jpg"
+                                chunk_img.convert("RGB").save(final_pages_dir / out_name, quality=95)
+                                current_page_idx += 1
+                        else:
+                            out_name = f"{current_page_idx:03d}{img_file.suffix}"
+                            shutil.copy2(img_file, final_pages_dir / out_name)
+                            current_page_idx += 1
+                except Exception as e:
+                    logger.warning(f"Error checking/slicing image {img_file.name}: {e}")
+                    out_name = f"{current_page_idx:03d}{img_file.suffix}"
+                    shutil.copy2(img_file, final_pages_dir / out_name)
+                    current_page_idx += 1
 
-        missing = max(0, valid_pages - dl_count)
-        return {
-            "total": valid_pages,
-            "downloaded": dl_count,
-            "missing": missing,
-            "success": True
-        }
+            # Commit to chapter directory without creating duplicate nested folders
+            dest_dir = folder if folder.name == f"Chapter{ch_num}" else (folder / f"Chapter{ch_num}")
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            for final_f in final_pages_dir.iterdir():
+                if final_f.is_file():
+                    dest = dest_dir / final_f.name
+                    shutil.copy2(final_f, dest)
+
+            # Cleanup centralized temp directory
+
+            missing = max(0, valid_pages - dl_count)
+            return {
+                "total": valid_pages,
+                "downloaded": dl_count,
+                "missing": missing,
+                "success": True
+            }
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)

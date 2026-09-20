@@ -234,64 +234,66 @@ class BaseScraper:
         temp_dir = PathAuthority().get_temp_root() / f"mangak_ch_{safe_num}_{int(time.time() * 1000)}"
         temp_dir.mkdir(exist_ok=True, parents=True)
         paths = []
+        try:
         
-        total_pages = len(img_urls)
-        valid_pages = total_pages
+            total_pages = len(img_urls)
+            valid_pages = total_pages
         
-        # Fire initial callback so UI knows total pages immediately
-        if stats_callback:
-            stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
-        
-        def dl_task(idx, src):
-            # Use neutral ext — download_image renames to real format
-            p = temp_dir / f"{idx+1:03d}.bin"
-            res = self.download_image(src, p, referer=ch_url)
-            if res == 1:
-                candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
-                actual_p = candidates[0] if candidates else p
-                return (1, actual_p)
-            return (-1, None)
-
-        # Perform the download tasks silently in the background
-        # The orchestrator handles the live progress display
-        with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
-            futures = [executor.submit(dl_task, i, src) for i, src in enumerate(img_urls)]
-            for future in as_completed(futures):
-                res_code, p = future.result()
-                if res_code == 1: 
-                    paths.append(p)
-                else:
-                    valid_pages -= 1
-                    
-                if stats_callback:
-                    cur_missing = max(0, valid_pages - len(paths))
-                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": cur_missing})
-        
-        success = False
-        missing = max(0, valid_pages - len(paths))
-        final_chunks = 0
-        min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else total_pages
-
-        if paths:
+            # Fire initial callback so UI knows total pages immediately
             if stats_callback:
-                stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
-            with ThreadPoolExecutor(max_workers=1) as slice_exec:
-                slice_future = slice_exec.submit(self.slice_and_save, paths, folder)
-                while not slice_future.done():
-                    if stats_callback:
-                        stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
-                    time.sleep(0.1)
-                final_chunks = slice_future.result()
-            
-            # Chapter succeeds if all valid pages downloaded OR at least 70% of pages sliced
-            if len(paths) >= valid_pages or (len(paths) >= min_ok and final_chunks > 0):
-                success = True
-            
-        shutil.rmtree(temp_dir, ignore_errors=True)
+                stats_callback({"total": total_pages, "downloaded": 0, "missing": 0})
         
-        if success and final_chunks:
-            return {"total": final_chunks, "downloaded": final_chunks, "missing": 0, "success": success}
-        return {"total": valid_pages, "downloaded": len(paths), "missing": missing, "success": success}
+            def dl_task(idx, src):
+                # Use neutral ext — download_image renames to real format
+                p = temp_dir / f"{idx+1:03d}.bin"
+                res = self.download_image(src, p, referer=ch_url)
+                if res == 1:
+                    candidates = list(temp_dir.glob(f"{idx+1:03d}.*"))
+                    actual_p = candidates[0] if candidates else p
+                    return (1, actual_p)
+                return (-1, None)
+
+            # Perform the download tasks silently in the background
+            # The orchestrator handles the live progress display
+            with ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
+                futures = [executor.submit(dl_task, i, src) for i, src in enumerate(img_urls)]
+                for future in as_completed(futures):
+                    res_code, p = future.result()
+                    if res_code == 1: 
+                        paths.append(p)
+                    else:
+                        valid_pages -= 1
+                    
+                    if stats_callback:
+                        cur_missing = max(0, valid_pages - len(paths))
+                        stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": cur_missing})
+        
+            success = False
+            missing = max(0, valid_pages - len(paths))
+            final_chunks = 0
+            min_ok = max(1, int(total_pages * 0.70)) if total_pages > 3 else total_pages
+
+            if paths:
+                if stats_callback:
+                    stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
+                with ThreadPoolExecutor(max_workers=1) as slice_exec:
+                    slice_future = slice_exec.submit(self.slice_and_save, paths, folder)
+                    while not slice_future.done():
+                        if stats_callback:
+                            stats_callback({"total": valid_pages, "downloaded": len(paths), "missing": missing, "status": "baking"})
+                        time.sleep(0.1)
+                    final_chunks = slice_future.result()
+            
+                # Chapter succeeds if all valid pages downloaded OR at least 70% of pages sliced
+                if len(paths) >= valid_pages or (len(paths) >= min_ok and final_chunks > 0):
+                    success = True
+            
+        
+            if success and final_chunks:
+                return {"total": final_chunks, "downloaded": final_chunks, "missing": 0, "success": success}
+            return {"total": valid_pages, "downloaded": len(paths), "missing": missing, "success": success}
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def slice_and_save(self, paths: List[Path], output_dir: Path):
         """Combine images into a vertical canvas, slice into 2000px chunks.
