@@ -16,11 +16,16 @@ from core.paths import PathAuthority
 from core.config import ConfigLayer
 from core.storage import StorageLayer
 
-# --- Auto-inject Pip-installed NVIDIA CUDA/cuDNN Libraries ---
+# --- Auto-inject Pip-installed NVIDIA CUDA/cuDNN Libraries & User Site-Packages ---
 try:
     import site
     import ctypes
-    for p in site.getsitepackages():
+    user_site = site.getusersitepackages()
+    if user_site and os.path.exists(user_site) and user_site not in sys.path:
+        sys.path.append(user_site)
+    for p in site.getsitepackages() + ([user_site] if user_site else []):
+        if not p or not os.path.exists(p):
+            continue
         cublas_path = os.path.join(p, "nvidia/cublas/lib", "libcublas.so.12")
         cudnn_path = os.path.join(p, "nvidia/cudnn/lib", "libcudnn.so.9") # cuDNN 9
         if os.path.exists(cublas_path):
@@ -623,8 +628,8 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
     compute_type = "int8" if vram_target == "6GB (INT8)" else "float16"
     device = "cpu" if vram_target == "CPU-Only" else "cuda"
     
-    do_target = "Target" in languages
-    do_orig = "Original" in languages
+    do_target = "Target" in languages or "Both" in languages
+    do_orig = "Original" in languages or "Both" in languages
     
     ollama_model = (llm_model or get_ollama_model()) if do_target else None
     llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
@@ -690,13 +695,20 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             unload_ollama_model()
             model = WhisperModel(model_path, device=device, compute_type=compute_type)
 
+            is_turbo = "turbo" in model_path.lower()
+            beam_size = 10 if is_turbo else 5
+            best_of = 5 if is_turbo else 3
+            # Custom fine-tuned models (e.g. anime-whisper) have modified cross-attention weights
+            # that cause DTW alignment (add_word_timestamps) to throw std::bad_alloc in CTranslate2.
+            # Large-v3-turbo has official alignment heads and uses word_timestamps safely.
+            use_word_ts = is_turbo
+
             kwargs = {
                 "task": "transcribe",
-                "word_timestamps": True,
-                "beam_size": 10,              # Deeper search — catches rare kanji
-                "best_of": 5,                 # 5 candidate hypotheses per segment
-                "patience": 2.0,              # More patient beam search
-                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],  # Fallback cascade
+                "word_timestamps": use_word_ts,
+                "beam_size": beam_size,
+                "best_of": best_of,
+                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
                 "repetition_penalty": 1.1,    # Suppress hallucination loops
                 "compression_ratio_threshold": 2.4,
                 "log_prob_threshold": -1.0,   # Accept lower-confidence quiet/sung segments
@@ -705,13 +717,16 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
 
             if use_vocal_isolation:
                 # With Demucs vocal separation, audio is pure voice without background music.
-                # BatchedInferencePipeline with VAD is safe, eliminates silence hallucinations, and runs 2x faster.
                 kwargs["vad_filter"] = True
                 kwargs["vad_parameters"] = dict(min_silence_duration_ms=300)
-                kwargs["batch_size"] = 8
-                kwargs["hallucination_silence_threshold"] = 2.0
-                transcribe_engine = BatchedInferencePipeline(model=model)
-                status_orig = Panel("Transcribing clean vocals with Batched Whisper & Word Timestamps...", title="[success]Transcribing Speech (Batched)[/]", border_style="success")
+                if is_turbo:
+                    kwargs["batch_size"] = 8
+                    kwargs["hallucination_silence_threshold"] = 2.0
+                    transcribe_engine = BatchedInferencePipeline(model=model)
+                    status_orig = Panel("Transcribing clean vocals with Batched Whisper & Word Timestamps...", title="[success]Transcribing Speech (Batched)[/]", border_style="success")
+                else:
+                    transcribe_engine = model
+                    status_orig = Panel("Transcribing clean vocals with Anime-Whisper & Word Timestamps...", title="[success]Transcribing Speech (Anime-Whisper)[/]", border_style="success")
             else:
                 # On raw audio, disable VAD to prevent Silero from dropping dialogue overlapping with loud BGM/SFX
                 kwargs["vad_filter"] = False
@@ -828,6 +843,8 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
         except KeyboardInterrupt:
             pass # Silently abort inside child process
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             layout_err = Panel(f"Error: {e}", title="[error]Fatal Error[/]", border_style="error")
             live.update(layout_err)
             try:
@@ -848,8 +865,8 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
 def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto", llm_model: Optional[str] = None, use_vocal_isolation: bool = True):
     import json
 
-    do_target = "Target" in languages
-    do_orig = "Original" in languages
+    do_target = "Target" in languages or "Both" in languages
+    do_orig = "Original" in languages or "Both" in languages
 
     ollama_model = (llm_model or get_ollama_model()) if do_target else None
     llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
