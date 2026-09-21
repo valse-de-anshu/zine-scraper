@@ -274,7 +274,6 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             if model is not None:
                 del model
             gc.collect()
-            os._exit(0)
 
 def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = ""):
     import gc
@@ -453,7 +452,6 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                 try: os.remove(temp_wav)
                 except Exception: pass
             gc.collect()
-            os._exit(0)
 
 def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = ""):
     if is_confucius_model(model_path, engine_type):
@@ -468,8 +466,21 @@ def run_subtitle_tui():
     
     startup_clear()
     print_banner()
+
+    curr_engine = config.get("ai_subtitles_engine", "Auto")
+    engine_opts = [
+        ("🧠 Confucius4-R2T2 (Qwen3-ASR — High Fidelity, 30+ Langs)", "Confucius4-R2T2"),
+        ("⚡ Faster-Whisper (Large-v3-Turbo — Fast Standard Whisper)", "Faster-Whisper"),
+        (f"⚙️ Use Default from Settings ({curr_engine})", curr_engine)
+    ]
+    from core.ui import BoxSelector
+    chosen_engine = BoxSelector(engine_opts, title="Select Subtitle STT Engine", width=76).select()
+    if not chosen_engine or chosen_engine in ("ESC", "CTRL_C"):
+        return
+
+    engine_type = chosen_engine
     
-    console.print("[bold #bb9af7]AI Subtitle Engine[/]")
+    console.print("\n[bold #bb9af7]AI Subtitle Engine[/]")
     from core.settings_tui import prompt_field_value
     video_path = prompt_field_value("Video File Path", "", "(Enter absolute path to the video file)")
     
@@ -491,18 +502,20 @@ def run_subtitle_tui():
     stt_root = paths.get_stt_models_root()
     configured_path = config.get("ai_subtitles_model", "Models/STT/faster-whisper-large-v3-turbo")
     clean_configured = sanitize_user_path(configured_path)
-    engine_type = config.get("ai_subtitles_engine", "Auto")
     confucius_py = config.get("confucius_python_path", "/home/valse-de-anshu/confucius-env/bin/python")
     
     is_confucius = is_confucius_model(clean_configured, engine_type)
 
     if is_confucius:
         candidate_path = Path(clean_configured).expanduser().resolve() if os.path.isabs(clean_configured) else (paths.get_app_root() / clean_configured).resolve()
-        if candidate_path.exists() and candidate_path.is_dir():
+        if candidate_path.exists() and candidate_path.is_dir() and ((candidate_path / "model.safetensors").exists() or (candidate_path / "config.json").exists()):
             model_path = str(candidate_path)
         else:
             conf_dir = paths.get_confucius_stt_dir()
-            if conf_dir.exists():
+            weights_dir = conf_dir / "weights"
+            if weights_dir.exists() and (weights_dir / "model.safetensors").exists():
+                model_path = str(weights_dir)
+            elif conf_dir.exists() and ((conf_dir / "model.safetensors").exists() or (conf_dir / "config.json").exists()):
                 model_path = str(conf_dir)
             else:
                 model_path = "netease-youdao/Confucius4-R2T2"
