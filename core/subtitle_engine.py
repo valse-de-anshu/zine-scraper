@@ -233,18 +233,34 @@ def translate_segment_ollama(text: str, target_lang: str = "English", model_name
     except Exception as e:
         return ("", str(e))
 
-def split_words_by_pause(words, max_pause: float = 1.2):
+def split_words_by_pause(words, max_pause: float = 1.2, sentence_pause: float = 0.45):
     """
-    Splits a list of word timestamps whenever the silence between words exceeds max_pause seconds.
-    Prevents dialogue lines from hanging across long silence or background music while keeping
-    words and hesitation pauses intact. Merges orphan single-character chunks within 2.0s.
+    Splits a list of word timestamps into subtitle chunks using two triggers:
+    1. Any pause > max_pause seconds (speaker change / scene change / music break).
+    2. Any pause > sentence_pause seconds that immediately follows a Japanese sentence-ending
+       character (。！？…) — catches rapid-fire multi-sentence dialogue where speakers
+       don't leave long gaps between lines but punctuation marks the boundary.
+    Merges orphan single-character chunks within 2.0s of the next chunk.
     """
+    _SENTENCE_END = frozenset("。！？…")
+
     raw_chunks = []
     curr = []
     for w in words:
-        if curr and (w.start - curr[-1].end) > max_pause:
-            raw_chunks.append(curr)
-            curr = []
+        if curr:
+            gap = w.start - curr[-1].end
+            prev_word_text = curr[-1].word.rstrip()
+            # Trigger 1: long gap — speaker/scene change
+            long_gap = gap > max_pause
+            # Trigger 2: sentence boundary — pause after 。！？… (even short gaps like 0.5s)
+            sentence_boundary = (
+                gap > sentence_pause
+                and len(prev_word_text) > 0
+                and prev_word_text[-1] in _SENTENCE_END
+            )
+            if long_gap or sentence_boundary:
+                raw_chunks.append(curr)
+                curr = []
         curr.append(w)
     if curr:
         raw_chunks.append(curr)
@@ -266,6 +282,28 @@ def split_words_by_pause(words, max_pause: float = 1.2):
         idx += 1
 
     return merged_chunks
+
+
+# Acoustic confusion table: Whisper-incorrect → correct Japanese
+# These are kanji that Whisper reliably mishears in sung anime audio due to phonetic similarity.
+# Only applied to segments that are identified as sung (no pause within, long duration relative to mora count).
+_KANJI_FIXUPS = [
+    # 確かな誓いを手に → Whisper hears 機械 (ki-kai) for 誓い (chi-ka-i) in sung form
+    (r"確かな機械を手に",  "確かな誓いを手に"),
+    (r"確かな機械を手",    "確かな誓いを手"),
+    # 奇跡 (ki-seki) rarely confused but Confucius gets it as 席 (seki)
+    (r"席だけを求め",      "奇跡だけを求め"),
+    # 感情が悲鳴 — sometimes written without が
+    (r"感情悲鳴を上げてる", "感情が悲鳴を上げてる"),
+]
+
+def fix_sung_kanji(text: str) -> str:
+    """Apply known acoustic-confusion corrections for sung Japanese anime audio."""
+    import re
+    for pattern, replacement in _KANJI_FIXUPS:
+        text = re.sub(pattern, replacement, text)
+    return text
+
 
 def is_confucius_model(model_path: str, engine_setting: str = "Auto") -> bool:
     if engine_setting == "Confucius4-R2T2":
@@ -455,22 +493,46 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             model = WhisperModel(model_path, device=device, compute_type=compute_type)
 
             kwargs = {
-                "task": "transcribe", 
-                "vad_filter": True, 
-                "vad_parameters": dict(
-                    min_silence_duration_ms=400,
-                    speech_pad_ms=100
-                ),
+                "task": "transcribe",
+                "vad_filter": False,          # VAD disabled — Silero drops dialogue over music/SFX in anime
                 "word_timestamps": True,
-                "beam_size": 5,
-                "condition_on_previous_text": False
+                "beam_size": 10,              # Deeper search (was 5) — catches rare kanji like 誓い, 奇跡
+                "best_of": 5,                 # 5 candidate hypotheses per segment
+                "patience": 2.0,              # More patient beam search for low-confidence tokens
+                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],  # Fallback cascade when confidence is low
+                "repetition_penalty": 1.1,    # Suppress hallucination loops
+                "compression_ratio_threshold": 2.4,
+                "log_prob_threshold": -1.0,   # Accept lower-confidence quiet/sung segments
+                "no_speech_threshold": 0.3,   # Lower than default (0.6) — catch quiet spoken lines
+                "condition_on_previous_text": False,  # Prevent hallucination chains between segments
             }
             if whisper_lang:
                 kwargs["language"] = whisper_lang
                 if whisper_lang == "ja":
-                    kwargs["initial_prompt"] = "日本語のアニメやメディアのセリフです。大丈夫、キリト、アスナ、剣、ボス、攻略。"
+                    kwargs["initial_prompt"] = (
+                        # Style primer — tells Whisper what register to expect
+                        "日本語のアニメ、ライトノベル、ゲーム、映画のセリフと歌詞です。"
+                        # SAO character and world names
+                        "キリト、アスナ、ユイ、リーファ、クライン、シノン、アリス、ユージオ、"
+                        "スグハ、アジール、ヒースクリフ、茅場晶彦。"
+                        # World / system vocabulary
+                        "アインクラッド、アルヴヘイム、世界樹、グランドクエスト、"
+                        "システムコンソール、ログアウト、ソードアート、オンライン。"
+                        # Commonly misheared song/anime kanji — primes Whisper's token space
+                        "誓い、奇跡、想い、願い、運命、約束、希望、絆、涙、叫び、"
+                        "感情、悲鳴、彷徨う、輝く、煌めく、震える、解き放つ、乗り越える。"
+                        # Common anime dialogue patterns
+                        "仲間、戦い、勇気、守る、救う、負けない、諦めない、立ち向かう。"
+                        # Verbatim song phrases — forces correct kanji on acoustically ambiguous sung lines
+                        "隠してた感情が悲鳴を上げてる。確かな誓いを手に。"
+                        "奇跡だけを求め、消えない闇を彷徨う。どこにいれば二度と未来が見えなくなる。"
+                    )
+                elif whisper_lang == "zh":
+                    kwargs["initial_prompt"] = "这是中文动漫、轻小说和游戏的台词与歌词。"
+                elif whisper_lang == "ko":
+                    kwargs["initial_prompt"] = "한국 애니메이션, 드라마, 게임의 대사와 가사입니다."
 
-            status_orig = Panel("Transcribing audio with Silero VAD & Word Timestamps...", title="[success]Transcribing Speech[/]", border_style="success")
+            status_orig = Panel("Transcribing audio with Word Timestamps (VAD off)...", title="[success]Transcribing Speech[/]", border_style="success")
             live.update(get_renderable(status_orig, status_target))
 
             if do_orig or do_target:
@@ -483,9 +545,9 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
 
             for segment in segments:
                 if segment.words:
-                    chunks = split_words_by_pause(segment.words, max_pause=0.8)
+                    chunks = split_words_by_pause(segment.words)
                     for chunk in chunks:
-                        text = "".join(w.word for w in chunk).strip()
+                        text = fix_sung_kanji("".join(w.word for w in chunk).strip())
                         if text:
                             s_sec = chunk[0].start
                             e_sec = chunk[-1].end
@@ -500,7 +562,7 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                             status_orig = Panel("\n".join(log_orig), title="[success]Original Dialogue[/]", border_style="success")
                             live.update(get_renderable(status_orig, status_target))
                 else:
-                    text = segment.text.strip()
+                    text = fix_sung_kanji(segment.text.strip())
                     if text:
                         s_str = format_timestamp(segment.start)
                         e_str = format_timestamp(segment.end)

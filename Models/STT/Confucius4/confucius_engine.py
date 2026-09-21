@@ -178,10 +178,30 @@ def main():
         total_chunks = len(chunks)
         emit_event("chunk_info", total_chunks=total_chunks, total_duration=round(total_audio_sec, 2))
 
-        # Transcribe each chunk sequentially
-        lang_arg = args.language if args.language and args.language.lower() != "none" else None
+        # qwen_asr requires full language names (e.g. "Japanese"), not ISO codes
+        _LANG_NORM = {
+            "ja": "Japanese", "japanese": "Japanese",
+            "zh": "Chinese",  "chinese": "Chinese", "cn": "Chinese",
+            "ko": "Korean",   "korean": "Korean",
+            "en": "English",  "english": "English",
+            "fr": "French",   "french": "French",
+            "de": "German",   "german": "German",
+            "es": "Spanish",  "spanish": "Spanish",
+            "ru": "Russian",  "russian": "Russian",
+            "pt": "Portuguese", "portuguese": "Portuguese",
+            "ar": "Arabic",   "arabic": "Arabic",
+            "hi": "Hindi",    "hindi": "Hindi",
+            "th": "Thai",     "thai": "Thai",
+            "vi": "Vietnamese", "vietnamese": "Vietnamese",
+            "tr": "Turkish",  "turkish": "Turkish",
+            "it": "Italian",  "italian": "Italian",
+            "id": "Indonesian", "indonesian": "Indonesian",
+        }
+        raw_lang = args.language.strip() if args.language else None
+        lang_arg = _LANG_NORM.get(raw_lang.lower(), raw_lang) if raw_lang and raw_lang.lower() != "none" else None
         locked_lang = lang_arg
 
+        # Transcribe each chunk sequentially
         for idx, (chunk_wav, offset_sec) in enumerate(chunks):
             dur_sec = len(chunk_wav) / float(sr)
             # Skip chunks that are practically silent or too short
