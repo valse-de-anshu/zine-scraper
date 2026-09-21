@@ -82,19 +82,72 @@ cd ../../..
 git clone https://huggingface.co/deepdml/faster-whisper-large-v3-turbo Models/STT/faster-whisper-large-v3-turbo
 ```
 
-### 🧠 Option 2: Confucius4-R2T2 (Qwen3-ASR) — Next-Gen STT
+### 🧠 Option 2: Confucius4-R2T2 (Qwen3-ASR) — Next-Gen High-Fidelity STT
 
-Powered by NetEase Youdao & Alibaba Qwen3-ASR, offering ultra-high fidelity transcription across 30+ languages (Japanese, Chinese, Cantonese, English, etc.) with silence-boundary chunking and real-time streaming alignment.
+Powered by NetEase Youdao & Alibaba Qwen3-ASR. Delivers ultra-high fidelity speech recognition across 30+ languages (with flagship conversational accuracy in Japanese, Chinese, Cantonese, English, etc.) with automatic low-energy silence-boundary audio chunking and real-time streaming translation.
 
-#### 🚀 1-Click Python Download
+* **VRAM Footprint**: ~3.9 GB VRAM (`bfloat16` / `float16`), runs smoothly on 6GB NVIDIA GPUs (e.g. RTX 3050 Laptop).
+* **Location on Disk**: `Models/STT/Confucius4/weights/`
+
+#### ⚠️ Critical Notice Regarding GGUF Files
+> [!WARNING]
+> Do **NOT** use community `.gguf` quantizations (such as `Confucius4-R2T2.f16.gguf`). Those conversions only contain the text LLM decoder and omit the audio encoder, rendering them completely incapable of speech recognition. You **must** download the official Hugging Face `model.safetensors` full snapshot.
+
+#### 🛠️ Environment Prerequisites
+Confucius4 runs via its isolated neural worker (`Models/STT/Confucius4/confucius_engine.py`). If running Python 3.14 on system, create a Python 3.10–3.12 virtual environment (e.g. `~/confucius-env`):
+
 ```bash
-python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='netease-youdao/Confucius4-R2T2', local_dir='Models/STT/Confucius4')"
+# 1. Create venv (Python 3.10 - 3.12)
+python3.12 -m venv ~/confucius-env
+source ~/confucius-env/bin/activate
+
+# 2. Install PyTorch with CUDA & Dependencies
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install soundfile librosa deep-translator transformers accelerate sentencepiece
+
+# 3. Install Qwen-ASR / R2T2 Package
+pip install git+https://github.com/netease-youdao/Confucius4-R2T2.git
 ```
 
-#### ⚡ Multi-Threaded aria2c Download
+#### 📥 Download Model Weights
+
+Download the complete snapshot into `Models/STT/Confucius4/weights`:
+
+##### Method 1 — 1-Click Python Download (Recommended)
 ```bash
-aria2c -x 16 -s 16 -k 1M -d "Models/STT/Confucius4" -o "model.safetensors" "https://huggingface.co/netease-youdao/Confucius4-R2T2/resolve/main/model.safetensors"
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='netease-youdao/Confucius4-R2T2', local_dir='Models/STT/Confucius4/weights')"
 ```
+
+##### Method 2 — Hugging Face CLI
+```bash
+huggingface-cli download netease-youdao/Confucius4-R2T2 --local-dir Models/STT/Confucius4/weights
+```
+
+##### Method 3 — Multi-Threaded aria2c Download
+```bash
+mkdir -p Models/STT/Confucius4/weights
+cd Models/STT/Confucius4/weights
+
+BASE="https://huggingface.co/netease-youdao/Confucius4-R2T2/resolve/main"
+aria2c -x 16 -s 16 -k 1M -o "model.safetensors" "$BASE/model.safetensors"
+curl -L -O "$BASE/config.json"
+curl -L -O "$BASE/tokenizer.json"
+curl -L -O "$BASE/tokenizer_config.json"
+curl -L -O "$BASE/preprocessor_config.json"
+curl -L -O "$BASE/generation_config.json"
+curl -L -O "$BASE/chat_template.json"
+curl -L -O "$BASE/special_tokens_map.json"
+curl -L -O "$BASE/vocab.json"
+curl -L -O "$BASE/merges.txt"
+curl -L -O "$BASE/added_tokens.json"
+
+cd ../../..
+```
+
+#### 🚀 How to Run in Zine Scraper
+1. Type `subs` (or `/subs`) in the main menu.
+2. Select `🧠 Confucius4-R2T2 (Qwen3-ASR — High Fidelity)` in the interactive engine prompt.
+3. Paste the path to your video file to generate dual `.Original.vtt` and `.{Target}.vtt` subtitles with real-time streaming translation.
 
 ---
 
