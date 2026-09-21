@@ -862,198 +862,8 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             free_stt_memory(model)
             unload_ollama_model()
 
-def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto", llm_model: Optional[str] = None, use_vocal_isolation: bool = True):
-    import json
-
-    do_target = "Target" in languages or "Both" in languages
-    do_orig = "Original" in languages or "Both" in languages
-
-    ollama_model = (llm_model or get_ollama_model()) if do_target else None
-    llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
-    vocal_tag = "[bold cyan]Demucs v4[/]" if use_vocal_isolation else "[dim]Raw Audio[/]"
-
-    status_orig = Panel(Text("Initializing Confucius4-R2T2...", style="info"), title="[info]Phase 1: Transcription[/]", border_style="menu")
-    if do_target:
-        if ollama_model:
-            status_target = Panel(f"[info]Local LLM Ready: {ollama_model}\nWaiting for transcription to finish before loading LLM into VRAM...[/info]", title=f"[info]Phase 2: Translation ({ollama_model})[/]", border_style="menu")
-        else:
-            status_target = Panel("[bold red]Ollama is NOT running or no model found at http://localhost:11434.[/bold red]\n[warning]Google Translate has been removed.\nStart Ollama (e.g. 'ollama run luna:latest') to translate.[/warning]", title="[bold red]Phase 2: Translation Offline[/]", border_style="error")
-    else:
-        status_target = Panel(Text("Disabled (Original Audio Only)", style="dim"), title="[dim]Translation[/]", border_style="menu")
-
-    header = Panel(
-        f"[bold #bb9af7]AI Transcription Engine (Confucius4-R2T2)[/] - {os.path.basename(video_path)}\n"
-        f"[info]Engine:[/] Confucius4-R2T2 | [info]Spoken:[/] {spoken_lang} | [info]Audio:[/] {vocal_tag} | [info]LLM:[/] {llm_tag}",
-        border_style="menu"
-    )
-
-    def get_renderable(orig_panel, target_panel):
-        from rich.columns import Columns
-        panels = []
-        if do_orig: panels.append(orig_panel)
-        if do_target: panels.append(target_panel)
-        return Group(header, Columns(panels, expand=True))
-
-    with Live(get_renderable(status_orig, status_target), refresh_per_second=4, console=console) as live:
-        temp_wav = ""
-        proc = None
-        vtt_orig_path = os.path.splitext(video_path)[0] + ".Original.vtt"
-        vtt_target_path = os.path.splitext(video_path)[0] + f".{target_lang}.vtt"
-        f_orig = None
-        collected_entries = []
-
-        try:
-            # --- PHASE 0 & 1: AUDIO EXTRACTION / VOCAL ISOLATION ---
-            if use_vocal_isolation:
-                temp_wav = isolate_vocals_demucs(video_path, live=live, get_renderable=get_renderable, status_target=status_target)
-            else:
-                status_orig = Panel(Text("Extracting 16kHz audio track...", style="warning"), title="[warning]FFMPEG Extraction[/]", border_style="menu")
-                live.update(get_renderable(status_orig, status_target))
-                temp_wav = extract_audio(video_path)
-
-            if not os.path.exists(temp_wav):
-                live.stop()
-                console.print("[error]Failed to extract or isolate audio using ffmpeg/demucs![/error]")
-                time.sleep(3)
-                return
-
-            paths = PathAuthority()
-            if not confucius_py or not os.path.exists(confucius_py):
-                confucius_py = sys.executable
-
-            engine_script = (paths.get_confucius_stt_dir() / "confucius_engine.py").resolve()
-            if not engine_script.exists():
-                engine_script = (paths.get_app_root() / "Models" / "STT" / "Confucius4" / "confucius_engine.py").resolve()
-
-            device = "cpu" if vram_target == "CPU-Only" else "cuda"
-            actual_model = model_path
-            # If pointing to folder without weights, fallback to repo id
-            if os.path.isdir(model_path):
-                safetensors = list(Path(model_path).glob("*.safetensors"))
-                if not safetensors and not (Path(model_path) / "config.json").exists():
-                    actual_model = "netease-youdao/Confucius4-R2T2"
-
-            status_orig = Panel(Text("Starting Confucius4-R2T2 neural worker...", style="info"), title="[info]Status[/]", border_style="menu")
-            live.update(get_renderable(status_orig, status_target))
-
-            unload_ollama_model()
-            cmd = [
-                confucius_py,
-                str(engine_script),
-                "--audio", temp_wav,
-                "--model_path", actual_model,
-                "--backend", "transformers",
-                "--device", device,
-                "--max_chunk_sec", "8.0"
-            ]
-            if spoken_lang and spoken_lang.lower() not in ["auto", "auto-detect", "none"]:
-                cmd.extend(["--language", spoken_lang])
-
-            if do_orig or do_target:
-                f_orig = open(vtt_orig_path, "w", encoding="utf-8")
-                f_orig.write("WEBVTT\n\n")
-
-            log_orig = []
-
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
-
-            for raw_line in proc.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-
-                try:
-                    data = json.loads(line)
-                except Exception:
-                    continue
-
-                evt = data.get("event")
-                if evt == "status":
-                    msg = data.get("message", "")
-                    status_orig = Panel(Text(msg, style="info"), title="[info]Model Status[/]", border_style="menu")
-                    live.update(get_renderable(status_orig, status_target))
-                elif evt == "segment":
-                    start_sec = float(data.get("start", 0.0))
-                    end_sec = float(data.get("end", 0.0))
-                    start_str = data.get("start_str", format_timestamp(start_sec))
-                    end_str = data.get("end_str", format_timestamp(end_sec))
-                    orig_text = normalize_anime_text(data.get("text", "").strip())
-
-                    if orig_text and not is_whisper_hallucination(orig_text):
-                        if (end_sec - start_sec) < 0.8:
-                            end_sec = start_sec + 0.8
-                            end_str = format_timestamp(end_sec)
-                        collected_entries.append((start_sec, end_sec, start_str, end_str, orig_text))
-                        if f_orig:
-                            f_orig.write(f"{start_str} --> {end_str}\n{orig_text}\n\n")
-                            f_orig.flush()
-                        log_orig.append(f"[{start_str} -> {end_str}] {orig_text}")
-                        if len(log_orig) > 6:
-                            log_orig.pop(0)
-                        cur = data.get("chunk_index", "")
-                        tot = data.get("total_chunks", "")
-                        progress_tag = f" ({cur}/{tot})" if cur and tot else ""
-                        status_orig = Panel("\n".join(log_orig), title=f"[success]Original Spoken Audio{progress_tag}[/]", border_style="success")
-                        live.update(get_renderable(status_orig, status_target))
-                elif evt == "error":
-                    err_msg = data.get("message", "Unknown error")
-                    status_orig = Panel(f"Error: {err_msg}", title="[error]Confucius4 Error[/]", border_style="error")
-                    live.update(get_renderable(status_orig, status_target))
-
-            proc.wait()
-            proc = None
-
-            if f_orig:
-                f_orig.close()
-                f_orig = None
-
-            status_orig = Panel(f"[bold #9ece6a]Transcription Complete ({len(collected_entries)} dialogue lines)[/]\nSaved: {os.path.basename(vtt_orig_path)}", title="[bold #9ece6a]Phase 1 Done[/]", border_style="success")
-            live.update(get_renderable(status_orig, status_target))
-
-            # --- MEMORY FLUSH: KILL CONFUCIUS BEFORE LLM STARTS ---
-            free_stt_memory()
-
-            # --- PHASE 2: LOCAL LLM TRANSLATION ---
-            if do_target:
-                run_ollama_translation_phase(collected_entries, vtt_target_path, target_lang, ollama_model, status_orig, live, get_renderable)
-
-            try:
-                from butler.notify import send_os_notification
-                send_os_notification("Zine Scraper Subtitles", f"Successfully generated subtitles for {os.path.basename(video_path)}", is_success=True)
-            except Exception:
-                pass
-
-            time.sleep(2)
-
-        except KeyboardInterrupt:
-            if proc:
-                try: proc.kill()
-                except Exception: pass
-        except Exception as e:
-            layout_err = Panel(f"Error: {e}", title="[error]Fatal Error[/]", border_style="error")
-            live.update(layout_err)
-            try:
-                from butler.notify import send_os_notification
-                send_os_notification("Zine Scraper Error", f"Failed to generate subtitles: {e}", is_success=False)
-            except Exception:
-                pass
-            time.sleep(3)
-        finally:
-            if proc and proc.poll() is None:
-                try: proc.kill()
-                except Exception: pass
-            if os.path.exists(temp_wav):
-                try: os.remove(temp_wav)
-                except Exception: pass
-            free_stt_memory()
-            unload_ollama_model()
+def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto", llm_model = None, use_vocal_isolation: bool = True):
+    generate_subtitles_whisper(video_path, model_path, languages, target_lang, vram_target, spoken_lang, llm_model, use_vocal_isolation)
 
 def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = "", spoken_lang: str = "Auto", llm_model: Optional[str] = None, use_vocal_isolation: bool = True):
     if is_confucius_model(model_path, engine_type):
@@ -1075,19 +885,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
     else:
         console.print("[bold red]⚠️ No Local LLM Detected at http://localhost:11434[/bold red] [dim](Google Translate is permanently disabled)[/dim]\n")
 
-    curr_engine = config.get("ai_subtitles_engine", "Auto")
-    engine_opts = [
-        ("🌸 Anime-Whisper (Fine-Tuned on 5,300 hrs Anime Speech & Character Emotion)", "Anime-Whisper"),
-        ("🧠 Faster-Whisper (Large-v3-Turbo — Speaker-Accurate VAD & Timing)", "Faster-Whisper"),
-        ("⚡ Confucius4-R2T2 (Qwen3-ASR — High Fidelity Streaming)", "Confucius4-R2T2"),
-        (f"⚙️ Use Default from Settings ({curr_engine})", curr_engine)
-    ]
-    from core.ui import BoxSelector
-    chosen_engine = BoxSelector(engine_opts, title="Select Subtitle STT Engine", width=78).select()
-    if not chosen_engine or chosen_engine in ("ESC", "CTRL_C"):
-        return
-
-    engine_type = chosen_engine
+    engine_type = "Faster-Whisper"
 
     lang_opts = [
         ("🇯🇵 Japanese (Anime / J-Media — Speaker-Accurate Dialogue)", "Japanese"),
@@ -1159,53 +957,18 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
     clean_configured = sanitize_user_path(configured_path)
     confucius_py = config.get("confucius_python_path", "/home/valse-de-anshu/confucius-env/bin/python")
     
-    is_confucius = is_confucius_model(clean_configured, engine_type)
-
-    if is_confucius:
-        candidate_path = Path(clean_configured).expanduser().resolve() if os.path.isabs(clean_configured) else (paths.get_app_root() / clean_configured).resolve()
-        if candidate_path.exists() and candidate_path.is_dir() and ((candidate_path / "model.safetensors").exists() or (candidate_path / "config.json").exists()):
-            model_path = str(candidate_path)
-        else:
-            conf_dir = paths.get_confucius_stt_dir()
-            weights_dir = conf_dir / "weights"
-            if weights_dir.exists() and (weights_dir / "model.safetensors").exists():
-                model_path = str(weights_dir)
-            elif conf_dir.exists() and ((conf_dir / "model.safetensors").exists() or (conf_dir / "config.json").exists()):
-                model_path = str(conf_dir)
-            else:
-                model_path = "netease-youdao/Confucius4-R2T2"
-    elif engine_type == "Anime-Whisper":
-        anime_stt = stt_root / "anime-whisper"
-        anime_root = models_root / "anime-whisper"
-        if anime_stt.exists() and (anime_stt / "model.bin").exists():
-            model_path = str(anime_stt)
-        elif anime_root.exists() and (anime_root / "model.bin").exists():
-            model_path = str(anime_root)
-        else:
-            local_stt_model = stt_root / "faster-whisper-large-v3-turbo"
-            model_path = str(local_stt_model)
+    local_stt_model = stt_root / "faster-whisper-large-v3-turbo"
+    local_root_model = models_root / "faster-whisper-large-v3-turbo"
+    if local_stt_model.exists():
+        model_path = str(local_stt_model)
+    elif local_root_model.exists():
+        model_path = str(local_root_model)
     else:
-        # Priority 1: Check absolute or relative configured path
-        candidate_path = Path(clean_configured).expanduser().resolve() if os.path.isabs(clean_configured) else (paths.get_app_root() / clean_configured).resolve()
-        if candidate_path.exists() and candidate_path.is_dir():
-            model_path = str(candidate_path)
+        found_models = [p for p in stt_root.glob("faster-whisper*") if p.is_dir() and (p / "config.json").exists()]
+        if found_models:
+            model_path = str(found_models[0])
         else:
-            # Priority 2: Check Models/STT/faster-whisper-large-v3-turbo
-            local_stt_model = stt_root / "faster-whisper-large-v3-turbo"
-            local_root_model = models_root / "faster-whisper-large-v3-turbo"
-            if local_stt_model.exists():
-                model_path = str(local_stt_model)
-            elif local_root_model.exists():
-                model_path = str(local_root_model)
-            else:
-                # Priority 3: Scan Models/STT/ then Models/ for any faster-whisper folder
-                found_models = [p for p in stt_root.glob("faster-whisper*") if p.is_dir() and (p / "config.json").exists()]
-                if not found_models:
-                    found_models = [p for p in models_root.glob("faster-whisper*") if p.is_dir() and (p / "config.json").exists()]
-                if found_models:
-                    model_path = str(found_models[0])
-                else:
-                    model_path = str(local_stt_model)
+            model_path = str(local_stt_model)
 
     sub_mode = chosen_mode or config.get("ai_subtitles_mode", "Both")
     target_lang = config.get("ai_target_lang", "English")
@@ -1216,7 +979,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
         time.sleep(2)
         return
         
-    if not is_confucius and (not os.path.exists(model_path) or not os.path.isdir(model_path)):
+    if not os.path.exists(model_path) or not os.path.isdir(model_path):
         console.print(f"[error]Whisper Model not found at {model_path}![/error]")
         console.print("[info]Run this command to download the model into Models/STT/:[/info]")
         console.print("[site]python -c \"from huggingface_hub import snapshot_download; snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo', local_dir='Models/STT/faster-whisper-large-v3-turbo')\"[/site]")
