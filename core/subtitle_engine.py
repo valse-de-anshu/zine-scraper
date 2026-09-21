@@ -344,14 +344,17 @@ def translate_segment_ollama(text: str, target_lang: str = "English", model_name
 
 def split_words_by_pause(words, max_pause: float = 1.2, sentence_pause: float = 0.45):
     """
-    Splits a list of word timestamps into subtitle chunks using two triggers:
+    Splits a list of word timestamps into subtitle chunks using smart linguistic triggers:
     1. Any pause > max_pause seconds (speaker change / scene change / music break).
-    2. Any pause > sentence_pause seconds that immediately follows a Japanese sentence-ending
-       character (。！？…) — catches rapid-fire multi-sentence dialogue where speakers
-       don't leave long gaps between lines but punctuation marks the boundary.
-    Merges orphan single-character chunks within 2.0s of the next chunk.
+    2. Any pause > sentence_pause seconds that follows a true Japanese sentence-ending
+       punctuation (。！？…) — but NOT after incomplete topic particles (は, が, の, に, を, で)
+       or conjunctions (でも, さて, いや, けど).
+    3. Merges orphan single-character chunks and incomplete clauses forward into the next chunk.
+    4. Merges repeated short crying/calling words (e.g. ママ... ママ -> ママ、ママ!).
     """
     _SENTENCE_END = frozenset("。！？…")
+    _INCOMPLETE_PARTICLES = frozenset("はがのにをでへと")
+    _INCOMPLETE_CONJUNCTIONS = frozenset(["でも", "さて", "いや", "けど", "しかし", "だから", "それで"])
 
     raw_chunks = []
     curr = []
@@ -359,14 +362,24 @@ def split_words_by_pause(words, max_pause: float = 1.2, sentence_pause: float = 
         if curr:
             gap = w.start - curr[-1].end
             prev_word_text = curr[-1].word.rstrip()
-            # Trigger 1: long gap — speaker/scene change
-            long_gap = gap > max_pause
-            # Trigger 2: sentence boundary — pause after 。！？… (even short gaps like 0.5s)
+
+            # Check if previous word is an incomplete clause / dependent particle
+            is_dependent = (
+                (len(prev_word_text) > 0 and prev_word_text[-1] in _INCOMPLETE_PARTICLES)
+                or prev_word_text in _INCOMPLETE_CONJUNCTIONS
+            )
+
+            # Trigger 1: long gap — speaker/scene change (allowed even on dependent particles if > 1.6s)
+            long_gap = gap > (1.6 if is_dependent else max_pause)
+
+            # Trigger 2: sentence boundary — pause after 。！？… (only if not an incomplete clause)
             sentence_boundary = (
-                gap > sentence_pause
+                not is_dependent
+                and gap > sentence_pause
                 and len(prev_word_text) > 0
                 and prev_word_text[-1] in _SENTENCE_END
             )
+
             if long_gap or sentence_boundary:
                 raw_chunks.append(curr)
                 curr = []
@@ -374,44 +387,116 @@ def split_words_by_pause(words, max_pause: float = 1.2, sentence_pause: float = 
     if curr:
         raw_chunks.append(curr)
 
-    # Post-process: merge isolated orphan single characters if pause to next chunk is < 2.0s
+    # Post-process:
+    # 1. Merge orphan single characters or incomplete short clauses (<= 3 chars ending in particle)
+    # 2. Merge identical short crying/calling words within 1.5s
     merged_chunks = []
     idx = 0
     while idx < len(raw_chunks):
         c = raw_chunks[idx]
         text = "".join(w.word for w in c).strip()
-        if len(text) <= 1 and (idx + 1) < len(raw_chunks):
+
+        # Check if this chunk is a tiny filler grunt (ん, あ, え)
+        if text in ("ん", "あ", "え", "う", "お", "へ") and len(c) == 1:
+            if (idx + 1) < len(raw_chunks) and (raw_chunks[idx + 1][0].start - c[-1].end) < 1.5:
+                raw_chunks[idx + 1] = c + raw_chunks[idx + 1]
+            idx += 1
+            continue
+
+        if (idx + 1) < len(raw_chunks):
             next_c = raw_chunks[idx + 1]
+            next_text = "".join(w.word for w in next_c).strip()
             gap = next_c[0].start - c[-1].end
-            if gap < 2.0:
+
+            # Case A: Incomplete clause (<= 3 chars ending in は/の/に/を/でも) within 2.5s
+            is_fragment = (
+                len(text) <= 3 
+                and (text[-1] in _INCOMPLETE_PARTICLES or text in _INCOMPLETE_CONJUNCTIONS)
+                and gap < 2.5
+            )
+            # Case B: Orphan single character within 2.0s
+            is_orphan = (len(text) <= 1 and gap < 2.0)
+            
+            # Case C: Repeated crying / calling word (e.g. ママ... ママ / パパ... パパ) within 1.5s
+            is_repeated_call = (
+                text in ("ママ", "パパ", "待って", "だめ", "ダメ", "いや", "イヤ")
+                and next_text.startswith(text)
+                and gap < 1.5
+            )
+
+            if is_fragment or is_orphan or is_repeated_call:
                 raw_chunks[idx + 1] = c + next_c
                 idx += 1
                 continue
+
         merged_chunks.append(c)
         idx += 1
 
     return merged_chunks
 
 
-# Acoustic confusion table: Whisper-incorrect → correct Japanese
-# These are kanji that Whisper reliably mishears in sung anime audio due to phonetic similarity.
-# Only applied to segments that are identified as sung (no pause within, long duration relative to mora count).
-_KANJI_FIXUPS = [
-    # 確かな誓いを手に → Whisper hears 機械 (ki-kai) for 誓い (chi-ka-i) in sung form
-    (r"確かな機械を手に",  "確かな誓いを手に"),
-    (r"確かな機械を手",    "確かな誓いを手"),
-    # 奇跡 (ki-seki) rarely confused but Confucius gets it as 席 (seki)
-    (r"席だけを求め",      "奇跡だけを求め"),
-    # 感情が悲鳴 — sometimes written without が
+# Known YouTube / ASR training data hallucination signatures to discard
+_HALLUCINATION_PATTERNS = [
+    r"ご視聴ありがとう",
+    r"チャンネル登録",
+    r"高評価",
+    r"Thanks for watching",
+    r"Thank you for watching",
+    r"Subtitles by",
+    r"Translated by",
+    r"^エンディフォレース$",
+    r"^Endiferous$",
+    r"^ご視聴$",
+    r"お疲れ様でした[。！]*$",
+    r"最後までご視聴",
+    r"字幕.*制作",
+]
+
+def is_whisper_hallucination(text: str) -> bool:
+    """Returns True if the text matches known YouTube/Whisper training hallucination boilerplate."""
+    import re
+    cleaned = text.strip()
+    if not cleaned:
+        return True
+    for pat in _HALLUCINATION_PATTERNS:
+        if re.search(pat, cleaned, re.IGNORECASE):
+            return True
+    return False
+
+
+# Acoustic confusion & proper noun normalizer: Whisper-incorrect -> correct Japanese
+_ANIME_PHONETIC_FIXUPS = [
+    # SAO Character names & specific vocabulary
+    (r"\b死後[、,\s]*甘い", "須郷、甘い"),
+    (r"死後[、,\s]*貴様", "須郷、貴様"),
+    (r"死後[、,\s]*絶対に", "須郷、絶対に"),
+    (r"死後[、,\s]*お前", "須郷、お前"),
+    (r"死後[、,\s]*許さ", "須郷、許さ"),
+    (r"\b死後\b(?=.*(?:殺す|貴様|アスナ|キリト|甘い))", "須郷"),
+    (r"コードを?戦車", "コードを転写"),
+    (r"高度を?転写", "コードを転写"),
+    (r"高度を?戦車", "コードを転写"),
+    (r"(?:検討|転倒)されます", "転送されます"),
+    (r"ユウ、これを使え", "ユイ、これを使え"),
+    (r"ユウ、ここは", "ユイ、ここは"),
+    (r"ユウ、大丈夫", "ユイ、大丈夫"),
+    # Sung acoustic confusion
+    (r"確かな機械を手に", "確かな誓いを手に"),
+    (r"確かな機械を手", "確かな誓いを手"),
+    (r"席だけを求め", "奇跡だけを求め"),
     (r"感情悲鳴を上げてる", "感情が悲鳴を上げてる"),
 ]
 
-def fix_sung_kanji(text: str) -> str:
-    """Apply known acoustic-confusion corrections for sung Japanese anime audio."""
+def normalize_anime_text(text: str) -> str:
+    """Apply known acoustic-confusion and proper-noun corrections for anime speech."""
     import re
-    for pattern, replacement in _KANJI_FIXUPS:
+    for pattern, replacement in _ANIME_PHONETIC_FIXUPS:
         text = re.sub(pattern, replacement, text)
     return text
+
+def fix_sung_kanji(text: str) -> str:
+    """Legacy alias for backward compatibility."""
+    return normalize_anime_text(text)
 
 
 def is_confucius_model(model_path: str, engine_setting: str = "Auto") -> bool:
@@ -533,7 +618,7 @@ def run_ollama_translation_phase(collected_entries, vtt_target_path: str, target
 
 def generate_subtitles_whisper(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, spoken_lang: str = "Auto", llm_model: Optional[str] = None, use_vocal_isolation: bool = True):
     ensure_cuda_libraries()
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel, BatchedInferencePipeline
     
     compute_type = "int8" if vram_target == "6GB (INT8)" else "float16"
     device = "cpu" if vram_target == "CPU-Only" else "cuda"
@@ -607,18 +692,35 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
 
             kwargs = {
                 "task": "transcribe",
-                "vad_filter": False,          # VAD disabled — Silero drops dialogue over music/SFX in anime
                 "word_timestamps": True,
-                "beam_size": 10,              # Deeper search (was 5) — catches rare kanji like 誓い, 奇跡
+                "beam_size": 10,              # Deeper search — catches rare kanji
                 "best_of": 5,                 # 5 candidate hypotheses per segment
-                "patience": 2.0,              # More patient beam search for low-confidence tokens
-                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],  # Fallback cascade when confidence is low
+                "patience": 2.0,              # More patient beam search
+                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],  # Fallback cascade
                 "repetition_penalty": 1.1,    # Suppress hallucination loops
                 "compression_ratio_threshold": 2.4,
                 "log_prob_threshold": -1.0,   # Accept lower-confidence quiet/sung segments
-                "no_speech_threshold": 0.3,   # Lower than default (0.6) — catch quiet spoken lines
-                "condition_on_previous_text": False,  # Prevent hallucination chains between segments
+                "condition_on_previous_text": False,  # Prevent hallucination cascades between segments
             }
+
+            if use_vocal_isolation:
+                # With Demucs vocal separation, audio is pure voice without background music.
+                # BatchedInferencePipeline with VAD is safe, eliminates silence hallucinations, and runs 2x faster.
+                kwargs["vad_filter"] = True
+                kwargs["vad_parameters"] = dict(min_silence_duration_ms=300)
+                kwargs["batch_size"] = 8
+                kwargs["hallucination_silence_threshold"] = 2.0
+                transcribe_engine = BatchedInferencePipeline(model=model)
+                status_orig = Panel("Transcribing clean vocals with Batched Whisper & Word Timestamps...", title="[success]Transcribing Speech (Batched)[/]", border_style="success")
+            else:
+                # On raw audio, disable VAD to prevent Silero from dropping dialogue overlapping with loud BGM/SFX
+                kwargs["vad_filter"] = False
+                kwargs["no_speech_threshold"] = 0.3
+                transcribe_engine = model
+                status_orig = Panel("Transcribing raw audio with Word Timestamps (VAD off)...", title="[success]Transcribing Speech (Sequential)[/]", border_style="success")
+
+            live.update(get_renderable(status_orig, status_target))
+
             if whisper_lang:
                 kwargs["language"] = whisper_lang
                 if whisper_lang == "ja":
@@ -627,10 +729,10 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                         "日本語のアニメ、ライトノベル、ゲーム、映画のセリフと歌詞です。"
                         # SAO character and world names
                         "キリト、アスナ、ユイ、リーファ、クライン、シノン、アリス、ユージオ、"
-                        "スグハ、アジール、ヒースクリフ、茅場晶彦。"
+                        "スグハ、アジール、ヒースクリフ、茅場晶彦、須郷、須郷伸之、オベイロン、妖精王。"
                         # World / system vocabulary
                         "アインクラッド、アルヴヘイム、世界樹、グランドクエスト、"
-                        "システムコンソール、ログアウト、ソードアート、オンライン。"
+                        "システムコンソール、コード転写、転送、ログアウト、ソードアート、オンライン。"
                         # Commonly misheared song/anime kanji — primes Whisper's token space
                         "誓い、奇跡、想い、願い、運命、約束、希望、絆、涙、叫び、"
                         "感情、悲鳴、彷徨う、輝く、煌めく、震える、解き放つ、乗り越える。"
@@ -645,41 +747,34 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                 elif whisper_lang == "ko":
                     kwargs["initial_prompt"] = "한국 애니메이션, 드라마, 게임의 대사와 가사입니다."
 
-            status_orig = Panel("Transcribing audio with Word Timestamps (VAD off)...", title="[success]Transcribing Speech[/]", border_style="success")
-            live.update(get_renderable(status_orig, status_target))
-
             if do_orig or do_target:
                 f_orig = open(vtt_orig_path, "w", encoding="utf-8")
                 f_orig.write("WEBVTT\n\n")
 
-            segments, info = model.transcribe(temp_wav, **kwargs)
+            segments, info = transcribe_engine.transcribe(temp_wav, **kwargs)
 
             log_orig = []
 
             for segment in segments:
+                # Discard segments with high silence/music probability (> 70%)
+                if getattr(segment, "no_speech_prob", 0.0) > 0.70:
+                    continue
+
                 if segment.words:
                     chunks = split_words_by_pause(segment.words)
                     for chunk in chunks:
-                        text = fix_sung_kanji("".join(w.word for w in chunk).strip())
-                        if text:
-                            s_sec = chunk[0].start
-                            e_sec = chunk[-1].end
-                            s_str = format_timestamp(s_sec)
-                            e_str = format_timestamp(e_sec)
-                            collected_entries.append((s_sec, e_sec, s_str, e_str, text))
-                            if f_orig:
-                                f_orig.write(f"{s_str} --> {e_str}\n{text}\n\n")
-                                f_orig.flush()
-                            log_orig.append(f"[{s_str} -> {e_str}] {text}")
-                            if len(log_orig) > 6: log_orig.pop(0)
-                            status_orig = Panel("\n".join(log_orig), title="[success]Original Dialogue[/]", border_style="success")
-                            live.update(get_renderable(status_orig, status_target))
-                else:
-                    text = fix_sung_kanji(segment.text.strip())
-                    if text:
-                        s_str = format_timestamp(segment.start)
-                        e_str = format_timestamp(segment.end)
-                        collected_entries.append((segment.start, segment.end, s_str, e_str, text))
+                        raw_t = "".join(w.word for w in chunk).strip()
+                        text = normalize_anime_text(raw_t)
+                        if not text or is_whisper_hallucination(text):
+                            continue
+                        s_sec = chunk[0].start
+                        e_sec = chunk[-1].end
+                        # Enforce 0.8s minimum display duration so subtitles don't flash in 0.2s
+                        if (e_sec - s_sec) < 0.8:
+                            e_sec = s_sec + 0.8
+                        s_str = format_timestamp(s_sec)
+                        e_str = format_timestamp(e_sec)
+                        collected_entries.append((s_sec, e_sec, s_str, e_str, text))
                         if f_orig:
                             f_orig.write(f"{s_str} --> {e_str}\n{text}\n\n")
                             f_orig.flush()
@@ -687,6 +782,25 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                         if len(log_orig) > 6: log_orig.pop(0)
                         status_orig = Panel("\n".join(log_orig), title="[success]Original Dialogue[/]", border_style="success")
                         live.update(get_renderable(status_orig, status_target))
+                else:
+                    raw_t = segment.text.strip()
+                    text = normalize_anime_text(raw_t)
+                    if not text or is_whisper_hallucination(text):
+                        continue
+                    s_sec = segment.start
+                    e_sec = segment.end
+                    if (e_sec - s_sec) < 0.8:
+                        e_sec = s_sec + 0.8
+                    s_str = format_timestamp(s_sec)
+                    e_str = format_timestamp(e_sec)
+                    collected_entries.append((s_sec, e_sec, s_str, e_str, text))
+                    if f_orig:
+                        f_orig.write(f"{s_str} --> {e_str}\n{text}\n\n")
+                        f_orig.flush()
+                    log_orig.append(f"[{s_str} -> {e_str}] {text}")
+                    if len(log_orig) > 6: log_orig.pop(0)
+                    status_orig = Panel("\n".join(log_orig), title="[success]Original Dialogue[/]", border_style="success")
+                    live.update(get_renderable(status_orig, status_target))
 
             if f_orig:
                 f_orig.close()
@@ -853,9 +967,12 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                     end_sec = float(data.get("end", 0.0))
                     start_str = data.get("start_str", format_timestamp(start_sec))
                     end_str = data.get("end_str", format_timestamp(end_sec))
-                    orig_text = data.get("text", "").strip()
+                    orig_text = normalize_anime_text(data.get("text", "").strip())
 
-                    if orig_text:
+                    if orig_text and not is_whisper_hallucination(orig_text):
+                        if (end_sec - start_sec) < 0.8:
+                            end_sec = start_sec + 0.8
+                            end_str = format_timestamp(end_sec)
                         collected_entries.append((start_sec, end_sec, start_str, end_str, orig_text))
                         if f_orig:
                             f_orig.write(f"{start_str} --> {end_str}\n{orig_text}\n\n")
