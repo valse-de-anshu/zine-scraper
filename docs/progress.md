@@ -1,3 +1,24 @@
+# Progress Report - September 22, 2026 (Unified Vacuum/zine tts File Hub, temp_voice Re-use & Download History Cross-Checking)
+
+- **Unified Single-Hub File Architecture (`~/Downloads/Zine/Vacuum/zine tts/`):**
+  - **Eliminated Fragmentation**: Centralized all audio, subtitle, screenplay, and chunk buffer files into a single predictable root folder: `~/Downloads/Zine/Vacuum/zine tts/`. Neither the user nor developer has to jump across disparate directories to locate files.
+  - **Root Media Deliverables**:
+    - `<stem>.wav` — Master merged audio file (e.g. `My Slain Dragon Bride_chapter_0001.wav`).
+    - `<stem>.srt` — Synchronized subtitle file.
+    - `<stem>_scripted.txt` — Dramatic spoken screenplay produced by the LLM Director.
+    - `<stem>.txt` — Mirrored original novel chapter source text.
+  - **Permanent In-Flight & Resume Subfolder (`temp_voice/`)**:
+    - All generated individual chunk audio files are stored in `Vacuum/zine tts/temp_voice/<stem>/` (`000001.wav`, `000002.wav`, ...).
+    - **Never Auto-Deleted**: `temp_voice/` is permanently preserved. Re-running the TTS engine detects existing chunks on disk (>1000 bytes) and instantly re-uses them, resuming interrupted jobs without re-synthesizing from scratch.
+
+- **Intelligent Download History & Physical Disk Cross-Checking (`core/journal.py`, `breeze_engine.py`):**
+  - **No Blind History Trust**: Before initiating Phase 1 or Phase 2, `check_tts_history_and_disk()` cross-checks `Logs/Downlode 💩/Download History.json` AND verifies the physical presence of `<stem>.wav` and `<stem>.srt` on disk.
+  - **Smart Re-Run Prompt**: If the audiobook already exists on disk and is complete, the engine displays its verified file paths and offers an instant choice to reuse/open or re-render.
+  - **Automatic Healing**: If history lists a job as completed but the audio file is missing on disk, cross-check fails and the engine automatically re-synthesizes it into `zine tts/` (reusing any surviving chunks from `temp_voice/`).
+  - **Master Session Logging (`update_download_history_tts`)**: Upon completion, atomically writes full metadata (stem, source, destination, subtitles, screenplay, voice, duration, chunk count) to `Logs/Downlode 💩/Download History.json`.
+
+---
+
 # Progress Report - September 22, 2026 (Seductive Director Voice Profile, 1x Clean Chunk Synthesis & 2.5x Vocal Acting)
 
 - **Dedicated Voice Profile from User Reference Audio (`Models/TTS/Breeze tts/voices/`):**

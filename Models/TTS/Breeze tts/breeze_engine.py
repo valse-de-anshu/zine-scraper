@@ -1030,6 +1030,94 @@ class BreezeTTS:
             return False
 
 
+def check_tts_history_and_disk(
+    stem: str,
+    txt_path: Path,
+    final_audio: Path,
+    srt_file: Path,
+) -> tuple[bool, Optional[dict]]:
+    """
+    Cross-checks Download History.json AND physical disk state.
+    Returns (is_complete_on_disk, history_entry).
+    Never blindly trusts history if file is missing from disk!
+    """
+    from core.paths import PathAuthority
+    pa = PathAuthority()
+    hist_file = pa.get_history_file()
+    entry = None
+    if hist_file.exists():
+        try:
+            with open(hist_file, "r", encoding="utf-8") as hf:
+                data = json.load(hf)
+            key = f"tts:{stem}"
+            if key in data:
+                entry = data[key]
+            elif str(txt_path) in data:
+                entry = data[str(txt_path)]
+            elif stem in data:
+                entry = data[stem]
+        except Exception:
+            pass
+
+    # Physical disk verification: audio and subtitle files must exist and be non-empty
+    disk_ok = (
+        final_audio.exists() and final_audio.stat().st_size > 5000 and
+        srt_file.exists() and srt_file.stat().st_size > 10
+    )
+    return disk_ok, entry
+
+
+def update_download_history_tts(
+    stem: str,
+    source_file: str,
+    audio_file: str,
+    srt_file: str,
+    script_file: str,
+    temp_voice_dir: str,
+    voice: str,
+    chunks_count: int,
+    duration_seconds: float,
+) -> None:
+    """Persists complete audiobook session to Logs/Downlode 💩/Download History.json."""
+    from core.paths import PathAuthority
+    pa = PathAuthority()
+    hist_file = pa.get_history_file()
+    hist_file.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if hist_file.exists():
+        try:
+            with open(hist_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+
+    key = f"tts:{stem}"
+    data[key] = {
+        "title": stem,
+        "source_file": str(source_file),
+        "audio_file": str(audio_file),
+        "subtitles_file": str(srt_file),
+        "script_file": str(script_file),
+        "temp_voice_dir": str(temp_voice_dir),
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "completed",
+        "category": "Audiobook",
+        "mode": "Breeze-TTS",
+        "voice": voice,
+        "chunks_count": chunks_count,
+        "duration_seconds": round(duration_seconds, 2),
+    }
+
+    try:
+        tmp = hist_file.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        tmp.replace(hist_file)
+        _log_event("DOWNLOAD_HISTORY_UPDATED", {"key": key, "path": str(hist_file)})
+    except Exception as e:
+        _log_event("UPDATE_DOWNLOAD_HISTORY_ERROR", {"error": str(e)})
+
+
 # ---------------------------------------------------------------------------
 # Full Interactive Audiobook & Processing Workflow
 # ---------------------------------------------------------------------------
@@ -1055,32 +1143,74 @@ def process_book_breeze(txt_path_str: str):
         time.sleep(2)
         return
 
-    # Master output directory: route completed audio directly to Vacuum (or custom if set)
+    # Master Output Architecture: Single unified hub in Vacuum/zine tts/
     pa = PathAuthority()
     custom_out = config.get("breeze_output_dir", "").strip()
     if custom_out:
         out_dir = Path(sanitize_user_path(custom_out)).expanduser().resolve()
     else:
-        vacuum_base = pa.get_vacuum_root()
-        try:
-            rel = txt_path.parent.relative_to(pa.get_quick_grab_root())
-            out_dir = vacuum_base / rel
-        except Exception:
-            if txt_path.parent.name in ("novel chapter", "novels", "audiobooks", "audiobook"):
-                out_dir = vacuum_base / txt_path.parent.name
-            else:
-                out_dir = vacuum_base / "novel chapter"
+        out_dir = pa.get_vacuum_root() / "zine tts"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize dev logger
+    # Master subfolder for temporary voice chunk files — preserved for future re-use
+    temp_voice_dir = out_dir / "temp_voice" / txt_path.stem
+    temp_voice_dir.mkdir(parents=True, exist_ok=True)
+
+    # Root files inside Vacuum/zine tts/:
+    final_audio = out_dir / f"{txt_path.stem}.wav"
+    srt_file = out_dir / f"{txt_path.stem}.srt"
+    out_script = out_dir / f"{txt_path.stem}_scripted.txt"
+    story_source = out_dir / f"{txt_path.stem}.txt"
+
+    # Copy original source text into zine tts root so user has everything in one hub
+    try:
+        import shutil
+        if txt_path.resolve() != story_source.resolve():
+            shutil.copy2(txt_path, story_source)
+    except Exception:
+        pass
+
+    # Initialize dev logger inside zine tts/logs
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = out_dir / "logs" / f"{txt_path.stem}_breeze_{ts_str}.log"
     init_tts_logger(log_path)
 
+    # Cross-check Download History.json AND physical disk state before doing heavy work
+    disk_ok, hist_entry = check_tts_history_and_disk(
+        stem=txt_path.stem,
+        txt_path=txt_path,
+        final_audio=final_audio,
+        srt_file=srt_file,
+    )
+
+    if disk_ok:
+        console.print(f"\n[bold green]● Audiobook already verified on disk in zine tts![/bold green]")
+        console.print(f" [bold white]Audio:[/bold white]      {final_audio} ({final_audio.stat().st_size // 1024} KB)")
+        console.print(f" [bold white]Subtitles:[/bold white]  {srt_file}")
+        if out_script.exists():
+            console.print(f" [bold white]Screenplay:[/bold white] {out_script}")
+        if hist_entry:
+            console.print(f" [dim]History Verified: status={hist_entry.get('status')} | chunks={hist_entry.get('chunks_count')} | date={hist_entry.get('date')}[/dim]")
+
+        from core.ui import BoxSelector
+        opts = [
+            ("Use Existing Verified Audiobook (Skip & Open)", "skip"),
+            ("Re-render Audiobook from Scratch (Overwrites existing audio)", "rerun"),
+        ]
+        choice = BoxSelector(opts, f"Audiobook Exists on Disk: {txt_path.stem}").select()
+        if choice != "rerun":
+            console.print(f"\n[success]● Using existing verified audiobook in {out_dir}[/success]")
+            wait_for_enter(console)
+            return
+    elif hist_entry:
+        console.print(f"\n[warning]● History record found, but audio is missing on disk. Cross-check failed — regenerating into zine tts...[/warning]")
+
     # Snapshot settings
     backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
-    mode = config.get("breeze_mode", "Voice Design")
-    saved_voice = config.get("breeze_saved_voice", "")
+    mode = config.get("breeze_mode", "Saved Voice")
+    saved_voice = config.get("breeze_saved_voice", "seductive_director")
+    if mode == "Saved Voice" and not saved_voice:
+        saved_voice = "seductive_director"
     ref_audio = config.get("breeze_clone_ref_audio", "")
     ref_text = config.get("breeze_clone_ref_transcript", "")
     base_cfg = float(config.get("breeze_cfg_scale", 1.0))
@@ -1095,19 +1225,7 @@ def process_book_breeze(txt_path_str: str):
     hardware = config.get("breeze_hardware", "Vulkan (GPU)")
     use_cpu = "CPU" in hardware
     sub_gen = config.get("breeze_subtitles", True)
-    cleanup_temp = config.get("breeze_cleanup_temp", True)
-
-    # ── Voice Consistency Settings ───────────────────────────────────────────
-    # EBU R128 loudness normalization per chunk (-16 LUFS, -1.5 dBTP)
-    do_loudnorm    = config.get("breeze_loudnorm", True)
-    lufs_target    = float(config.get("breeze_lufs_target", -16.0))
-    true_peak      = float(config.get("breeze_true_peak", -1.5))
-    # Fixed acoustic seed: same seed for every chunk keeps voice fingerprint identical
-    fixed_seed     = config.get("breeze_fixed_seed", True)
-    # Vocal-event CFG boost cap (reduced from 2.5 → softer, still expressive)
-    vocal_cfg_boost = float(config.get("breeze_vocal_cfg_boost", 1.5))
-    # Apply gentle master bus compressor to the final merged file
-    do_master_comp = config.get("breeze_master_compressor", True)
+    fixed_seed = config.get("breeze_fixed_seed", True)
 
     _log_event("CONFIG_SNAPSHOT", {
         "engine": "Breeze-TTS-2",
@@ -1118,7 +1236,9 @@ def process_book_breeze(txt_path_str: str):
         "base_cfg": base_cfg,
         "auto_vocal_cfg": auto_vocal_cfg,
         "hardware": hardware,
-        "input_file": str(txt_path)
+        "input_file": str(txt_path),
+        "output_hub": str(out_dir),
+        "temp_voice_dir": str(temp_voice_dir),
     })
 
     # Validate server connectivity if HTTP backend chosen
@@ -1136,14 +1256,9 @@ def process_book_breeze(txt_path_str: str):
             console.print(f"[bold red]Error: breeze-cli binary not found at {cli_bin}![/bold red]")
             return
 
-    console.print(f"[info]📂 Output Dir:[/info] [bold white]{out_dir}[/bold white]")
-    console.print(f"[info]📋 Dev log:   [/info] [bold white]{log_path}[/bold white]")
-
-    pa = PathAuthority()
-    temp_dir = pa.get_temp_root() / f"tts_{txt_path.stem}"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
-    final_audio = out_dir / f"{txt_path.stem}.wav"
+    console.print(f"[info]📂 Audiobook Hub:[/info] [bold white]{out_dir}[/bold white]")
+    console.print(f"[info]🎙️ Temp Voice:  [/info] [bold white]{temp_voice_dir}[/bold white]")
+    console.print(f"[info]📋 Dev Log:     [/info] [bold white]{log_path}[/bold white]")
 
     with open(txt_path, "r", encoding="utf-8") as f:
         raw_text = f.read()
@@ -1155,7 +1270,15 @@ def process_book_breeze(txt_path_str: str):
     ollama_model = get_ollama_tts_model() if (do_llm_adapt and check_ollama_online()) else None
 
     scripted_text = raw_text
-    if ollama_model:
+    # Fast-path: Check if screenplay already exists in zine tts root or temp_voice — instant re-use!
+    if out_script.exists() and out_script.stat().st_size > 200:
+        try:
+            with open(out_script, "r", encoding="utf-8") as sf:
+                scripted_text = sf.read().strip()
+            console.print(f"\n[success]● Reusing existing dramatic screenplay on disk:[/success] [white]{out_script.name}[/white]")
+        except Exception:
+            scripted_text = raw_text
+    elif ollama_model:
         console.print(f"\n[bold #bb9af7]🎭 Phase 1: LLM Screenplay Adaptation[/bold #bb9af7] [dim]({ollama_model})[/dim]")
         console.print(f"[dim]Injecting dramatic pauses, cadence, and vocal tags without censorship...[/dim]")
 
@@ -1170,7 +1293,7 @@ def process_book_breeze(txt_path_str: str):
         scripted_text = adapt_novel_with_llm(
             raw_text=raw_text,
             stem=txt_path.stem,
-            temp_dir=temp_dir,
+            temp_dir=temp_voice_dir,
             out_dir=out_dir,
             ollama_model=ollama_model,
             llm_temperature=llm_temp,
@@ -1297,8 +1420,6 @@ def process_book_breeze(txt_path_str: str):
     if fd is not None:
         kbd_thread.start()
 
-    srt_file = out_dir / f"{txt_path.stem}.srt"
-
     def save_srt_live():
         try:
             with open(srt_file, "w", encoding="utf-8") as sf:
@@ -1319,11 +1440,11 @@ def process_book_breeze(txt_path_str: str):
                 has_vocal = chunk.get("has_vocal_events", False)
 
                 filename = f"{i:06d}.wav"
-                local_wav = temp_dir / filename
+                local_wav = temp_voice_dir / filename
 
-                # Check cache
+                # Check cache in temp_voice folder — instant re-use!
                 if local_wav.exists() and local_wav.stat().st_size > 1000:
-                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached in temp_voice[/bold green]")
                     chunk_files.append(local_wav)
 
                     duration = get_wav_duration(str(local_wav))
@@ -1414,7 +1535,6 @@ def process_book_breeze(txt_path_str: str):
 
                 live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
 
-
             status_log.append("[bold yellow]● Merging audio chunks with ffmpeg...[/bold yellow]")
             live.update(update_tui("Merging Audio...", f"{total_chunks}/{total_chunks}"))
     finally:
@@ -1431,9 +1551,9 @@ def process_book_breeze(txt_path_str: str):
             except Exception:
                 pass
 
-    # Merge chunks via FFmpeg concat filter + optional master bus compressor
+    # Merge chunks via FFmpeg concat filter
     if chunk_files:
-        concat_file = temp_dir / "concat.txt"
+        concat_file = temp_voice_dir / "concat.txt"
         with open(concat_file, "w", encoding="utf-8") as f:
             for cf in chunk_files:
                 safe_p = str(cf.resolve()).replace("'", "'\\''")
@@ -1442,13 +1562,6 @@ def process_book_breeze(txt_path_str: str):
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", str(concat_file),
-        ]
-        if do_master_comp:
-            # Broadcast master bus: 80Hz rumble cut + transparent smooth compressor/limiter
-            ffmpeg_cmd += [
-                "-af", "highpass=f=80,compand=attacks=0.03:decays=0.3:points=-80/-80|-30/-25|-15/-14|0/-1:soft-knee=6"
-            ]
-        ffmpeg_cmd += [
             "-ar", "24000",
             "-ac", "1",
             "-c:a", "pcm_s16le",
@@ -1456,7 +1569,6 @@ def process_book_breeze(txt_path_str: str):
         ]
 
         ffmpeg_result = subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-
 
         if ffmpeg_result.returncode != 0:
             err = ffmpeg_result.stderr.decode("utf-8", errors="replace")
@@ -1473,23 +1585,32 @@ def process_book_breeze(txt_path_str: str):
             try: os.remove(srt_file)
             except: pass
 
-        # Clean temp directory if enabled
-        import shutil
-        if cleanup_temp:
-            try:
-                if temp_dir.exists():
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception:
-                pass
-        else:
-            console.print(f"[dim]Intermediate audio chunks preserved in: {temp_dir}[/dim]")
+        # DO NOT delete temp_voice_dir! Preserve for instant future re-use!
+        console.print(f"[dim]📁 Chunk buffers preserved for instant re-use in: {temp_voice_dir}[/dim]")
+
+        # Persist complete session into Logs/Downlode 💩/Download History.json
+        update_download_history_tts(
+            stem=txt_path.stem,
+            source_file=str(txt_path),
+            audio_file=str(final_audio),
+            srt_file=str(srt_file),
+            script_file=str(out_script),
+            temp_voice_dir=str(temp_voice_dir),
+            voice=saved_voice or "seductive_director",
+            chunks_count=len(chunk_files),
+            duration_seconds=current_time,
+        )
 
         console.print(f"\n[success]●[/success] [bold green]Breeze Audiobook generation complete![/bold green]")
-        console.print(f"[bold white]Saved Audio to:[/bold white] {final_audio}")
+        console.print(f"[bold white]Audiobook Hub:[/bold white]   {out_dir}")
+        console.print(f"[bold white]Saved Audio:[/bold white]     {final_audio}")
         if sub_gen and srt_file.exists():
-            console.print(f"[bold white]Saved Subtitles to:[/bold white] {srt_file}")
+            console.print(f"[bold white]Saved Subtitles:[/bold white] {srt_file}")
+        if out_script.exists():
+            console.print(f"[bold white]Saved Script:[/bold white]    {out_script}")
     else:
         console.print(f"[bold red]No chunks were generated.[/bold red]")
+
 
 
 def wait_for_enter(console, prompt: str = "\nPress Enter to continue..."):
