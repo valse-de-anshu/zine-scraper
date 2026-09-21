@@ -886,6 +886,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
         console.print("[bold red]⚠️ No Local LLM Detected at http://localhost:11434[/bold red] [dim](Google Translate is permanently disabled)[/dim]\n")
 
     engine_type = "Faster-Whisper"
+    from core.ui import BoxSelector
 
     lang_opts = [
         ("🇯🇵 Japanese (Anime / J-Media — Speaker-Accurate Dialogue)", "Japanese"),
