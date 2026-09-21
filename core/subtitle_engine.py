@@ -81,7 +81,6 @@ def detect_source_language(text: str, hint: str = None) -> str:
 
     return "en-US"
 
-_google_failed = False
 _ollama_model_cached = None
 _ollama_checked = False
 
@@ -123,94 +122,85 @@ def unload_ollama_model():
         except Exception:
             pass
 
-def translate_text(text: str, target_lang: str = "English", source_hint: str = None) -> str:
-    global _google_failed
+def prewarm_ollama(model_name: str) -> Optional[str]:
+    """Preload the Ollama model into GPU/memory so generation calls don't timeout on cold start."""
+    try:
+        import urllib.request, json
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps({"model": model_name}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return None
+    except Exception as e:
+        return str(e)
+
+def translate_segment_ollama(text: str, target_lang: str = "English", model_name: str = "luna:latest") -> Tuple[str, Optional[str]]:
+    """
+    Translates a line of spoken dialogue using local Ollama LLM.
+    Returns: (translated_text, error_message_or_None)
+    """
     if not text or not text.strip():
-        return text
-    tl = target_lang.lower().strip()
-    lang_map = {
-        "english": "en-US", "spanish": "es-ES", "french": "fr-FR",
-        "german": "de-DE", "italian": "it-IT", "japanese": "ja-JP",
-        "chinese": "zh-CN", "korean": "ko-KR", "russian": "ru-RU",
-        "portuguese": "pt-PT", "hindi": "hi-IN", "arabic": "ar-SA"
-    }
-    target_code = lang_map.get(tl, "en-US")
-    source_code = detect_source_language(text, source_hint)
-    if source_code == target_code:
-        return text
-
-    # Priority 1: High-fidelity Local LLM via Ollama (dialogue & character persona aware)
-    ollama_model = get_ollama_model()
-    if ollama_model:
-        try:
-            import urllib.request, json, re
-            payload = {
-                "model": ollama_model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": f"You are a professional subtitle translator for media and anime dialogue. Translate the given spoken dialogue line into natural, conversational {target_lang}. Never introduce yourself, never mention your name or creator, and never offer assistance. Output ONLY the raw {target_lang} translated line without explanations or quotes."
-                    },
-                    {
-                        "role": "user",
-                        "content": text
-                    }
-                ],
-                "think": False,
-                "stream": False
-            }
-            req = urllib.request.Request(
-                "http://localhost:11434/api/chat",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                ans = data.get("message", {}).get("content", "").strip()
-                if ans:
-                    ans = re.sub(r'\(?https?://[^\s)]+\)?', '', ans)
-                    ans = re.sub(r'(?:Hello!?\s*)?I am Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
-                    ans = re.sub(r'How (?:may|can) I assist.*?(?:\?|\.|$)', '', ans, flags=re.IGNORECASE)
-                    ans = re.sub(r'(?:an AI model )?created by Empero AI.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
-                    ans = re.sub(r'Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
-                    ans = ans.strip()
-                    if (ans.startswith('"') and ans.endswith('"')) or (ans.startswith("'") and ans.endswith("'")):
-                        ans = ans[1:-1].strip()
-                    if ans:
-                        return ans
-        except Exception:
-            pass
-
-    # Priority 2: Google Translator (Web)
-    if not _google_failed:
-        try:
-            from deep_translator import GoogleTranslator
-            res = GoogleTranslator(source='auto', target=tl).translate(text)
-            if res:
-                return res
-        except Exception:
-            _google_failed = True
-
-    # Priority 3: MyMemory Translator (Web Fallback)
+        return ("", None)
+    
     try:
-        from deep_translator import MyMemoryTranslator
-        res = MyMemoryTranslator(source=source_code, target=target_code).translate(text)
-        if res:
-            return res
-    except Exception:
-        pass
+        import urllib.request, json, re
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": f"Translate the following spoken dialogue line into natural, concise, conversational {target_lang}. Never act as an assistant, never greet or introduce yourself, and never offer help or assistance. Output ONLY the raw {target_lang} subtitle translation directly without explanations, notes, or quotes."
+                },
+                {
+                    "role": "user",
+                    "content": text
+                }
+            ],
+            "think": False,
+            "stream": False
+        }
+        req = urllib.request.Request(
+            "http://localhost:11434/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            ans = data.get("message", {}).get("content", "").strip()
+            if ans:
+                ans = re.sub(r'\(?https?://[^\s)]+\)?', '', ans)
+                ans = re.sub(r'(?:Hello!?\s*)?I am Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+                ans = re.sub(r'How (?:may|can) I assist.*?(?:\?|\.|$)', '', ans, flags=re.IGNORECASE)
+                ans = re.sub(r'Let me know (?:how|what|if).*?(?:\.|$|!)', '', ans, flags=re.IGNORECASE)
+                ans = re.sub(r'(?:an AI model )?created by Empero AI.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+                ans = re.sub(r'Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+                ans = re.sub(r'^(?:Here is|Here\'s) the translation:?\s*', '', ans, flags=re.IGNORECASE)
+                ans = re.sub(r'^Translation:\s*', '', ans, flags=re.IGNORECASE)
+                ans = ans.strip()
+                if (ans.startswith('"') and ans.endswith('"')) or (ans.startswith("'") and ans.endswith("'")):
+                    ans = ans[1:-1].strip()
+                return (ans, None)
+            return ("", "Empty response from Ollama")
+    except Exception as e:
+        return ("", str(e))
 
-    try:
-        import time
-        time.sleep(0.5)
-        from deep_translator import MyMemoryTranslator
-        res = MyMemoryTranslator(source=source_code, target=target_code).translate(text)
-        if res:
-            return res
-    except Exception:
-        pass
-
-    return text
+def split_words_by_pause(words, max_pause: float = 0.8):
+    """
+    Splits a list of word timestamps whenever the silence between words exceeds max_pause seconds.
+    Prevents dialogue lines from hanging across long silence or background music.
+    """
+    chunks = []
+    curr = []
+    for w in words:
+        if curr and (w.start - curr[-1].end) > max_pause:
+            chunks.append(curr)
+            curr = []
+        curr.append(w)
+    if curr:
+        chunks.append(curr)
+    return chunks
 
 def is_confucius_model(model_path: str, engine_setting: str = "Auto") -> bool:
     if engine_setting == "Confucius4-R2T2":
@@ -235,29 +225,127 @@ def ensure_cuda_libraries():
             except Exception:
                 pass
 
+def free_stt_memory(model=None):
+    """Forcefully frees all STT neural weights from GPU, CPU RAM, and swap cache."""
+    if model is not None:
+        del model
+    import gc
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except Exception:
+        pass
+
+def run_ollama_translation_phase(collected_entries, vtt_target_path: str, target_lang: str, ollama_model: Optional[str], status_orig, live, get_renderable):
+    """
+    Phase 2: Translates all collected dialogue entries using local Ollama LLM.
+    Runs ONLY after STT has been completely freed from GPU memory.
+    """
+    if not ollama_model:
+        status_target = Panel(
+            "[bold red]Cannot translate: No Ollama model detected at http://localhost:11434![/bold red]\n"
+            "[warning]Google Translate has been permanently disabled as requested.\n"
+            "To translate, start Ollama (e.g. 'ollama run luna:latest')[/warning]",
+            title="[bold red]Translation Offline[/]",
+            border_style="error"
+        )
+        live.update(get_renderable(status_orig, status_target))
+        time.sleep(3)
+        return
+
+    status_target = Panel(
+        f"[info]STT memory flushed from GPU.\nConnecting to Ollama ({ollama_model})...\nPre-warming weights in GPU...[/info]",
+        title=f"[info]Phase 2: Local LLM ({ollama_model})[/]",
+        border_style="menu"
+    )
+    live.update(get_renderable(status_orig, status_target))
+
+    warm_err = prewarm_ollama(ollama_model)
+    if warm_err:
+        status_target = Panel(
+            f"[bold red]Failed to initialize Ollama ({ollama_model}):[/bold red]\n"
+            f"[error]{warm_err}[/error]\n"
+            "[warning]Verify 'ollama ps' or 'systemctl status ollama'.[/warning]",
+            title="[bold red]Ollama Connection Error[/]",
+            border_style="error"
+        )
+        live.update(get_renderable(status_orig, status_target))
+        time.sleep(4)
+        return
+
+    f_target = open(vtt_target_path, "w", encoding="utf-8")
+    f_target.write("WEBVTT\n\n")
+
+    tot = len(collected_entries)
+    log_target = []
+
+    for idx, (s_sec, e_sec, s_str, e_str, orig_text) in enumerate(collected_entries):
+        status_target = Panel(
+            f"[info]Translating ({idx+1}/{tot}):[/info]\n[dim]{orig_text}[/dim]",
+            title=f"[info]Ollama ({ollama_model}) — Line {idx+1}/{tot}[/]",
+            border_style="menu"
+        )
+        live.update(get_renderable(status_orig, status_target))
+
+        trans_text, err = translate_segment_ollama(orig_text, target_lang, ollama_model)
+        if err:
+            err_msg = f"[bold red]Error:[/] {err}"
+            log_target.append(f"[{s_str} -> {e_str}] {err_msg}")
+        else:
+            log_target.append(f"[{s_str} -> {e_str}] {trans_text}")
+            f_target.write(f"{s_str} --> {e_str}\n{trans_text}\n\n")
+            f_target.flush()
+
+        if len(log_target) > 6:
+            log_target.pop(0)
+        status_target = Panel("\n".join(log_target), title=f"[success]Ollama ({ollama_model}) Translation ({idx+1}/{tot})[/]", border_style="success")
+        live.update(get_renderable(status_orig, status_target))
+
+    f_target.close()
+    status_target = Panel(
+        f"[bold #9ece6a]Translation Complete ({tot} lines)[/]\nSaved: {os.path.basename(vtt_target_path)}",
+        title="[bold #9ece6a]Phase 2 Done[/]",
+        border_style="success"
+    )
+    live.update(get_renderable(status_orig, status_target))
+
 def generate_subtitles_whisper(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, spoken_lang: str = "Auto"):
     ensure_cuda_libraries()
     from faster_whisper import WhisperModel
-    import gc
     
     compute_type = "int8" if vram_target == "6GB (INT8)" else "float16"
     device = "cpu" if vram_target == "CPU-Only" else "cuda"
     
-    # Render layout
     do_target = "Target" in languages
     do_orig = "Original" in languages
     
-    table = Table(show_header=False, show_edge=False, box=None, expand=True)
-    if do_orig:
-        table.add_column("Original")
+    ollama_model = get_ollama_model() if do_target else None
+    llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
+    
+    header = Panel(
+        f"[bold #bb9af7]AI Subtitle Engine[/] - {os.path.basename(video_path)}\n"
+        f"[info]Engine:[/] Faster-Whisper | [info]Spoken:[/] {spoken_lang} | [info]LLM:[/] {llm_tag}",
+        border_style="menu"
+    )
+    
+    status_orig = Panel(Text("Initializing Whisper...", style="info"), title="[info]Phase 1: Transcription[/]", border_style="menu")
     if do_target:
-        table.add_column("Translation")
-        
-    status_orig = Panel(Text("Loading model...", style="info"), title="[info]Status[/]", border_style="menu")
-    status_target = Panel(Text("Waiting...", style="info"), title="[info]Status[/]", border_style="menu")
-    
-    header = Panel(f"[bold #bb9af7]AI Transcription Engine (Faster-Whisper)[/] - {os.path.basename(video_path)}", border_style="menu")
-    
+        if ollama_model:
+            status_target = Panel(f"[info]Local LLM Ready: {ollama_model}\nWaiting for transcription to finish before loading LLM into VRAM...[/info]", title=f"[info]Phase 2: Translation ({ollama_model})[/]", border_style="menu")
+        else:
+            status_target = Panel("[bold red]Ollama is NOT running or no model found at http://localhost:11434.[/bold red]\n[warning]Google Translate has been removed.\nStart Ollama (e.g. 'ollama run luna:latest') to translate.[/warning]", title="[bold red]Phase 2: Translation Offline[/]", border_style="error")
+    else:
+        status_target = Panel(Text("Disabled (Original Audio Only)", style="dim"), title="[dim]Translation[/]", border_style="menu")
+
     def get_renderable(orig_panel, target_panel):
         from rich.columns import Columns
         panels = []
@@ -268,10 +356,14 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
     with Live(get_renderable(status_orig, status_target), refresh_per_second=4, console=console) as live:
         model = None
         temp_wav = ""
+        f_orig = None
+        vtt_orig_path = os.path.splitext(video_path)[0] + ".Original.vtt"
+        vtt_target_path = os.path.splitext(video_path)[0] + f".{target_lang}.vtt"
+        collected_entries = []
+        
         try:
-            model = WhisperModel(model_path, device=device, compute_type=compute_type)
-            
-            status_orig = Panel(Text("Extracting 16kHz audio track...", style="warning"), title="[warning]FFMPEG Extraction[/]", border_style="menu")
+            # --- PHASE 1: TRANSCRIPTION ---
+            status_orig = Panel(Text("Extracting 16kHz mono audio track...", style="warning"), title="[warning]FFMPEG Extraction[/]", border_style="menu")
             live.update(get_renderable(status_orig, status_target))
             
             temp_wav = extract_audio(video_path)
@@ -290,12 +382,18 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                 elif "eng" in sl or sl == "en": whisper_lang = "en"
                 else: whisper_lang = sl[:2]
 
+            status_orig = Panel(Text(f"Loading Whisper into GPU ({compute_type})...", style="info"), title="[info]Loading Whisper[/]", border_style="menu")
+            live.update(get_renderable(status_orig, status_target))
+            
+            unload_ollama_model()
+            model = WhisperModel(model_path, device=device, compute_type=compute_type)
+
             kwargs = {
                 "task": "transcribe", 
                 "vad_filter": True, 
                 "vad_parameters": dict(
                     min_silence_duration_ms=400,
-                    speech_pad_ms=150
+                    speech_pad_ms=100
                 ),
                 "word_timestamps": True,
                 "beam_size": 5,
@@ -303,69 +401,67 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             }
             if whisper_lang:
                 kwargs["language"] = whisper_lang
-            
-            vtt_target_path = os.path.splitext(video_path)[0] + f".{target_lang}.vtt"
-            vtt_orig_path = os.path.splitext(video_path)[0] + ".Original.vtt"
-            
-            translator = None
-            if do_target:
-                try:
-                    from deep_translator import GoogleTranslator
-                    translator = GoogleTranslator(source='auto', target=target_lang.lower())
-                except ImportError:
-                    pass
-            
-            if do_orig:
-                status_orig = Panel("Starting...", title="[success]Transcribing Original...[/]", border_style="success")
-            if do_target:
-                status_target = Panel("Starting...", title=f"[success]Translating to {target_lang}...[/]", border_style="success")
+                if whisper_lang == "ja":
+                    kwargs["initial_prompt"] = "日本語のアニメやメディアのセリフです。大丈夫、キリト、アスナ、剣、ボス、攻略。"
+
+            status_orig = Panel("Transcribing audio with Silero VAD & Word Timestamps...", title="[success]Transcribing Speech[/]", border_style="success")
             live.update(get_renderable(status_orig, status_target))
-            
+
+            if do_orig or do_target:
+                f_orig = open(vtt_orig_path, "w", encoding="utf-8")
+                f_orig.write("WEBVTT\n\n")
+
             segments, info = model.transcribe(temp_wav, **kwargs)
-            
-            f_orig = open(vtt_orig_path, "w", encoding="utf-8") if do_orig else None
-            f_target = open(vtt_target_path, "w", encoding="utf-8") if do_target else None
-            
-            if f_orig: f_orig.write("WEBVTT\n\n")
-            if f_target: f_target.write("WEBVTT\n\n")
-            
+
             log_orig = []
-            log_target = []
-            
+
             for segment in segments:
-                start_str = format_timestamp(segment.start)
-                end_str = format_timestamp(segment.end)
-                
-                orig_text = segment.text.strip()
-                target_text = ""
-                
-                if do_target and orig_text:
-                    src_hint = getattr(info, "language", None) if "info" in locals() else None
-                    target_text = translate_text(orig_text, target_lang, source_hint=src_hint)
-                
-                if f_orig:
-                    f_orig.write(f"{start_str} --> {end_str}\n{orig_text}\n\n")
-                    f_orig.flush()
-                    log_orig.append(f"[{start_str} -> {end_str}] {orig_text}")
-                    if len(log_orig) > 6: log_orig.pop(0)
-                    status_orig = Panel("\n".join(log_orig), title="[success]Original Audio[/]", border_style="success")
-                    
-                if f_target:
-                    f_target.write(f"{start_str} --> {end_str}\n{target_text}\n\n")
-                    f_target.flush()
-                    log_target.append(f"[{start_str} -> {end_str}] {target_text}")
-                    if len(log_target) > 6: log_target.pop(0)
-                    status_target = Panel("\n".join(log_target), title=f"[success]{target_lang} Translation[/]", border_style="success")
-                
-                live.update(get_renderable(status_orig, status_target))
-            
-            if f_orig: f_orig.close()
-            if f_target: f_target.close()
-            
-            if do_orig: status_orig = Panel("Done.", title="[bold #9ece6a]Complete[/]", border_style="success")
-            if do_target: status_target = Panel("Done.", title="[bold #9ece6a]Complete[/]", border_style="success")
+                if segment.words:
+                    chunks = split_words_by_pause(segment.words, max_pause=0.8)
+                    for chunk in chunks:
+                        text = "".join(w.word for w in chunk).strip()
+                        if text:
+                            s_sec = chunk[0].start
+                            e_sec = chunk[-1].end
+                            s_str = format_timestamp(s_sec)
+                            e_str = format_timestamp(e_sec)
+                            collected_entries.append((s_sec, e_sec, s_str, e_str, text))
+                            if f_orig:
+                                f_orig.write(f"{s_str} --> {e_str}\n{text}\n\n")
+                                f_orig.flush()
+                            log_orig.append(f"[{s_str} -> {e_str}] {text}")
+                            if len(log_orig) > 6: log_orig.pop(0)
+                            status_orig = Panel("\n".join(log_orig), title="[success]Original Dialogue[/]", border_style="success")
+                            live.update(get_renderable(status_orig, status_target))
+                else:
+                    text = segment.text.strip()
+                    if text:
+                        s_str = format_timestamp(segment.start)
+                        e_str = format_timestamp(segment.end)
+                        collected_entries.append((segment.start, segment.end, s_str, e_str, text))
+                        if f_orig:
+                            f_orig.write(f"{s_str} --> {e_str}\n{text}\n\n")
+                            f_orig.flush()
+                        log_orig.append(f"[{s_str} -> {e_str}] {text}")
+                        if len(log_orig) > 6: log_orig.pop(0)
+                        status_orig = Panel("\n".join(log_orig), title="[success]Original Dialogue[/]", border_style="success")
+                        live.update(get_renderable(status_orig, status_target))
+
+            if f_orig:
+                f_orig.close()
+                f_orig = None
+
+            status_orig = Panel(f"[bold #9ece6a]Transcription Complete ({len(collected_entries)} dialogue lines)[/]\nSaved: {os.path.basename(vtt_orig_path)}", title="[bold #9ece6a]Phase 1 Done[/]", border_style="success")
             live.update(get_renderable(status_orig, status_target))
             
+            # --- MEMORY FLUSH: KILL STT BEFORE LLM STARTS ---
+            free_stt_memory(model)
+            model = None
+
+            # --- PHASE 2: LOCAL LLM TRANSLATION ---
+            if do_target:
+                run_ollama_translation_phase(collected_entries, vtt_target_path, target_lang, ollama_model, status_orig, live, get_renderable)
+
             try:
                 from butler.notify import send_os_notification
                 send_os_notification("Zine Scraper Subtitles", f"Successfully generated subtitles for {os.path.basename(video_path)}", is_success=True)
@@ -391,21 +487,32 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                     os.remove(temp_wav)
                 except Exception:
                     pass
-            if model is not None:
-                del model
-            gc.collect()
+            free_stt_memory(model)
             unload_ollama_model()
 
 def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto"):
-    import gc
     import json
 
     do_target = "Target" in languages
     do_orig = "Original" in languages
 
-    status_orig = Panel(Text("Initializing Confucius4-R2T2...", style="info"), title="[info]Status[/]", border_style="menu")
-    status_target = Panel(Text("Waiting...", style="info"), title="[info]Status[/]", border_style="menu")
-    header = Panel(f"[bold #bb9af7]AI Transcription Engine (Confucius4-R2T2)[/] - {os.path.basename(video_path)}", border_style="menu")
+    ollama_model = get_ollama_model() if do_target else None
+    llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
+
+    status_orig = Panel(Text("Initializing Confucius4-R2T2...", style="info"), title="[info]Phase 1: Transcription[/]", border_style="menu")
+    if do_target:
+        if ollama_model:
+            status_target = Panel(f"[info]Local LLM Ready: {ollama_model}\nWaiting for transcription to finish before loading LLM into VRAM...[/info]", title=f"[info]Phase 2: Translation ({ollama_model})[/]", border_style="menu")
+        else:
+            status_target = Panel("[bold red]Ollama is NOT running or no model found at http://localhost:11434.[/bold red]\n[warning]Google Translate has been removed.\nStart Ollama (e.g. 'ollama run luna:latest') to translate.[/warning]", title="[bold red]Phase 2: Translation Offline[/]", border_style="error")
+    else:
+        status_target = Panel(Text("Disabled (Original Audio Only)", style="dim"), title="[dim]Translation[/]", border_style="menu")
+
+    header = Panel(
+        f"[bold #bb9af7]AI Transcription Engine (Confucius4-R2T2)[/] - {os.path.basename(video_path)}\n"
+        f"[info]Engine:[/] Confucius4-R2T2 | [info]Spoken:[/] {spoken_lang} | [info]LLM:[/] {llm_tag}",
+        border_style="menu"
+    )
 
     def get_renderable(orig_panel, target_panel):
         from rich.columns import Columns
@@ -417,6 +524,11 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
     with Live(get_renderable(status_orig, status_target), refresh_per_second=4, console=console) as live:
         temp_wav = ""
         proc = None
+        vtt_orig_path = os.path.splitext(video_path)[0] + ".Original.vtt"
+        vtt_target_path = os.path.splitext(video_path)[0] + f".{target_lang}.vtt"
+        f_orig = None
+        collected_entries = []
+
         try:
             status_orig = Panel(Text("Extracting 16kHz audio track...", style="warning"), title="[warning]FFMPEG Extraction[/]", border_style="menu")
             live.update(get_renderable(status_orig, status_target))
@@ -430,8 +542,7 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
 
             paths = PathAuthority()
             if not confucius_py or not os.path.exists(confucius_py):
-                candidate = Path("/home/valse-de-anshu/confucius-env/bin/python")
-                confucius_py = str(candidate) if candidate.exists() else sys.executable
+                confucius_py = sys.executable
 
             engine_script = (paths.get_confucius_stt_dir() / "confucius_engine.py").resolve()
             if not engine_script.exists():
@@ -448,6 +559,7 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
             status_orig = Panel(Text("Starting Confucius4-R2T2 neural worker...", style="info"), title="[info]Status[/]", border_style="menu")
             live.update(get_renderable(status_orig, status_target))
 
+            unload_ollama_model()
             cmd = [
                 confucius_py,
                 str(engine_script),
@@ -455,28 +567,16 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                 "--model_path", actual_model,
                 "--backend", "transformers",
                 "--device", device,
-                "--max_chunk_sec", "10.0"
+                "--max_chunk_sec", "8.0"
             ]
             if spoken_lang and spoken_lang.lower() not in ["auto", "auto-detect", "none"]:
                 cmd.extend(["--language", spoken_lang])
-            if do_target and target_lang:
-                cmd.extend(["--target_lang", target_lang])
 
-            vtt_target_path = os.path.splitext(video_path)[0] + f".{target_lang}.vtt"
-            vtt_orig_path = os.path.splitext(video_path)[0] + ".Original.vtt"
-
-            f_orig = open(vtt_orig_path, "w", encoding="utf-8") if do_orig else None
-            f_target = open(vtt_target_path, "w", encoding="utf-8") if do_target else None
-
-            if f_orig:
+            if do_orig or do_target:
+                f_orig = open(vtt_orig_path, "w", encoding="utf-8")
                 f_orig.write("WEBVTT\n\n")
-                f_orig.flush()
-            if f_target:
-                f_target.write("WEBVTT\n\n")
-                f_target.flush()
 
             log_orig = []
-            log_target = []
 
             proc = subprocess.Popen(
                 cmd,
@@ -503,17 +603,17 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                     status_orig = Panel(Text(msg, style="info"), title="[info]Model Status[/]", border_style="menu")
                     live.update(get_renderable(status_orig, status_target))
                 elif evt == "segment":
-                    start_str = data.get("start_str", format_timestamp(data.get("start", 0.0)))
-                    end_str = data.get("end_str", format_timestamp(data.get("end", 0.0)))
+                    start_sec = float(data.get("start", 0.0))
+                    end_sec = float(data.get("end", 0.0))
+                    start_str = data.get("start_str", format_timestamp(start_sec))
+                    end_str = data.get("end_str", format_timestamp(end_sec))
                     orig_text = data.get("text", "").strip()
-                    target_text = data.get("translation", "").strip()
 
-                    if do_target and not target_text and orig_text:
-                        target_text = translate_text(orig_text, target_lang, source_hint=data.get("language"))
-
-                    if f_orig and orig_text:
-                        f_orig.write(f"{start_str} --> {end_str}\n{orig_text}\n\n")
-                        f_orig.flush()
+                    if orig_text:
+                        collected_entries.append((start_sec, end_sec, start_str, end_str, orig_text))
+                        if f_orig:
+                            f_orig.write(f"{start_str} --> {end_str}\n{orig_text}\n\n")
+                            f_orig.flush()
                         log_orig.append(f"[{start_str} -> {end_str}] {orig_text}")
                         if len(log_orig) > 6:
                             log_orig.pop(0)
@@ -521,30 +621,28 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                         tot = data.get("total_chunks", "")
                         progress_tag = f" ({cur}/{tot})" if cur and tot else ""
                         status_orig = Panel("\n".join(log_orig), title=f"[success]Original Spoken Audio{progress_tag}[/]", border_style="success")
-
-                    if f_target and (target_text or orig_text):
-                        out_target = target_text or orig_text
-                        f_target.write(f"{start_str} --> {end_str}\n{out_target}\n\n")
-                        f_target.flush()
-                        log_target.append(f"[{start_str} -> {end_str}] {out_target}")
-                        if len(log_target) > 6:
-                            log_target.pop(0)
-                        status_target = Panel("\n".join(log_target), title=f"[success]{target_lang} Translation[/]", border_style="success")
-
-                    live.update(get_renderable(status_orig, status_target))
+                        live.update(get_renderable(status_orig, status_target))
                 elif evt == "error":
                     err_msg = data.get("message", "Unknown error")
                     status_orig = Panel(f"Error: {err_msg}", title="[error]Confucius4 Error[/]", border_style="error")
                     live.update(get_renderable(status_orig, status_target))
 
             proc.wait()
+            proc = None
 
-            if f_orig: f_orig.close()
-            if f_target: f_target.close()
+            if f_orig:
+                f_orig.close()
+                f_orig = None
 
-            if do_orig: status_orig = Panel("Done.", title="[bold #9ece6a]Complete[/]", border_style="success")
-            if do_target: status_target = Panel("Done.", title="[bold #9ece6a]Complete[/]", border_style="success")
+            status_orig = Panel(f"[bold #9ece6a]Transcription Complete ({len(collected_entries)} dialogue lines)[/]\nSaved: {os.path.basename(vtt_orig_path)}", title="[bold #9ece6a]Phase 1 Done[/]", border_style="success")
             live.update(get_renderable(status_orig, status_target))
+
+            # --- MEMORY FLUSH: KILL CONFUCIUS BEFORE LLM STARTS ---
+            free_stt_memory()
+
+            # --- PHASE 2: LOCAL LLM TRANSLATION ---
+            if do_target:
+                run_ollama_translation_phase(collected_entries, vtt_target_path, target_lang, ollama_model, status_orig, live, get_renderable)
 
             try:
                 from butler.notify import send_os_notification
@@ -574,7 +672,7 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
             if os.path.exists(temp_wav):
                 try: os.remove(temp_wav)
                 except Exception: pass
-            gc.collect()
+            free_stt_memory()
             unload_ollama_model()
 
 def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = "", spoken_lang: str = "Auto"):
@@ -590,6 +688,12 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
     
     startup_clear()
     print_banner()
+
+    ollama_m = get_ollama_model()
+    if ollama_m:
+        console.print(f"[bold green]🤖 Local LLM Detected:[/] Ollama ([bold cyan]{ollama_m}[/]) ready for translation\n")
+    else:
+        console.print("[bold red]⚠️ No Local LLM Detected at http://localhost:11434[/bold red] [dim](Google Translate is permanently disabled)[/dim]\n")
 
     curr_engine = config.get("ai_subtitles_engine", "Auto")
     engine_opts = [

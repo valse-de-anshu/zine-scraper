@@ -1,3 +1,34 @@
+# Progress Report - September 22, 2026 (Two-Phase VRAM Handoff, Ollama-Exclusive Local LLM Translation & Speaker-Accurate Subtitles)
+
+- **Two-Phase VRAM Handoff Architecture & Memory Reclamation (`core/subtitle_engine.py`):**
+  - **Identified Problem (6 GB VRAM Constraint)**:
+    - High-accuracy speech-to-text models (Faster-Whisper `large-v3-turbo` or Confucius4) and 9B+ parameter LLMs (e.g. `luna:latest`, 4.7 GB) cannot fit simultaneously within 6 GB VRAM. Concurrently running STT and LLM translation resulted in CUDA out-of-memory errors (`CUDA failed with error out of memory`).
+  - **Sequential Two-Phase Execution Pipeline**:
+    - **Phase 1 (Transcription)**: STT transcribes the full audio track with Silero VAD and word timestamps into `.Original.vtt`.
+    - **Phase 1 Handoff & Memory Purge (`free_stt_memory`)**:
+      - Explicitly deletes STT model instances and forces garbage collection.
+      - Executes `torch.cuda.empty_cache()` and `torch.cuda.ipc_collect()` to return all allocated GPU memory back to the driver.
+      - Calls glibc `libc.malloc_trim(0)` to release buffered system memory and swap caches.
+      - Drops VRAM allocation back to base level (~28 MiB) before Phase 2 begins.
+    - **Phase 2 (Translation via Ollama)**:
+      - Automatically pre-warms the detected local LLM in GPU memory using zero-token payload (`POST /api/generate` with `{"model": model_name}`), avoiding cold-start latency without triggering thinking token generation.
+      - Translates dialogue lines sequentially into `.{target_lang}.vtt` with live multi-panel Rich Live progress.
+      - Gracefully unloads the LLM (`unload_ollama_model()`) upon completion or cancellation.
+    - **Pre-STT Memory Sanitation**: Calls `unload_ollama_model()` before Whisper or Confucius loads to ensure STT always gets 100% of available GPU VRAM.
+
+- **Ollama-Exclusive Translation & Permanent Removal of Web Translators (`core/subtitle_engine.py`):**
+  - Completely excised `GoogleTranslator`, `MyMemoryTranslator`, and web scraping fallbacks from the subtitle engine as requested.
+  - Subtitle translation now operates exclusively via local Ollama LLMs.
+  - Added real-time LLM detection banner in `run_subtitle_tui` informing the user of the active local model or warning if Ollama is offline.
+  - Added live error preview panel in Rich Live so translation errors or API timeouts are rendered transparently to the user rather than being swallowed.
+  - Refined translation system prompts and added multi-pattern regex scrubbing to strip any assistant intros, greetings, or assistance offers (`Let me know what you'd like assistance with`, `How can I help`, quotes, etc.), leaving only pure conversational dialogue.
+
+- **Speaker-Accurate Whisper Timing & Dialogue Splitting (`core/subtitle_engine.py`):**
+  - Added `split_words_by_pause(words, max_pause=0.8)`: splits word-level timestamps on silences exceeding 0.8s, completely eliminating multi-minute hanging subtitle blocks across background music/openings and splitting character dialogue turns cleanly.
+  - Added Japanese anime prompt conditioning (`initial_prompt="日本語のアニメやメディアのセリフです。大丈夫、キリト、アスナ、剣、ボス、攻略。"`) to resolve Japanese homophone ambiguities.
+
+---
+
 # Progress Report - September 21, 2026 (Feature: Confucius4-R2T2 / Qwen3-ASR Speech-to-Text Integration)
 
 - **Confucius4-R2T2 / Qwen3-ASR Subtitle Engine Integration (`Models/STT/Confucius4/confucius_engine.py`, `core/subtitle_engine.py`, `core/config.py`, `core/settings_tui.py`, `core/paths.py`, `Models/README to downlode ai model.md`):**
