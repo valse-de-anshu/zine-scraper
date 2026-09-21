@@ -84,29 +84,37 @@ def detect_source_language(text: str, hint: str = None) -> str:
 _ollama_model_cached = None
 _ollama_checked = False
 
-def get_ollama_model() -> Optional[str]:
-    global _ollama_model_cached, _ollama_checked
-    if _ollama_checked:
-        return _ollama_model_cached
-    _ollama_checked = True
+def get_all_ollama_models() -> List[str]:
+    """Returns a list of all installed Ollama model tags."""
     try:
         import urllib.request, json
         req = urllib.request.Request("http://localhost:11434/api/tags", headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            models = [m.get("name", "") for m in data.get("models", [])]
-            for cand in ["luna", "emma", "qwen", "mistral", "llama"]:
-                for m in models:
-                    if cand in m.lower():
-                        _ollama_model_cached = m
-                        return _ollama_model_cached
-            if models:
-                _ollama_model_cached = models[0]
-                return _ollama_model_cached
+            return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
     except Exception:
-        pass
-    _ollama_model_cached = None
-    return None
+        return []
+
+def get_ollama_model(force_refresh: bool = False) -> Optional[str]:
+    global _ollama_model_cached, _ollama_checked
+    if _ollama_checked and not force_refresh:
+        return _ollama_model_cached
+    _ollama_checked = True
+    models = get_all_ollama_models()
+    if not models:
+        _ollama_model_cached = None
+        return None
+
+    # Priority 1: emma (flagship uncensored 7.5B model for SFW & NSFW media)
+    # Priority 2: luna, qwen, mistral, llama
+    for cand in ["emma", "luna", "qwen", "mistral", "llama"]:
+        for m in models:
+            if cand in m.lower():
+                _ollama_model_cached = m
+                return _ollama_model_cached
+
+    _ollama_model_cached = models[0]
+    return _ollama_model_cached
 
 def unload_ollama_model():
     m = get_ollama_model()
@@ -136,9 +144,11 @@ def prewarm_ollama(model_name: str) -> Optional[str]:
     except Exception as e:
         return str(e)
 
-def translate_segment_ollama(text: str, target_lang: str = "English", model_name: str = "luna:latest") -> Tuple[str, Optional[str]]:
+def translate_segment_ollama(text: str, target_lang: str = "English", model_name: str = "emma:latest") -> Tuple[str, Optional[str]]:
     """
     Translates a line of spoken dialogue using local Ollama LLM.
+    Strictly handles both everyday SFW dialogue and explicit NSFW (adult/hentai) dialogue
+    without censorship, moralizing, or refusal.
     Returns: (translated_text, error_message_or_None)
     """
     if not text or not text.strip():
@@ -146,12 +156,19 @@ def translate_segment_ollama(text: str, target_lang: str = "English", model_name
     
     try:
         import urllib.request, json, re
+        system_prompt = (
+            f"You are a professional subtitle translator for media, anime, movies, and video games.\n"
+            f"You MUST faithfully, accurately, and fluently translate ALL dialogue lines into natural conversational {target_lang}.\n"
+            f"Both everyday SFW dialogue and explicit NSFW (adult / hentai / sexual) dialogue must be translated directly without censorship, moralizing, lecturing, or refusal.\n"
+            f"Never act as an assistant or chatbot. Never introduce yourself, never apologize, never explain grammar or single words, and never offer assistance.\n"
+            f"Output ONLY the direct {target_lang} subtitle translation on a single line without explanations, bullet points, numbered options, or quotation marks."
+        )
         payload = {
             "model": model_name,
             "messages": [
                 {
                     "role": "system",
-                    "content": f"Translate the following spoken dialogue line into natural, concise, conversational {target_lang}. Never act as an assistant, never greet or introduce yourself, and never offer help or assistance. Output ONLY the raw {target_lang} subtitle translation directly without explanations, notes, or quotes."
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
@@ -169,38 +186,86 @@ def translate_segment_ollama(text: str, target_lang: str = "English", model_name
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             ans = data.get("message", {}).get("content", "").strip()
-            if ans:
-                ans = re.sub(r'\(?https?://[^\s)]+\)?', '', ans)
-                ans = re.sub(r'(?:Hello!?\s*)?I am Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
-                ans = re.sub(r'How (?:may|can) I assist.*?(?:\?|\.|$)', '', ans, flags=re.IGNORECASE)
-                ans = re.sub(r'Let me know (?:how|what|if).*?(?:\.|$|!)', '', ans, flags=re.IGNORECASE)
-                ans = re.sub(r'(?:an AI model )?created by Empero AI.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
-                ans = re.sub(r'Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
-                ans = re.sub(r'^(?:Here is|Here\'s) the translation:?\s*', '', ans, flags=re.IGNORECASE)
-                ans = re.sub(r'^Translation:\s*', '', ans, flags=re.IGNORECASE)
-                ans = ans.strip()
-                if (ans.startswith('"') and ans.endswith('"')) or (ans.startswith("'") and ans.endswith("'")):
-                    ans = ans[1:-1].strip()
-                return (ans, None)
-            return ("", "Empty response from Ollama")
+            if not ans:
+                return ("", "Empty response from Ollama")
+
+            # 1. Strip think blocks if any
+            ans = re.sub(r'<think>.*?</think>', '', ans, flags=re.DOTALL).strip()
+
+            # 2. Check if model output options like "1. Hinata... \n 2. ..."
+            if "\n" in ans:
+                opt_match = re.search(r'(?:(?:\*\*|\b)[1-9]\.|\*)\s*\**([A-Za-z0-9\s,\'!?—–-]+?)(?:\*\*|\n|\*|$)', ans)
+                if opt_match and len(opt_match.group(1).strip()) > 1:
+                    ans = opt_match.group(1).strip()
+                else:
+                    lines = [ln.strip() for ln in ans.split("\n") if ln.strip()]
+                    clean_lines = [ln for ln in lines if not any(kw in ln.lower() for kw in ["breakdown", "options", "depending on", "nuance", "here are", "translate:"])]
+                    if clean_lines:
+                        ans = clean_lines[0]
+
+            # 3. Strip refusal & assistant meta chatter
+            ans = re.sub(r'\(?https?://[^\s)]+\)?', '', ans)
+            ans = re.sub(r'(?:Hello!?\s*)?I am (?:Qwythos|Luna|Emma).*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'How (?:may|can) I assist.*?(?:\?|\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'Let me know (?:how|what|if).*?(?:\.|$|!)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'(?:an AI model )?created by .*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'^(?:Here is|Here\'s) the translation:?\s*', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'^Translation:\s*', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'^(?:I\'m sorry|Sorry),? but I cannot.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'^As an AI.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'^The text [\"\'\‘].*?[\"\'\’] is a single.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = re.sub(r'^The Japanese input.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+            ans = ans.strip()
+
+            # 4. Strip surrounding quotation marks
+            while (ans.startswith('"') and ans.endswith('"')) or (ans.startswith("'") and ans.endswith("'")) or (ans.startswith("“") and ans.endswith("”")):
+                ans = ans[1:-1].strip()
+            
+            # 5. Clean markdown bold/italics markers
+            ans = re.sub(r'^\*\*|\*\*$', '', ans).strip()
+            ans = re.sub(r'^\*|\*$', '', ans).strip()
+
+            # 6. Pick primary translation if multiple variants separated by slash
+            if " / " in ans:
+                ans = ans.split(" / ")[0].strip()
+
+            return (ans, None)
     except Exception as e:
         return ("", str(e))
 
-def split_words_by_pause(words, max_pause: float = 0.8):
+def split_words_by_pause(words, max_pause: float = 1.2):
     """
     Splits a list of word timestamps whenever the silence between words exceeds max_pause seconds.
-    Prevents dialogue lines from hanging across long silence or background music.
+    Prevents dialogue lines from hanging across long silence or background music while keeping
+    words and hesitation pauses intact. Merges orphan single-character chunks within 2.0s.
     """
-    chunks = []
+    raw_chunks = []
     curr = []
     for w in words:
         if curr and (w.start - curr[-1].end) > max_pause:
-            chunks.append(curr)
+            raw_chunks.append(curr)
             curr = []
         curr.append(w)
     if curr:
-        chunks.append(curr)
-    return chunks
+        raw_chunks.append(curr)
+
+    # Post-process: merge isolated orphan single characters if pause to next chunk is < 2.0s
+    merged_chunks = []
+    idx = 0
+    while idx < len(raw_chunks):
+        c = raw_chunks[idx]
+        text = "".join(w.word for w in c).strip()
+        if len(text) <= 1 and (idx + 1) < len(raw_chunks):
+            next_c = raw_chunks[idx + 1]
+            gap = next_c[0].start - c[-1].end
+            if gap < 2.0:
+                raw_chunks[idx + 1] = c + next_c
+                idx += 1
+                continue
+        merged_chunks.append(c)
+        idx += 1
+
+    return merged_chunks
 
 def is_confucius_model(model_path: str, engine_setting: str = "Auto") -> bool:
     if engine_setting == "Confucius4-R2T2":
@@ -300,9 +365,10 @@ def run_ollama_translation_phase(collected_entries, vtt_target_path: str, target
         if err:
             err_msg = f"[bold red]Error:[/] {err}"
             log_target.append(f"[{s_str} -> {e_str}] {err_msg}")
-        else:
-            log_target.append(f"[{s_str} -> {e_str}] {trans_text}")
-            f_target.write(f"{s_str} --> {e_str}\n{trans_text}\n\n")
+        elif trans_text and trans_text.strip():
+            clean_t = trans_text.strip()
+            log_target.append(f"[{s_str} -> {e_str}] {clean_t}")
+            f_target.write(f"{s_str} --> {e_str}\n{clean_t}\n\n")
             f_target.flush()
 
         if len(log_target) > 6:
@@ -318,7 +384,7 @@ def run_ollama_translation_phase(collected_entries, vtt_target_path: str, target
     )
     live.update(get_renderable(status_orig, status_target))
 
-def generate_subtitles_whisper(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, spoken_lang: str = "Auto"):
+def generate_subtitles_whisper(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, spoken_lang: str = "Auto", llm_model: Optional[str] = None):
     ensure_cuda_libraries()
     from faster_whisper import WhisperModel
     
@@ -328,7 +394,7 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
     do_target = "Target" in languages
     do_orig = "Original" in languages
     
-    ollama_model = get_ollama_model() if do_target else None
+    ollama_model = (llm_model or get_ollama_model()) if do_target else None
     llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
     
     header = Panel(
@@ -490,13 +556,13 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             free_stt_memory(model)
             unload_ollama_model()
 
-def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto"):
+def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto", llm_model: Optional[str] = None):
     import json
 
     do_target = "Target" in languages
     do_orig = "Original" in languages
 
-    ollama_model = get_ollama_model() if do_target else None
+    ollama_model = (llm_model or get_ollama_model()) if do_target else None
     llm_tag = f"[bold green]Ollama ({ollama_model})[/]" if ollama_model else "[bold red]None (Ollama Offline)[/]"
 
     status_orig = Panel(Text("Initializing Confucius4-R2T2...", style="info"), title="[info]Phase 1: Transcription[/]", border_style="menu")
@@ -675,11 +741,11 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
             free_stt_memory()
             unload_ollama_model()
 
-def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = "", spoken_lang: str = "Auto"):
+def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = "", spoken_lang: str = "Auto", llm_model: Optional[str] = None):
     if is_confucius_model(model_path, engine_type):
-        generate_subtitles_confucius(video_path, model_path, languages, target_lang, vram_target, confucius_py, spoken_lang)
+        generate_subtitles_confucius(video_path, model_path, languages, target_lang, vram_target, confucius_py, spoken_lang, llm_model)
     else:
-        generate_subtitles_whisper(video_path, model_path, languages, target_lang, vram_target, spoken_lang)
+        generate_subtitles_whisper(video_path, model_path, languages, target_lang, vram_target, spoken_lang, llm_model)
 
 def run_subtitle_tui(initial_path: Optional[str] = None):
     paths = PathAuthority()
@@ -727,7 +793,24 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
     chosen_mode = BoxSelector(mode_opts, title="Select Subtitle Mode", width=78).select()
     if not chosen_mode or chosen_mode in ("ESC", "CTRL_C"):
         return
-    
+
+    chosen_llm = None
+    if chosen_mode in ("Both", "Target"):
+        all_models = get_all_ollama_models()
+        if len(all_models) > 1:
+            sorted_models = sorted(all_models, key=lambda x: 0 if "emma" in x.lower() else 1)
+            llm_opts = [
+                (f"🤖 {m} {'(Recommended: Gemma 7.5B SFW+NSFW Uncensored)' if 'emma' in m.lower() else ''}".strip(), m)
+                for m in sorted_models
+            ]
+            chosen_llm = BoxSelector(llm_opts, title="Select Translation LLM (Ollama)", width=78).select()
+            if not chosen_llm or chosen_llm in ("ESC", "CTRL_C"):
+                return
+        elif len(all_models) == 1:
+            chosen_llm = all_models[0]
+        else:
+            chosen_llm = get_ollama_model()
+
     console.print("\n[bold #bb9af7]AI Subtitle Engine[/]")
     from core.paths import sanitize_user_path
     video_path = ""
@@ -818,7 +901,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
     
-    p = multiprocessing.Process(target=generate_subtitles, args=(video_path, model_path, langs, target_lang, vram_target, engine_type, confucius_py, spoken_lang))
+    p = multiprocessing.Process(target=generate_subtitles, args=(video_path, model_path, langs, target_lang, vram_target, engine_type, confucius_py, spoken_lang, chosen_llm))
     p.start()
     
     try:

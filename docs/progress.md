@@ -16,12 +16,16 @@
       - Gracefully unloads the LLM (`unload_ollama_model()`) upon completion or cancellation.
     - **Pre-STT Memory Sanitation**: Calls `unload_ollama_model()` before Whisper or Confucius loads to ensure STT always gets 100% of available GPU VRAM.
 
-- **Ollama-Exclusive Translation & Permanent Removal of Web Translators (`core/subtitle_engine.py`):**
-  - Completely excised `GoogleTranslator`, `MyMemoryTranslator`, and web scraping fallbacks from the subtitle engine as requested.
-  - Subtitle translation now operates exclusively via local Ollama LLMs.
-  - Added real-time LLM detection banner in `run_subtitle_tui` informing the user of the active local model or warning if Ollama is offline.
-  - Added live error preview panel in Rich Live so translation errors or API timeouts are rendered transparently to the user rather than being swallowed.
-  - Refined translation system prompts and added multi-pattern regex scrubbing to strip any assistant intros, greetings, or assistance offers (`Let me know what you'd like assistance with`, `How can I help`, quotes, etc.), leaving only pure conversational dialogue.
+- **Emma Model Priority, Uncensored SFW & NSFW Translation & Orphan Syllable Merging (`core/subtitle_engine.py`):**
+  - **Identified Problems**:
+    - Defaulting to `luna:latest` produced severe moralizing refusals (`I cannot fulfill this request...`, `As an AI model...`), meta-lectures on isolated Chinese/Japanese single characters (`The text "出" is a single character...`), and conversational chatter on adult/hentai content (`Gobaku: Moe Mama Tsurezure Episode 1`).
+    - Whispering pauses (< 0.8s) fragmented spoken words into isolated 1-character syllables (`お`, `本`, `ミ`, `ヒ`, `い`), prompting the LLM to treat them as vocabulary quizzes rather than continuous speech.
+  - **Resolution & Enhancements**:
+    - **Emma Model Priority & Selector**: Swapped priority to `emma:latest` (Gemma 7.5B Q6_K), which translates both SFW media and explicit adult/hentai NSFW dialogue at ~0.3s/line without moralizing, refusals, or censorship. Added an interactive BoxSelector in `run_subtitle_tui` when multiple local LLMs are detected, defaulting to Emma.
+    - **Uncensored SFW + NSFW System Prompt**: Explicitly instructed the model that all media (SFW casual prose and explicit NSFW adult/hentai dialogue) must be translated faithfully without censorship, lecturing, or disclaimers.
+    - **Robust Refusal & Meta-Chatter Scrubbing**: Strips thinking blocks (`<think>...</think>`), numbered translation option lists, refusal boilerplate (`I'm sorry, but I cannot`, `As an AI`, `The text ... is a single`), and slash alternative variants (`ans.split(" / ")[0]`).
+    - **1.2s Pause Threshold & Orphan Syllable Merging**: Raised `max_pause` to 1.2s and implemented automatic forward-merging for isolated single-character tokens occurring within 2.0s of the following chunk, eliminating choppy syllable cuts (`おはようございます`, `ヒロ君`, `いっぱいいじっていいよ`).
+    - **Blank Cue Immunity**: Ensured empty translation lines or silent audio artifacts are skipped rather than writing blank subtitle cues to `.vtt`.
 
 - **Speaker-Accurate Whisper Timing & Dialogue Splitting (`core/subtitle_engine.py`):**
   - Added `split_words_by_pause(words, max_pause=0.8)`: splits word-level timestamps on silences exceeding 0.8s, completely eliminating multi-minute hanging subtitle blocks across background music/openings and splitting character dialogue turns cleanly.
