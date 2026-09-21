@@ -876,8 +876,10 @@ def breeze_tts_settings_tui():
         curr_bin_dir = config.get("breeze_bin_dir", "Models/TTS/Breeze-TTS-2.cpp/build")
         curr_server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
 
-        default_instruct = "A warm, thoughtful narrator with a clear, calm delivery and expressive emotional nuance."
-        curr_instruct = config.get("breeze_voice_instruct", default_instruct)
+        default_instruct = "A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, alluring nuance, and spine-tingling emotional presence."
+        curr_instruct = config.get("breeze_voice_instruct", "")
+        if not curr_instruct or "A warm, thoughtful narrator" in curr_instruct:
+            curr_instruct = default_instruct
         curr_instruct_display = _short_path(curr_instruct) if curr_instruct else "None"
 
         curr_saved_voice = config.get("breeze_saved_voice", "") or "None"

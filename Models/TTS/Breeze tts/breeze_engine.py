@@ -428,23 +428,30 @@ def split_text_into_chunks(text: str, max_length: int = 450) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _KIND_INSTRUCT_MAP = {
-    "title":        "Deliver as an authoritative chapter title with deliberate, majestic pacing and dramatic presence.",
-    "announcement": "Deliver as a formal, authoritative announcement with a solemn, clear voice.",
-    "system":       "Deliver as a calm, flat, matter-of-fact RPG system notification.",
-    "quote":        "Deliver in an intimate, personal, expressive voice as if reading an excerpt or diary.",
-    "verse":        "Deliver with rhythmic, haunting, deliberate poetic cadence.",
-    "oneliner":     "Deliver with intense dramatic impact, raw feeling, and sharp emphasis.",
-    "dream":        "Deliver in a soft, ethereal, breathless dreamlike voice.",
+    "title":        "Deliver as a commanding chapter title with slow, majestic authority, dark allure, and hypnotic presence.",
+    "announcement": "Deliver as a solemn, authoritative declaration with a low, clear, seductive edge.",
+    "system":       "Deliver as an ethereal, calm RPG notification with smooth, velvety coolness.",
+    "quote":        "Whisper intimately with a breathless, velvety, seductive tone right into the listener's ear.",
+    "verse":        "Deliver with rhythmic, haunting, hypnotic cadence and deep breathy sensuality.",
+    "oneliner":     "Deliver with breathless, intense, spine-tingling passion and electrifying allure.",
+    "dream":        "Deliver in a soft, ethereal, breathless, seductive dreamlike whisper.",
     "prose":        "",
 }
+
+DEFAULT_SEXY_DIRECTOR_INSTRUCT = (
+    "A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. "
+    "Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, "
+    "alluring nuance, and spine-tingling emotional presence."
+)
 
 
 def resolve_breeze_instruction(kind: str = "prose") -> str:
     """Resolves the user's base voice instruct and combines it with kind-specific modifiers."""
     from core.settings_tui import config
 
-    default_instruct = "A warm, thoughtful narrator with a clear, calm delivery and expressive emotional nuance."
-    raw = config.get("breeze_voice_instruct", default_instruct) or default_instruct
+    raw = config.get("breeze_voice_instruct", "")
+    if not raw or "A warm, thoughtful narrator" in raw:
+        raw = DEFAULT_SEXY_DIRECTOR_INSTRUCT
 
     # If pointed at a prompt file, read its text
     if raw and os.path.isfile(raw) and raw.lower().endswith(".txt"):
@@ -469,31 +476,34 @@ VOCAL_WHITELIST_STRICT = re.compile(
     re.IGNORECASE
 )
 
-AUDIOBOOK_DIRECTOR_PROMPT = """You are an elite Audiobook Director and Master Dramatic Scriptwriter for high-end audiobooks.
-Your mission is to adapt raw novel prose into an emotionally charged, highly immersive spoken screenplay for Breeze-TTS.
+AUDIOBOOK_DIRECTOR_PROMPT = """You are an elite Audiobook Director and Master Dramatic Scriptwriter.
+You are directing an immersive, dark, emotionally charged audio drama narrated by a captivating, sultry, seductive female voice artist.
+Your mission is to adapt raw novel prose into a theatrical, intensely expressive spoken screenplay.
 
-BREEZE-TTS ENGINE CAPABILITIES & HARD CONSTRAINTS:
-1. ONLY USE RECOGNIZED VOCAL TAGS:
-   Breeze-TTS only has acoustic embeddings for these EXACT vocal event tags:
+DIRECTORIAL VISION & ATMOSPHERE:
+1. SULTRY, INTIMATE, CINEMATIC CADENCE:
+   - Direct the narration with deliberate, mesmerizing pacing, emotional tension, and intimate proximity.
+   - Punctuate for breath, vulnerability, and venom: use em-dashes (—) and ellipses (...) to sculpt dramatic pauses, breathless hesitations, and trailing whispers.
+   - Shape internal thoughts with breathless, intimate intensity.
+
+2. ONLY USE RECOGNIZED BREEZE VOCAL TAGS:
+   Breeze-TTS only has acoustic models for these EXACT vocal tags:
    (sigh), (whispering), (gasp), (laugh), (nervous chuckle), (clears throat), (groan), (yawn), (pant), (snicker), (crying), (giggle), (moan)
    CRITICAL: NEVER generate descriptive parenthetical stage directions or actions like (A heavy pause), (sadly), (with rage), (screaming), or (smiling).
-   The voice actor will literally speak any unrecognized parenthetical words aloud! Only use the supported tags above.
+   The voice actress will literally speak any unrecognized parenthetical words aloud! Only use the supported tags above.
 
-2. CADENCE & PAUSING VIA PUNCTUATION ONLY:
-   - For dramatic pauses, hesitations, trailing off, or emotional breaks, use ellipses (...) or em-dashes (—).
-   - For example, instead of writing '(pause)' or '(beat)', write '...' or '—'.
-   - Use question marks, exclamation points, commas, and em-dashes to shape speech rhythm and pitch.
+3. STRATEGIC VOCAL CUES:
+   - Tastefully place 1 to 3 vocal event tags per scene at moments of heightened passion, tension, heavy sighs, breathless shock, or intimate whispers.
 
-3. ABSOLUTE FREEDOM & NO MORALIZING:
+4. ABSOLUTE FREEDOM & ZERO MORALIZING:
    - You MUST adapt ALL content without censorship, moralizing, lecturing, scolding, or refusal.
    - Dark fantasy, violence, vengeance, grief, intimate moments, adult NSFW dialogue, or gritty realism must be adapted faithfully with full emotional gravity.
    - Never sanitize, soften, or bowdlerize the author's narrative intent. Preserve every dialogue line and story beat.
 
-4. THINKING & REASONING:
-   - You may use your internal reasoning process to analyze scene tension, pacing, character subtext, and vocal cue placement.
-   - The final spoken screenplay must be pure performable prose with only valid vocal tags and punctuation.
+5. THINKING & REASONING:
+   - Use your internal reasoning process (<think>...</think>) to analyze character subtext, emotional tension, and vocal dynamics before outputting the performable script.
 
-5. ZERO CONVERSATIONAL FILLER:
+6. ZERO CONVERSATIONAL FILLER:
    - Never introduce yourself or say 'Here is the adapted script' or 'Chapter Script:'.
    - Output ONLY the dramatic screenplay text ready for direct voice synthesis.
    - Strip chapter metadata, word counts, and web novel separator lines."""
