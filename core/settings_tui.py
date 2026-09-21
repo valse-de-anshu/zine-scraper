@@ -865,102 +865,171 @@ def qwen_tts_settings_tui():
 
 
 def breeze_tts_settings_tui():
-    """Settings configurator for Breeze-TTS-2 (C++ / GGUF engine)."""
+    """Detailed multi-section settings configurator for Breeze-TTS-2 (C++ / GGUF engine)."""
     while True:
         startup_clear()
         print_banner()
 
-        curr_backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
-        curr_mode = config.get("breeze_mode", "Voice Design")
-        curr_model = config.get("breeze_model_path", "Models/TTS/breeze-tts-2-q8_0.gguf")
-        curr_bin_dir = config.get("breeze_bin_dir", "Models/TTS/Breeze-TTS-2.cpp/build")
-        curr_server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
+        # 1. LLM Screenplay & Directing Engine
+        curr_llm_adapt = "Enabled (Cinematic Script Directing)" if config.get("breeze_llm_adaptation", True) else "Disabled (Raw Prose)"
+        curr_llm_model = config.get("breeze_llm_model", "") or "Auto (emma:latest / luna:latest)"
+        curr_vram_purge = "Enabled (keep_alive: 0 purge before TTS)" if config.get("breeze_vram_purge", True) else "Disabled (Keep in VRAM)"
+        curr_llm_temp = config.get("breeze_llm_temp", 0.5)
 
-        default_instruct = "A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, alluring nuance, and spine-tingling emotional presence."
+        # 2. Voice Persona & Narration Design
+        curr_mode = config.get("breeze_mode", "Voice Design")
+        default_instruct = (
+            "A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. "
+            "Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, "
+            "alluring nuance, and spine-tingling emotional presence."
+        )
         curr_instruct = config.get("breeze_voice_instruct", "")
         if not curr_instruct or "A warm, thoughtful narrator" in curr_instruct:
             curr_instruct = default_instruct
         curr_instruct_display = _short_path(curr_instruct) if curr_instruct else "None"
-
         curr_saved_voice = config.get("breeze_saved_voice", "") or "None"
-
         curr_ref_audio = config.get("breeze_clone_ref_audio", "")
         curr_ref_audio_display = _short_path(curr_ref_audio) if curr_ref_audio else "None"
-
         curr_ref_transcript = config.get("breeze_clone_ref_transcript", "")
         curr_ref_transcript_display = (
             _short_path(curr_ref_transcript) if (curr_ref_transcript and ('/' in curr_ref_transcript or '\\' in curr_ref_transcript))
-            else (curr_ref_transcript[:38] + "…" if len(curr_ref_transcript) > 38 else curr_ref_transcript)
+            else (curr_ref_transcript[:34] + "…" if len(curr_ref_transcript) > 34 else curr_ref_transcript)
         ) if curr_ref_transcript else "None"
 
+        # 3. Acoustic Dynamics & Vocal Events
         curr_cfg = float(config.get("breeze_cfg_scale", 1.0))
-        curr_auto_vocal = "Enabled (2.5x Boost)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
-        curr_hardware = config.get("breeze_hardware", "Vulkan (GPU)")
+        curr_auto_vocal = "Enabled (2.5x Boost on Vocal Tags)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
+        curr_stage_filter = "Strict (Convert Pauses & Strip Directions)" if config.get("breeze_stage_filter", True) else "Disabled"
+
+        # 4. Storage & Vacuum Routing
+        from core.paths import PathAuthority
+        pa = PathAuthority()
+        curr_out_dir_raw = config.get("breeze_output_dir", "")
+        curr_out_display = _short_path(curr_out_dir_raw) if curr_out_dir_raw else "Vacuum (~/Downloads/Zine/Vacuum/novel chapter)"
+        curr_sub_gen = "Enabled (.srt Subtitles)" if config.get("breeze_subtitles", True) else "Disabled"
+        curr_export_script = "Enabled (_scripted.txt in Vacuum)" if config.get("breeze_export_script", True) else "Disabled"
+        curr_clean_temp = "Auto-Clean (Purge 💩 after merge)" if config.get("breeze_cleanup_temp", True) else "Preserve Chunks in 💩"
+
+        # 5. Engine Architecture & Hardware
+        curr_backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
+        curr_hardware = config.get("breeze_hardware", "Vulkan (GPU — NVIDIA RTX 3050)")
+        curr_model = config.get("breeze_model_path", "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf")
+        curr_bin_dir = config.get("breeze_bin_dir", "/mnt/maiden/tts/Breeze-TTS-2.cpp/build")
+        curr_server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
         curr_seed = config.get("breeze_seed", 42)
         curr_temp = config.get("breeze_temperature", 0.9)
         curr_top_k = config.get("breeze_top_k", 50)
         curr_top_p = config.get("breeze_top_p", 1.0)
         curr_rep_pen = config.get("breeze_rep_penalty", 1.1)
         curr_split_chars = config.get("breeze_split_chars", 600)
-        curr_llm_adapt = "Enabled (Ollama Directing)" if config.get("breeze_llm_adaptation", True) else "Disabled (Direct Text)"
-        curr_llm_model = config.get("breeze_llm_model", "") or "Auto (emma:latest / luna:latest)"
 
-        is_saved = curr_mode == "Saved Voice"
-        is_clone = curr_mode in ("Voice Cloning", "Voice Direction")
-
-        options = [
-            (("Execution Backend",     curr_backend),        "breeze_backend"),
-            (("Breeze TTS Mode",       curr_mode),           "breeze_mode"),
-            (("LLM Script Adaptation", curr_llm_adapt),      "breeze_llm_adaptation"),
-            (("LLM Directing Model",   curr_llm_model),      "breeze_llm_model"),
+        # Build categorized sections
+        voice_items = [
+            ("TTS Synthesis Mode", curr_mode, "breeze_mode"),
+            ("Voice Persona Preset", "▶ Select Preset Prompt", "breeze_voice_preset"),
+            ("Voice Style Prompt", curr_instruct_display, "breeze_voice_instruct"),
         ]
+        if curr_mode == "Saved Voice":
+            voice_items.append(("Saved Voice Profile", curr_saved_voice, "breeze_saved_voice"))
+        elif curr_mode in ("Voice Cloning", "Voice Direction"):
+            voice_items.append(("Clone Audio (.wav)", curr_ref_audio_display, "breeze_clone_ref_audio"))
+            voice_items.append(("Clone Transcript", curr_ref_transcript_display, "breeze_clone_ref_transcript"))
 
+        engine_items = [
+            ("Execution Backend", curr_backend, "breeze_backend"),
+        ]
         if "Server" in curr_backend:
-            options.append((("Breeze Server URL",   curr_server_url), "breeze_server_url"))
+            engine_items.append(("Breeze Server URL", curr_server_url, "breeze_server_url"))
         else:
-            options.append((("Model GGUF Path",     _short_path(curr_model)), "breeze_model_path"))
-            options.append((("Binaries Directory",  _short_path(curr_bin_dir)), "breeze_bin_dir"))
+            engine_items.append(("Hardware Device", curr_hardware, "breeze_hardware"))
+            engine_items.append(("Model GGUF Path", _short_path(curr_model), "breeze_model_path"))
+            engine_items.append(("Binaries Directory", _short_path(curr_bin_dir), "breeze_bin_dir"))
 
-        if is_saved:
-            options.append((("Saved Voice Profile", curr_saved_voice), "breeze_saved_voice"))
-            options.append((("Delivery Instruction", curr_instruct_display), "breeze_voice_instruct"))
-        elif is_clone:
-            options.append((("Clone Audio (.wav)",  curr_ref_audio_display), "breeze_clone_ref_audio"))
-            options.append((("Clone Transcript",    curr_ref_transcript_display), "breeze_clone_ref_transcript"))
-            if curr_mode == "Voice Direction":
-                options.append((("Direction Prompt", curr_instruct_display), "breeze_voice_instruct"))
-        else:
-            # Voice Design
-            options.append((("Voice Design Prompt", curr_instruct_display), "breeze_voice_instruct"))
-
-        options += [
-            (("Base CFG Scale",        str(curr_cfg)),       "breeze_cfg_scale"),
-            (("Vocal Event Auto-Boost",curr_auto_vocal),     "breeze_auto_vocal_cfg"),
-            (("Hardware Acceleration", curr_hardware),       "breeze_hardware"),
-            (("RNG Seed",              str(curr_seed)),      "breeze_seed"),
-            (("Temperature",           str(curr_temp)),      "breeze_temperature"),
-            (("Top K",                 str(curr_top_k)),     "breeze_top_k"),
-            (("Top P",                 str(curr_top_p)),     "breeze_top_p"),
-            (("Repetition Penalty",    str(curr_rep_pen)),   "breeze_rep_penalty"),
-            (("Split Character Cap",   str(curr_split_chars)), "breeze_split_chars"),
+        engine_items += [
+            ("RNG Seed", str(curr_seed), "breeze_seed"),
+            ("Sampling Temperature", str(curr_temp), "breeze_temperature"),
+            ("Top K / Top P", f"{curr_top_k} / {curr_top_p}", "breeze_top_kp"),
+            ("Repetition Penalty", str(curr_rep_pen), "breeze_rep_penalty"),
+            ("Split Character Cap", str(curr_split_chars), "breeze_split_chars"),
+            ("Audio Output Spec", "24,000 Hz Mono PCM WAV", "breeze_audio_spec"),
         ]
 
-        choice = SettingsSelector(options).select()
+        sections = [
+            ("🎭 LLM Screenplay & Directing Engine", [
+                ("Screenplay Directing", curr_llm_adapt, "breeze_llm_adaptation"),
+                ("Directing LLM Model", curr_llm_model, "breeze_llm_model"),
+                ("Two-Phase VRAM Purge", curr_vram_purge, "breeze_vram_purge"),
+                ("Director Temperature", str(curr_llm_temp), "breeze_llm_temp"),
+            ]),
+            ("🎙️ Voice Persona & Narration Design", voice_items),
+            ("⚡ Vocal Acting & Acoustic Nuance", [
+                ("Base CFG Scale", str(curr_cfg), "breeze_cfg_scale"),
+                ("Vocal Event Auto-Boost", curr_auto_vocal, "breeze_auto_vocal_cfg"),
+                ("Stage Direction Filter", curr_stage_filter, "breeze_stage_filter"),
+                ("Supported Vocal Tags", "13 Tags Supported (Click for List)", "breeze_tags_info"),
+            ]),
+            ("📁 Storage & Vacuum Routing", [
+                ("Audiobook Output Path", curr_out_display, "breeze_output_dir"),
+                ("Subtitle Generation", curr_sub_gen, "breeze_subtitles"),
+                ("Export Screenplay (.txt)", curr_export_script, "breeze_export_script"),
+                ("In-Flight Buffers in 💩", curr_clean_temp, "breeze_cleanup_temp"),
+            ]),
+            ("⚙️ Engine Architecture & Hardware", engine_items),
+            ("↺ Defaults & Reset", [
+                ("Reset All Settings", "↺ Restore Factory Defaults", "breeze_reset_defaults"),
+            ])
+        ]
+
+        choice = SettingsSelector(sections, title="◆ BREEZE-TTS-2 AUDIOBOOK CONFIGURATOR ◆").select()
         if not choice or choice in ("ESC", "CTRL_C"):
             break
 
-        elif choice == "breeze_backend":
+        # 1. LLM Settings Handlers
+        elif choice == "breeze_llm_adaptation":
             opts = [
-                ("Direct CLI (breeze-cli — Vulkan GPU / No Server Required)", "Direct CLI (breeze-cli)"),
-                ("HTTP Server (breeze-server — Streaming API on port 8080)", "HTTP Server (breeze-server)")
+                ("Enabled (Cinematic Screenplay Adaptation & Voice Directing via Ollama)", True),
+                ("Disabled (Feed raw novel text directly into Breeze-TTS)", False)
             ]
-            new_val = BoxSelector(opts, "Select Breeze TTS Execution Backend").select()
-            if new_val and new_val != "ESC":
-                config.set("breeze_backend", new_val)
+            new_val = BoxSelector(opts, "Configure LLM Screenplay Directing").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_llm_adaptation", bool(new_val))
 
+        elif choice == "breeze_llm_model":
+            opts = [("Auto (Detect best: emma:latest / luna:latest)", "")]
+            try:
+                import urllib.request, json
+                req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "ZineTTS"})
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    for m in data.get("models", []):
+                        m_name = m.get("name", "")
+                        if m_name:
+                            opts.append((f"Ollama: {m_name}", m_name))
+            except Exception:
+                pass
+            new_model = BoxSelector(opts, "Select LLM Screenplay Director Model").select()
+            if new_model is not None and new_model != "ESC":
+                config.set("breeze_llm_model", new_model)
+
+        elif choice == "breeze_vram_purge":
+            opts = [
+                ("Enabled (Purge Ollama to 0 MB VRAM before Breeze-TTS starts — Recommended for 6GB GPUs)", True),
+                ("Disabled (Keep Ollama in VRAM — Warning: May cause CUDA OOM on <=8GB GPUs)", False)
+            ]
+            new_val = BoxSelector(opts, "Two-Phase Sequential VRAM Purge").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_vram_purge", bool(new_val))
+
+        elif choice == "breeze_llm_temp":
+            new_val = prompt_field_value("Director Temperature", str(curr_llm_temp), "(0.3 = Faithful, 0.5 = Balanced, 0.8 = Highly Creative)")
+            if new_val is not None and new_val != "":
+                try: config.set("breeze_llm_temp", float(new_val))
+                except: pass
+
+        # 2. Voice Persona Handlers
         elif choice == "breeze_mode":
             mode_opts = [
-                ("Voice Design (Text description shapes narrator)", "Voice Design"),
+                ("Voice Design (Text prompt description shapes narrator)", "Voice Design"),
                 ("Saved Voice (Instant cached .breeze profile)", "Saved Voice"),
                 ("Voice Cloning (Reference .wav + transcript)", "Voice Cloning"),
                 ("Voice Direction (Reference audio + emotional direction)", "Voice Direction")
@@ -969,28 +1038,25 @@ def breeze_tts_settings_tui():
             if new_mode and new_mode != "ESC":
                 config.set("breeze_mode", new_mode)
 
-        elif choice == "breeze_model_path":
-            new_val = prompt_field_value("Model GGUF Path", curr_model, "(Absolute path to breeze-tts-2-*.gguf)")
-            if new_val is not None and new_val.strip():
-                from core.paths import sanitize_user_path
-                config.set("breeze_model_path", sanitize_user_path(new_val))
-
-        elif choice == "breeze_bin_dir":
-            new_val = prompt_field_value("Binaries Directory", curr_bin_dir, "(Path to build/ containing breeze-cli)")
-            if new_val is not None and new_val.strip():
-                from core.paths import sanitize_user_path
-                config.set("breeze_bin_dir", sanitize_user_path(new_val))
-
-        elif choice == "breeze_server_url":
-            new_val = prompt_field_value("Breeze Server URL", curr_server_url, "(e.g. http://127.0.0.1:8080)")
-            if new_val is not None and new_val.strip():
-                config.set("breeze_server_url", new_val.strip())
+        elif choice == "breeze_voice_preset":
+            preset_opts = [
+                ("💋 Seductive Sultry Director (Intimate, velvety, breathy, slow cadence)", "seductive"),
+                ("👑 Dark Fantasy Queen (Commanding, majestic, alluring, aristocratic authority)", "queen"),
+                ("✨ Intimate Ethereal Whisperer (Breathless, delicate, tender close-mic whisper)", "whisperer"),
+                ("📖 Classic Audiobook Narrator (Warm, thoughtful, poised, balanced cadence)", "classic"),
+            ]
+            chosen = BoxSelector(preset_opts, "Select Voice Persona Preset").select()
+            if chosen == "seductive":
+                config.set("breeze_voice_instruct", "A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, alluring nuance, and spine-tingling emotional presence.")
+            elif chosen == "queen":
+                config.set("breeze_voice_instruct", "A commanding, dark, alluring female sovereign with deep aristocratic composure, chilling intimacy, majestic presence, and mesmerizing cadence.")
+            elif chosen == "whisperer":
+                config.set("breeze_voice_instruct", "A delicate, breathless, intoxicating woman whispering right against the ear with velvety warmth, tender vulnerability, and spine-tingling sensuality.")
+            elif chosen == "classic":
+                config.set("breeze_voice_instruct", "A warm, thoughtful, poised narrator with crystal-clear delivery, rich emotional nuance, and steady, captivating cadence.")
 
         elif choice == "breeze_voice_instruct":
-            hint = (
-                "Describe the voice personality or acting direction.\n"
-                "Type text OR pass an absolute path to a .txt file."
-            )
+            hint = "Type prompt text OR pass an absolute path to a .txt file."
             new_val = prompt_field_value("Voice Style Prompt", curr_instruct, hint)
             if new_val is not None:
                 from core.paths import sanitize_user_path
@@ -1002,13 +1068,10 @@ def breeze_tts_settings_tui():
             tts_dir = pa.get_breeze_tts_dir() / "zine tts"
             v_files = sorted(tts_dir.glob("*.breeze")) if tts_dir.exists() else []
             if not v_files:
-                alt_dir = Path(__file__).parent.parent / "Models" / "TTS" / "Breeze tts" / "zine tts"
+                alt_dir = Path("/mnt/maiden/tts")
                 v_files = sorted(alt_dir.glob("*.breeze")) if alt_dir.exists() else []
             if not v_files:
-                alt_dir2 = Path(__file__).parent.parent / "zine tts"
-                v_files = sorted(alt_dir2.glob("*.breeze")) if alt_dir2.exists() else []
-            if not v_files:
-                console.print("\n[warning]● No .breeze voice profiles found in zine tts.[/warning]")
+                console.print("\n[warning]● No .breeze voice profiles found in zine tts or /mnt/maiden/tts.[/warning]")
                 console.print("[unselected]Bake a reference audio into a voice profile first via 'breeze' menu.[/unselected]")
                 time.sleep(2)
             else:
@@ -1030,11 +1093,12 @@ def breeze_tts_settings_tui():
                 val = sanitize_user_path(new_val) if ('/' in new_val or '\\' in new_val) else new_val.strip()
                 config.set("breeze_clone_ref_transcript", val)
 
+        # 3. Acoustic & Vocal Acting Handlers
         elif choice == "breeze_cfg_scale":
             table = Table(box=None, show_header=False, padding=(0, 1))
             table.add_column("info", width=70)
             table.add_row(Text("Classifier-Free Guidance (CFG Scale)", style="bold sexy_pink"))
-            table.add_row(Text("1.0 = Default natural narration.\n2.0 - 2.8 = Strong guidance for acting / dramatic delivery.", style="unselected"))
+            table.add_row(Text("1.0 = Default natural narration.\n1.5 - 2.5 = Strong guidance for acting / dramatic delivery.", style="unselected"))
             console.print()
             console.print(Panel(table, title="[bold white]◆ CFG SCALE ◆[/bold white]", border_style="sexy_pink", padding=(1, 2), width=80))
             new_val = prompt_field_value("CFG Scale", str(curr_cfg), "(e.g. 1.0 or 1.5)")
@@ -1044,44 +1108,152 @@ def breeze_tts_settings_tui():
 
         elif choice == "breeze_auto_vocal_cfg":
             opts = [
-                ("Enabled (Boosts to 2.5 when (sigh), (laugh), etc. detected - Recommended)", True),
-                ("Disabled (Keeps base CFG Scale constant)", False)
+                ("Enabled (Elevates CFG to 2.5 when vocal tags are detected — Recommended)", True),
+                ("Disabled (Keeps base CFG constant)", False)
             ]
             new_val = BoxSelector(opts, "Auto-Boost CFG on Vocal Event Tags").select()
             if new_val is not None and new_val != "ESC":
                 config.set("breeze_auto_vocal_cfg", bool(new_val))
 
+        elif choice == "breeze_stage_filter":
+            opts = [
+                ("Strict (Convert pause parens to ellipses '...' & strip stage directions — Recommended)", True),
+                ("Disabled (Pass all raw parentheticals directly to voice actor)", False)
+            ]
+            new_val = BoxSelector(opts, "Stage Direction Sanitizer").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_stage_filter", bool(new_val))
+
+        elif choice == "breeze_tags_info":
+            info_table = Table(box=None, show_header=False, padding=(0, 1))
+            info_table.add_column("tag", style="bold sexy_pink", width=22)
+            info_table.add_column("desc", style="white", width=52)
+            tags = [
+                ("(sigh)", "Deep, weary, sorrowful, or relieved exhalation"),
+                ("(whispering)", "Close-mic intimate, soft, conspiratorial delivery"),
+                ("(gasp)", "Sudden intake of breath from shock, horror, or pain"),
+                ("(laugh)", "Natural laughter woven into the line"),
+                ("(nervous chuckle)", "Hesitant, awkward, or tense chuckle"),
+                ("(clears throat)", "Formal or self-conscious throat clearing"),
+                ("(groan)", "Low rumble of pain, exasperation, or effort"),
+                ("(yawn)", "Drowsy, bored, or exhausted vocalization"),
+                ("(pant)", "Short, breathless panting from exertion or panic"),
+                ("(snicker)", "Suppressed, mocking, or sarcastic snicker"),
+                ("(crying)", "Choked, weeping, tearful delivery"),
+                ("(giggle)", "Light, playful, sensual giggle"),
+                ("(moan)", "Soft, low vocalization of pleasure, grief, or pain"),
+            ]
+            for tg, ds in tags:
+                info_table.add_row(tg, ds)
+            console.print()
+            console.print(Panel(
+                info_table,
+                title="[bold white]◆ SUPPORTED BREEZE-TTS VOCAL EVENT TAGS ◆[/bold white]",
+                subtitle="[dim]Press Enter to return to menu[/dim]",
+                border_style="sexy_pink",
+                padding=(1, 2),
+                width=80
+            ))
+            wait_for_enter(console, "")
+
+        # 4. Storage & Vacuum Handlers
+        elif choice == "breeze_output_dir":
+            opts = [
+                ("Vacuum (Default: Auto-mirrored into ~/Downloads/Zine/Vacuum/novel chapter)", ""),
+                ("Custom Output Directory (Enter custom path manually)", "custom")
+            ]
+            chosen = BoxSelector(opts, "Select Audiobook Output Container").select()
+            if chosen == "":
+                config.set("breeze_output_dir", "")
+            elif chosen == "custom":
+                new_val = prompt_field_value("Custom Output Directory", curr_out_dir_raw, "(Path to output folder)")
+                if new_val is not None:
+                    from core.paths import sanitize_user_path
+                    config.set("breeze_output_dir", sanitize_user_path(new_val))
+
+        elif choice == "breeze_subtitles":
+            opts = [
+                ("Enabled (Generate synchronized .srt subtitles alongside audio)", True),
+                ("Disabled (Audio WAV only, skip subtitle generation)", False)
+            ]
+            new_val = BoxSelector(opts, "Subtitle (.srt) Generation").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_subtitles", bool(new_val))
+
+        elif choice == "breeze_export_script":
+            opts = [
+                ("Enabled (Save _scripted.txt screenplay in destination folder)", True),
+                ("Disabled (Keep scripted text strictly internal)", False)
+            ]
+            new_val = BoxSelector(opts, "Export Screenplay Script (.txt)").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_export_script", bool(new_val))
+
+        elif choice == "breeze_cleanup_temp":
+            opts = [
+                ("Auto-Clean (Delete intermediate chunk buffers in 💩 after merge — Recommended)", True),
+                ("Preserve (Keep raw chunk .wav files in 💩 for audio debugging)", False)
+            ]
+            new_val = BoxSelector(opts, "In-Flight Buffers in 💩").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_cleanup_temp", bool(new_val))
+
+        # 5. Hardware & Engine Handlers
+        elif choice == "breeze_backend":
+            opts = [
+                ("Direct CLI (breeze-cli — Vulkan GPU / No Server Required)", "Direct CLI (breeze-cli)"),
+                ("HTTP Server (breeze-server — Streaming API on port 8080)", "HTTP Server (breeze-server)")
+            ]
+            new_val = BoxSelector(opts, "Select Breeze TTS Execution Backend").select()
+            if new_val and new_val != "ESC":
+                config.set("breeze_backend", new_val)
+
         elif choice == "breeze_hardware":
             opts = [
-                ("Vulkan (GPU Acceleration — Blazing Fast)", "Vulkan (GPU)"),
+                ("Vulkan (GPU — Accelerated via NVIDIA RTX 3050 Vulkan Shaders)", "Vulkan (GPU)"),
                 ("CPU (Force CPU Backend)", "CPU")
             ]
             new_val = BoxSelector(opts, "Select Hardware Acceleration Backend").select()
             if new_val and new_val != "ESC":
                 config.set("breeze_hardware", new_val)
 
+        elif choice == "breeze_model_path":
+            new_val = prompt_field_value("Model GGUF Path", curr_model, "(Absolute path to breeze-tts-2-*.gguf)")
+            if new_val is not None and new_val.strip():
+                from core.paths import sanitize_user_path
+                config.set("breeze_model_path", sanitize_user_path(new_val))
+
+        elif choice == "breeze_bin_dir":
+            new_val = prompt_field_value("Binaries Directory", curr_bin_dir, "(Path to build/ containing breeze-cli)")
+            if new_val is not None and new_val.strip():
+                from core.paths import sanitize_user_path
+                config.set("breeze_bin_dir", sanitize_user_path(new_val))
+
+        elif choice == "breeze_server_url":
+            new_val = prompt_field_value("Breeze Server URL", curr_server_url, "(e.g. http://127.0.0.1:8080)")
+            if new_val is not None and new_val.strip():
+                config.set("breeze_server_url", new_val.strip())
+
         elif choice == "breeze_seed":
-            new_val = prompt_field_value("RNG Seed", str(curr_seed), "(Integer seed)")
+            new_val = prompt_field_value("RNG Seed", str(curr_seed), "(Integer seed, or -1 for random)")
             if new_val is not None and new_val != "":
                 try: config.set("breeze_seed", int(new_val))
                 except: pass
 
         elif choice == "breeze_temperature":
-            new_val = prompt_field_value("Temperature", str(curr_temp), "(0.9 = Natural variation)")
+            new_val = prompt_field_value("Sampling Temperature", str(curr_temp), "(0.9 = Natural variation)")
             if new_val is not None and new_val != "":
                 try: config.set("breeze_temperature", float(new_val))
                 except: pass
 
-        elif choice == "breeze_top_k":
-            new_val = prompt_field_value("Top K", str(curr_top_k), "(50 = Default)")
-            if new_val is not None and new_val != "":
-                try: config.set("breeze_top_k", int(new_val))
+        elif choice == "breeze_top_kp":
+            new_k = prompt_field_value("Top K", str(curr_top_k), "(50 = Default)")
+            if new_k is not None and new_k != "":
+                try: config.set("breeze_top_k", int(new_k))
                 except: pass
-
-        elif choice == "breeze_top_p":
-            new_val = prompt_field_value("Top P", str(curr_top_p), "(1.0 = Default)")
-            if new_val is not None and new_val != "":
-                try: config.set("breeze_top_p", float(new_val))
+            new_p = prompt_field_value("Top P", str(curr_top_p), "(1.0 = Default)")
+            if new_p is not None and new_p != "":
+                try: config.set("breeze_top_p", float(new_p))
                 except: pass
 
         elif choice == "breeze_rep_penalty":
@@ -1096,31 +1268,63 @@ def breeze_tts_settings_tui():
                 try: config.set("breeze_split_chars", int(new_val))
                 except: pass
 
-        elif choice == "breeze_llm_adaptation":
-            opts = [
-                ("Enabled (Dramatic Screenplay Adaptation & Voice Directing via Ollama)", True),
-                ("Disabled (Feed raw novel text directly into Breeze-TTS)", False)
-            ]
-            new_val = BoxSelector(opts, "Configure LLM Screenplay Adaptation").select()
-            if new_val is not None:
-                config.set("breeze_llm_adaptation", bool(new_val))
+        elif choice == "breeze_audio_spec":
+            spec_table = Table(box=None, show_header=False, padding=(0, 1))
+            spec_table.add_column("prop", style="bold sexy_pink", width=24)
+            spec_table.add_column("val", style="white", width=50)
+            spec_table.add_row("Sample Rate", "24,000 Hz (High-fidelity audio)")
+            spec_table.add_row("Channels", "1 (Mono)")
+            spec_table.add_row("Codec", "PCM 16-bit Little-Endian (pcm_s16le)")
+            spec_table.add_row("Container", ".wav (WAVE audio)")
+            spec_table.add_row("Acceleration", "Vulkan Compute Shaders (NVIDIA RTX 3050)")
+            spec_table.add_row("VRAM Usage", "3.4 – 3.8 GB Vulkan Allocations")
+            spec_table.add_row("Post-Processing", "FFmpeg Concat Stream Merge + SRT Alignment")
+            console.print()
+            console.print(Panel(
+                spec_table,
+                title="[bold white]◆ BREEZE-TTS-2 AUDIO SPECIFICATIONS ◆[/bold white]",
+                subtitle="[dim]Press Enter to return to menu[/dim]",
+                border_style="sexy_pink",
+                padding=(1, 2),
+                width=80
+            ))
+            wait_for_enter(console, "")
 
-        elif choice == "breeze_llm_model":
-            opts = [("Auto (Detect best: emma:latest / luna:latest)", "")]
-            try:
-                import urllib.request, json
-                req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "ZineTTS"})
-                with urllib.request.urlopen(req, timeout=1.5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    for m in data.get("models", []):
-                        m_name = m.get("name", "")
-                        if m_name:
-                            opts.append((f"Ollama: {m_name}", m_name))
-            except Exception:
-                pass
-            new_model = BoxSelector(opts, "Select LLM Screenplay Director Model").select()
-            if new_model is not None:
-                config.set("breeze_llm_model", new_model)
+        elif choice == "breeze_reset_defaults":
+            opts = [
+                ("No, Keep Current Settings", False),
+                ("Yes, Restore All TTS Defaults (Seductive Director Voice, Vulkan GPU, Vacuum)", True),
+            ]
+            confirm = BoxSelector(opts, "Confirm Reset of All TTS Settings").select()
+            if confirm is True:
+                config.set("breeze_backend", "Direct CLI (breeze-cli)")
+                config.set("breeze_mode", "Voice Design")
+                config.set("breeze_llm_adaptation", True)
+                config.set("breeze_llm_model", "")
+                config.set("breeze_vram_purge", True)
+                config.set("breeze_llm_temp", 0.5)
+                config.set("breeze_voice_instruct", default_instruct)
+                config.set("breeze_saved_voice", "")
+                config.set("breeze_clone_ref_audio", "")
+                config.set("breeze_clone_ref_transcript", "")
+                config.set("breeze_cfg_scale", 1.0)
+                config.set("breeze_auto_vocal_cfg", True)
+                config.set("breeze_stage_filter", True)
+                config.set("breeze_output_dir", "")
+                config.set("breeze_subtitles", True)
+                config.set("breeze_export_script", True)
+                config.set("breeze_cleanup_temp", True)
+                config.set("breeze_hardware", "Vulkan (GPU)")
+                config.set("breeze_model_path", "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf")
+                config.set("breeze_bin_dir", "/mnt/maiden/tts/Breeze-TTS-2.cpp/build")
+                config.set("breeze_seed", 42)
+                config.set("breeze_temperature", 0.9)
+                config.set("breeze_top_k", 50)
+                config.set("breeze_top_p", 1.0)
+                config.set("breeze_rep_penalty", 1.1)
+                config.set("breeze_split_chars", 600)
+                console.print("\n[success]● All Breeze TTS settings restored to factory defaults![/success]")
+                time.sleep(1.5)
 
 
 def launch_settings_tui():

@@ -602,12 +602,16 @@ def adapt_novel_with_llm(
     temp_dir: Path,
     out_dir: Path,
     ollama_model: str = "emma:latest",
+    llm_temperature: float = 0.5,
+    do_vram_purge: bool = True,
+    export_script: bool = True,
+    stage_filter: bool = True,
     console=None,
     progress_cb: Optional[Callable[[str, str], None]] = None,
 ) -> str:
     """
     Phase 1: Directs and adapts raw novel text into a dramatic spoken screenplay.
-    Caches the scripted result in temp_dir and out_dir, then unloads the LLM completely.
+    Caches the scripted result in temp_dir and optionally out_dir, then unloads the LLM.
     """
     cached_script = temp_dir / f"{stem}_scripted.txt"
     out_script = out_dir / f"{stem}_scripted.txt"
@@ -624,7 +628,12 @@ def adapt_novel_with_llm(
             except Exception:
                 pass
 
-    _log_event("LLM_ADAPTATION_START", {"model": ollama_model, "stem": stem, "raw_len": len(raw_text)})
+    _log_event("LLM_ADAPTATION_START", {
+        "model": ollama_model,
+        "stem": stem,
+        "raw_len": len(raw_text),
+        "temperature": llm_temperature
+    })
 
     # Initial cleanup of dividers and chapter headers
     clean_lines = []
@@ -664,7 +673,7 @@ def adapt_novel_with_llm(
                 {"role": "system", "content": AUDIOBOOK_DIRECTOR_PROMPT},
                 {"role": "user", "content": f"Adapt this novel scene into an expressive spoken screenplay:\n\n{scene_text}"}
             ],
-            "options": {"temperature": 0.5},
+            "options": {"temperature": llm_temperature},
             "stream": False
         }
 
@@ -678,7 +687,10 @@ def adapt_novel_with_llm(
             with urllib.request.urlopen(req, timeout=120) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 raw_out = data.get("message", {}).get("content", "")
-                scene_adapted = sanitize_scripted_scene(raw_out)
+                if stage_filter:
+                    scene_adapted = sanitize_scripted_scene(raw_out)
+                else:
+                    scene_adapted = re.sub(r'<think>.*?</think>', '', raw_out, flags=re.DOTALL).strip()
         except Exception as e:
             _log_event("LLM_SCENE_ADAPT_ERROR", {"scene": idx, "error": str(e)})
             scene_adapted = scene_text
@@ -690,18 +702,20 @@ def adapt_novel_with_llm(
 
     full_script = "\n\n".join(adapted_scenes).strip()
 
-    # Save to temp_dir and out_dir
+    # Save to temp_dir and optionally export to out_dir
     try:
         with open(cached_script, "w", encoding="utf-8") as f:
             f.write(full_script)
-        with open(out_script, "w", encoding="utf-8") as f:
-            f.write(full_script)
+        if export_script:
+            with open(out_script, "w", encoding="utf-8") as f:
+                f.write(full_script)
     except Exception as e:
         _log_event("SAVE_SCRIPT_ERROR", {"error": str(e)})
 
-    # Sequential VRAM handoff: UNLOAD the LLM completely
-    unload_ollama_model(ollama_model)
-    time.sleep(0.5)
+    # Sequential VRAM handoff: UNLOAD the LLM completely if enabled
+    if do_vram_purge:
+        unload_ollama_model(ollama_model)
+        time.sleep(0.5)
 
     _log_event("LLM_ADAPTATION_COMPLETE", {
         "model": ollama_model,
@@ -976,17 +990,21 @@ def process_book_breeze(txt_path_str: str):
         time.sleep(2)
         return
 
-    # Master output directory: route completed audio directly to Vacuum
+    # Master output directory: route completed audio directly to Vacuum (or custom if set)
     pa = PathAuthority()
-    vacuum_base = pa.get_vacuum_root()
-    try:
-        rel = txt_path.parent.relative_to(pa.get_quick_grab_root())
-        out_dir = vacuum_base / rel
-    except Exception:
-        if txt_path.parent.name in ("novel chapter", "novels", "audiobooks", "audiobook"):
-            out_dir = vacuum_base / txt_path.parent.name
-        else:
-            out_dir = vacuum_base / "novel chapter"
+    custom_out = config.get("breeze_output_dir", "").strip()
+    if custom_out:
+        out_dir = Path(sanitize_user_path(custom_out)).expanduser().resolve()
+    else:
+        vacuum_base = pa.get_vacuum_root()
+        try:
+            rel = txt_path.parent.relative_to(pa.get_quick_grab_root())
+            out_dir = vacuum_base / rel
+        except Exception:
+            if txt_path.parent.name in ("novel chapter", "novels", "audiobooks", "audiobook"):
+                out_dir = vacuum_base / txt_path.parent.name
+            else:
+                out_dir = vacuum_base / "novel chapter"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize dev logger
@@ -1011,6 +1029,8 @@ def process_book_breeze(txt_path_str: str):
     server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
     hardware = config.get("breeze_hardware", "Vulkan (GPU)")
     use_cpu = "CPU" in hardware
+    sub_gen = config.get("breeze_subtitles", True)
+    cleanup_temp = config.get("breeze_cleanup_temp", True)
 
     _log_event("CONFIG_SNAPSHOT", {
         "engine": "Breeze-TTS-2",
@@ -1065,12 +1085,21 @@ def process_book_breeze(txt_path_str: str):
         def script_progress(header, detail):
             console.print(f" [sexy_pink]●[/sexy_pink] {header}: [white]{detail}[/white]")
 
+        do_vram_purge = config.get("breeze_vram_purge", True)
+        llm_temp = float(config.get("breeze_llm_temp", 0.5))
+        stage_filter = config.get("breeze_stage_filter", True)
+        export_script = config.get("breeze_export_script", True)
+
         scripted_text = adapt_novel_with_llm(
             raw_text=raw_text,
             stem=txt_path.stem,
             temp_dir=temp_dir,
             out_dir=out_dir,
             ollama_model=ollama_model,
+            llm_temperature=llm_temp,
+            do_vram_purge=do_vram_purge,
+            export_script=export_script,
+            stage_filter=stage_filter,
             console=console,
             progress_cb=script_progress,
         )
@@ -1347,20 +1376,28 @@ def process_book_breeze(txt_path_str: str):
 
         _log_event("FFMPEG_MERGE_OK", {"output": str(final_audio), "size_bytes": final_audio.stat().st_size})
 
-        # Save final SRT
-        save_srt_live()
+        # Save final SRT if enabled
+        if sub_gen:
+            save_srt_live()
+        elif srt_file.exists():
+            try: os.remove(srt_file)
+            except: pass
 
-        # Clean temp directory
+        # Clean temp directory if enabled
         import shutil
-        try:
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
-        except Exception:
-            pass
+        if cleanup_temp:
+            try:
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+        else:
+            console.print(f"[dim]Intermediate audio chunks preserved in: {temp_dir}[/dim]")
 
         console.print(f"\n[success]●[/success] [bold green]Breeze Audiobook generation complete![/bold green]")
         console.print(f"[bold white]Saved Audio to:[/bold white] {final_audio}")
-        console.print(f"[bold white]Saved Subtitles to:[/bold white] {srt_file}")
+        if sub_gen and srt_file.exists():
+            console.print(f"[bold white]Saved Subtitles to:[/bold white] {srt_file}")
     else:
         console.print(f"[bold red]No chunks were generated.[/bold red]")
 
