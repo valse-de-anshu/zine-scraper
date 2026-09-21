@@ -1,3 +1,19 @@
+# Progress Report - September 22, 2026 (Auto-Cleanup of Temp Media Chunks & Clean Assets/ Organization)
+
+- **Post-Merge Temp Media Elimination (`Models/TTS/Breeze tts/breeze_engine.py`):**
+  - **Zero Lingering Media**: Once FFmpeg finishes concatenating all synthesized chunks into the master `<stem>.wav` and verifies the output on disk, `temp_voice/<stem>/` is automatically purged.
+  - **In-Flight Safety**: During active generation or if aborted midway (`Ctrl+R`), chunk buffers remain safe for recovery/resuming. Upon verified successful completion, all temporary audio chunks (`000001.wav`, `concat.txt`) are deleted to free disk space.
+
+- **Uncluttered Root Hub & Dedicated `assets/` Subfolder (`Vacuum/zine tts/`):**
+  - **Root Hub Exclusivity**: People only care about the final audio and subtitles. Root directory `~/Downloads/Zine/Vacuum/zine tts/` now contains strictly:
+    - `<stem>.wav` — Master audiobook.
+    - `<stem>.srt` — Synchronized subtitles.
+  - **Assets Subfolder (`assets/`)**: All supplementary text and script files are routed into `assets/`:
+    - `assets/<stem>.txt` — Mirrored original source novel chapter text.
+    - `assets/<stem>_scripted.txt` — LLM-adapted dramatic screenplay.
+
+---
+
 # Progress Report - September 22, 2026 (Unified Vacuum/zine tts File Hub, temp_voice Re-use & Download History Cross-Checking)
 
 - **Unified Single-Hub File Architecture (`~/Downloads/Zine/Vacuum/zine tts/`):**
