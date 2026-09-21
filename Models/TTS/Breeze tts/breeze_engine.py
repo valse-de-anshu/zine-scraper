@@ -1152,17 +1152,23 @@ def process_book_breeze(txt_path_str: str):
         out_dir = pa.get_vacuum_root() / "zine tts"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Master subfolder for temporary voice chunk files — preserved for future re-use
+    # Assets subfolder for text scripts and source novel files (keeps root uncluttered with only .wav and .srt)
+    assets_dir = out_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Master subfolder for in-flight temporary voice chunk files
     temp_voice_dir = out_dir / "temp_voice" / txt_path.stem
     temp_voice_dir.mkdir(parents=True, exist_ok=True)
 
-    # Root files inside Vacuum/zine tts/:
+    # Root files inside Vacuum/zine tts/ (ONLY final audio & subtitles):
     final_audio = out_dir / f"{txt_path.stem}.wav"
     srt_file = out_dir / f"{txt_path.stem}.srt"
-    out_script = out_dir / f"{txt_path.stem}_scripted.txt"
-    story_source = out_dir / f"{txt_path.stem}.txt"
 
-    # Copy original source text into zine tts root so user has everything in one hub
+    # Text & screenplay files go strictly into assets/
+    out_script = assets_dir / f"{txt_path.stem}_scripted.txt"
+    story_source = assets_dir / f"{txt_path.stem}.txt"
+
+    # Copy original source text into assets/ so user has an archive without cluttering root
     try:
         import shutil
         if txt_path.resolve() != story_source.resolve():
@@ -1270,12 +1276,19 @@ def process_book_breeze(txt_path_str: str):
     ollama_model = get_ollama_tts_model() if (do_llm_adapt and check_ollama_online()) else None
 
     scripted_text = raw_text
-    # Fast-path: Check if screenplay already exists in zine tts root or temp_voice — instant re-use!
+    # Fast-path: Check if screenplay already exists in assets or temp_voice — instant re-use!
     if out_script.exists() and out_script.stat().st_size > 200:
         try:
             with open(out_script, "r", encoding="utf-8") as sf:
                 scripted_text = sf.read().strip()
-            console.print(f"\n[success]● Reusing existing dramatic screenplay on disk:[/success] [white]{out_script.name}[/white]")
+            console.print(f"\n[success]● Reusing existing dramatic screenplay from assets:[/success] [white]{out_script.name}[/white]")
+        except Exception:
+            scripted_text = raw_text
+    elif (temp_voice_dir / f"{txt_path.stem}_scripted.txt").exists() and (temp_voice_dir / f"{txt_path.stem}_scripted.txt").stat().st_size > 200:
+        try:
+            with open(temp_voice_dir / f"{txt_path.stem}_scripted.txt", "r", encoding="utf-8") as sf:
+                scripted_text = sf.read().strip()
+            console.print(f"\n[success]● Reusing existing dramatic screenplay from temp cache:[/success] [white]{txt_path.stem}_scripted.txt[/white]")
         except Exception:
             scripted_text = raw_text
     elif ollama_model:
@@ -1294,7 +1307,7 @@ def process_book_breeze(txt_path_str: str):
             raw_text=raw_text,
             stem=txt_path.stem,
             temp_dir=temp_voice_dir,
-            out_dir=out_dir,
+            out_dir=assets_dir,
             ollama_model=ollama_model,
             llm_temperature=llm_temp,
             do_vram_purge=do_vram_purge,
@@ -1585,8 +1598,17 @@ def process_book_breeze(txt_path_str: str):
             try: os.remove(srt_file)
             except: pass
 
-        # DO NOT delete temp_voice_dir! Preserve for instant future re-use!
-        console.print(f"[dim]📁 Chunk buffers preserved for instant re-use in: {temp_voice_dir}[/dim]")
+        # Clean up temporary media chunks upon successful completion
+        try:
+            import shutil
+            shutil.rmtree(temp_voice_dir, ignore_errors=True)
+            parent_temp = out_dir / "temp_voice"
+            if parent_temp.exists() and not any(parent_temp.iterdir()):
+                try: parent_temp.rmdir()
+                except Exception: pass
+            console.print(f"[dim]🧹 Temporary media chunks cleaned up from temp_voice[/dim]")
+        except Exception as e:
+            _log_event("TEMP_CLEANUP_ERROR", {"error": str(e)})
 
         # Persist complete session into Logs/Downlode 💩/Download History.json
         update_download_history_tts(
@@ -1595,7 +1617,7 @@ def process_book_breeze(txt_path_str: str):
             audio_file=str(final_audio),
             srt_file=str(srt_file),
             script_file=str(out_script),
-            temp_voice_dir=str(temp_voice_dir),
+            temp_voice_dir="",
             voice=saved_voice or "seductive_director",
             chunks_count=len(chunk_files),
             duration_seconds=current_time,
@@ -1606,8 +1628,8 @@ def process_book_breeze(txt_path_str: str):
         console.print(f"[bold white]Saved Audio:[/bold white]     {final_audio}")
         if sub_gen and srt_file.exists():
             console.print(f"[bold white]Saved Subtitles:[/bold white] {srt_file}")
-        if out_script.exists():
-            console.print(f"[bold white]Saved Script:[/bold white]    {out_script}")
+        if assets_dir.exists():
+            console.print(f"[dim]Text & Assets:[/dim]    {assets_dir}")
     else:
         console.print(f"[bold red]No chunks were generated.[/bold red]")
 
