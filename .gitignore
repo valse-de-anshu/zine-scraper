@@ -66,6 +66,8 @@ _temp_/
 zine tts/
 */zine tts/*
 zine breeze/
+voices/
+*/voices/*
 *.raw_pcm
 *.pcm
 *.breeze

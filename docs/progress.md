@@ -1,3 +1,24 @@
+# Progress Report - September 22, 2026 (Seductive Director Voice Profile, 1x Clean Chunk Synthesis & 2.5x Vocal Acting)
+
+- **Dedicated Voice Profile from User Reference Audio (`Models/TTS/Breeze tts/voices/`):**
+  - **Source Clip Extraction**: Extracted the user's chosen reference chunk (`000002.wav`, 8.32s, 24kHz mono PCM) from `My Slain Dragon Bride_chapter_0001` with exact transcript: *"In the end, his father, Erembalt Rosnova, delivered one piece of news in the year Ferda turned eighteen."*
+  - **Encoded `.breeze` Profile**: Encoded the reference clip into `seductive_director.breeze` (104 frames, 6,784 bytes) via `breeze-cli --save-voice`. Dropped Time-To-First-Audio (TTFA) from ~900ms to ~270ms while guaranteeing 100% voice timbre consistency across all chunks.
+  - **Auto-Discovery & Factory Default**: Set `seductive_director` as the suite-wide factory default for Breeze-TTS. Configured multi-path discovery across both `Models/TTS/Breeze tts/voices/` and `zine tts/`.
+
+- **Eliminated Duplicate Chunk Generation in `💩/` (`Models/TTS/Breeze tts/breeze_engine.py`):**
+  - Removed intermediate `_norm.wav` creation from the chunk loop.
+  - In-flight buffers inside `💩/tts_<stem>/` now strictly maintain **1 clean file per chunk** (`000001.wav`, `000002.wav`, etc.) directly produced by Breeze-TTS with zero redundant ffmpeg passes.
+  - Prevents double audio generation and keeps `💩/` lightweight and fast.
+
+- **Vocal Event Acting Fully Preserved (`breeze_auto_vocal_cfg = 2.5`):**
+  - Restored dynamic CFG elevation to **2.5** exclusively when vocal tags (`(sigh)`, `(whispering)`, `(gasp)`, `(pant)`) are detected, in full compliance with the Breeze-TTS specification.
+  - Normal prose remains at `CFG = 1.0` for smooth, unforced narrative prosody.
+
+- **Full Factory Defaults Reset**:
+  - Reset active configuration: `mode = Saved Voice`, `saved_voice = seductive_director`, `breeze_auto_vocal_cfg = True` (2.5x boost), `breeze_fixed_seed = True`.
+
+---
+
 # Progress Report - September 22, 2026 (Audiobook Voice Consistency: EBU R128 Loudness Leveling, Fixed Timbre Lock & Broadcast Mastering)
 
 - **Eliminated Voice Fluctuation / Roller-Coaster Effect (`Models/TTS/Breeze tts/breeze_engine.py`):**

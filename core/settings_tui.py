@@ -898,10 +898,8 @@ def breeze_tts_settings_tui():
 
         # 3. Acoustic Dynamics & Vocal Events
         curr_cfg = float(config.get("breeze_cfg_scale", 1.0))
-        curr_auto_vocal = "Enabled (Controlled Boost on Vocal Tags)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
-        curr_loudnorm = "Enabled (-16 LUFS Studio Standard)" if config.get("breeze_loudnorm", True) else "Disabled"
+        curr_auto_vocal = "Enabled (2.5x Boost on Vocal Tags)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
         curr_fixed_seed = "Locked (Fixed Timbre Consistency)" if config.get("breeze_fixed_seed", True) else "Drifting (seed + i)"
-        curr_master_comp = "Enabled (Limiter / Leveler)" if config.get("breeze_master_compressor", True) else "Disabled"
         curr_stage_filter = "Strict (Convert Pauses & Strip Directions)" if config.get("breeze_stage_filter", True) else "Disabled"
 
         # 4. Storage & Vacuum Routing
@@ -967,10 +965,8 @@ def breeze_tts_settings_tui():
             ("🎙️ Voice Persona & Narration Design", voice_items),
             ("⚡ Vocal Acting & Acoustic Nuance", [
                 ("Base CFG Scale", str(curr_cfg), "breeze_cfg_scale"),
-                ("Vocal Event Auto-Boost", curr_auto_vocal, "breeze_auto_vocal_cfg"),
-                ("Loudness Leveling (EBU R128)", curr_loudnorm, "breeze_loudnorm"),
+                ("Vocal Event Auto-Boost (2.5x)", curr_auto_vocal, "breeze_auto_vocal_cfg"),
                 ("Voice Timbre Lock (Fixed Seed)", curr_fixed_seed, "breeze_fixed_seed"),
-                ("Master Bus Limiter / Leveler", curr_master_comp, "breeze_master_compressor"),
                 ("Stage Direction Filter", curr_stage_filter, "breeze_stage_filter"),
                 ("Supported Vocal Tags", "13 Tags Supported (Click for List)", "breeze_tags_info"),
             ]),
@@ -1071,14 +1067,23 @@ def breeze_tts_settings_tui():
         elif choice == "breeze_saved_voice":
             from core.paths import PathAuthority
             pa = PathAuthority()
-            tts_dir = pa.get_breeze_tts_dir() / "zine tts"
-            v_files = sorted(tts_dir.glob("*.breeze")) if tts_dir.exists() else []
+            breeze_dir = pa.get_breeze_tts_dir()
+            v_dirs = [
+                breeze_dir / "voices",
+                breeze_dir / "zine tts",
+                Path("/mnt/maiden/tts/voices"),
+                Path("/mnt/maiden/tts"),
+            ]
+            v_files = []
+            seen = set()
+            for vd in v_dirs:
+                if vd.exists():
+                    for vf in sorted(vd.glob("*.breeze")):
+                        if vf.stem not in seen:
+                            seen.add(vf.stem)
+                            v_files.append(vf)
             if not v_files:
-                alt_dir = Path("/mnt/maiden/tts")
-                v_files = sorted(alt_dir.glob("*.breeze")) if alt_dir.exists() else []
-            if not v_files:
-                console.print("\n[warning]● No .breeze voice profiles found in zine tts or /mnt/maiden/tts.[/warning]")
-                console.print("[unselected]Bake a reference audio into a voice profile first via 'breeze' menu.[/unselected]")
+                console.print("\n[warning]● No .breeze voice profiles found in voices or zine tts.[/warning]")
                 time.sleep(2)
             else:
                 opts = [(vf.stem, vf.stem) for vf in v_files]
@@ -1114,21 +1119,12 @@ def breeze_tts_settings_tui():
 
         elif choice == "breeze_auto_vocal_cfg":
             opts = [
-                ("Enabled (Elevates CFG smoothly when vocal tags are detected — Recommended)", True),
+                ("Enabled (Elevates CFG to 2.5 when vocal tags are detected — Recommended)", True),
                 ("Disabled (Keeps base CFG constant across all chunks)", False)
             ]
             new_val = BoxSelector(opts, "Auto-Boost CFG on Vocal Event Tags").select()
             if new_val is not None and new_val != "ESC":
                 config.set("breeze_auto_vocal_cfg", bool(new_val))
-
-        elif choice == "breeze_loudnorm":
-            opts = [
-                ("Enabled (EBU R128 -16 LUFS — Studio-grade uniform loudness across chunks — Recommended)", True),
-                ("Disabled (Raw volume levels from TTS engine — May fluctuate)", False)
-            ]
-            new_val = BoxSelector(opts, "Loudness Leveling (EBU R128)").select()
-            if new_val is not None and new_val != "ESC":
-                config.set("breeze_loudnorm", bool(new_val))
 
         elif choice == "breeze_fixed_seed":
             opts = [
@@ -1138,15 +1134,6 @@ def breeze_tts_settings_tui():
             new_val = BoxSelector(opts, "Voice Timbre Lock (Fixed Seed)").select()
             if new_val is not None and new_val != "ESC":
                 config.set("breeze_fixed_seed", bool(new_val))
-
-        elif choice == "breeze_master_compressor":
-            opts = [
-                ("Enabled (80Hz sub-rumble cut + smooth transparent vocal compressor/limiter)", True),
-                ("Disabled (Direct concat merge without bus compression)", False)
-            ]
-            new_val = BoxSelector(opts, "Master Bus Compressor / Limiter").select()
-            if new_val is not None and new_val != "ESC":
-                config.set("breeze_master_compressor", bool(new_val))
 
         elif choice == "breeze_stage_filter":
             opts = [
@@ -1331,21 +1318,18 @@ def breeze_tts_settings_tui():
             confirm = BoxSelector(opts, "Confirm Reset of All TTS Settings").select()
             if confirm is True:
                 config.set("breeze_backend", "Direct CLI (breeze-cli)")
-                config.set("breeze_mode", "Voice Design")
+                config.set("breeze_mode", "Saved Voice")
+                config.set("breeze_saved_voice", "seductive_director")
+                config.set("breeze_clone_ref_audio", "/home/valse-de-anshu/.config/zine scraper/Models/TTS/Breeze tts/voices/seductive_director.wav")
+                config.set("breeze_clone_ref_transcript", "In the end, his father, Erembalt Rosnova, delivered one piece of news in the year Ferda turned eighteen.")
                 config.set("breeze_llm_adaptation", True)
                 config.set("breeze_llm_model", "")
                 config.set("breeze_vram_purge", True)
                 config.set("breeze_llm_temp", 0.5)
                 config.set("breeze_voice_instruct", default_instruct)
-                config.set("breeze_saved_voice", "")
-                config.set("breeze_clone_ref_audio", "")
-                config.set("breeze_clone_ref_transcript", "")
                 config.set("breeze_cfg_scale", 1.0)
                 config.set("breeze_auto_vocal_cfg", True)
-                config.set("breeze_vocal_cfg_boost", 1.5)
-                config.set("breeze_loudnorm", True)
                 config.set("breeze_fixed_seed", True)
-                config.set("breeze_master_compressor", True)
                 config.set("breeze_stage_filter", True)
                 config.set("breeze_output_dir", "")
                 config.set("breeze_subtitles", True)
@@ -1360,7 +1344,7 @@ def breeze_tts_settings_tui():
                 config.set("breeze_top_p", 1.0)
                 config.set("breeze_rep_penalty", 1.1)
                 config.set("breeze_split_chars", 600)
-                console.print("\n[success]● All Breeze TTS settings restored to factory defaults![/success]")
+                console.print("\n[success]● All Breeze TTS settings restored to factory defaults (Seductive Director Voice Profile)! [/success]")
                 time.sleep(1.5)
 
 

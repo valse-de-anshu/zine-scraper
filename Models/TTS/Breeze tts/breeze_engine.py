@@ -63,6 +63,13 @@ def get_tts_dir() -> Path:
     return tts_dir
 
 
+def get_voices_dir() -> Path:
+    """Returns the dedicated directory holding saved .breeze voice profiles."""
+    v_dir = Path(__file__).parent / "voices"
+    v_dir.mkdir(parents=True, exist_ok=True)
+    return v_dir
+
+
 def resolve_model_path() -> str:
     """Finds the active Breeze GGUF model path from settings or Models/ directory."""
     from core.settings_tui import config
@@ -257,28 +264,33 @@ def check_breeze_server_online(server_url: str) -> bool:
 
 
 def list_saved_voices() -> list[dict]:
-    """Lists all saved .breeze voice profiles in zine tts."""
-    tts_dir = get_tts_dir()
+    """Lists all saved .breeze voice profiles in voices/ and zine tts/."""
     voices = []
-    for f in sorted(tts_dir.glob("*.breeze")):
-        # Parse transcript from binary .breeze container if possible
-        ref_text = ""
-        try:
-            with open(f, "rb") as bf:
-                header = bf.read(24)
-                if len(header) >= 24 and header[:4] == b"BRZV":
-                    import struct
-                    _, _, _, _, _, text_len = struct.unpack("<4sIIIII", header)
-                    if 0 < text_len < 10000:
-                        ref_text = bf.read(text_len).decode("utf-8", errors="replace")
-        except Exception:
-            pass
-        voices.append({
-            "name": f.stem,
-            "path": str(f.resolve()),
-            "ref_text": ref_text,
-            "size_bytes": f.stat().st_size
-        })
+    seen = set()
+    for directory in [get_voices_dir(), get_tts_dir()]:
+        if not directory.exists():
+            continue
+        for f in sorted(directory.glob("*.breeze")):
+            if f.stem in seen:
+                continue
+            seen.add(f.stem)
+            ref_text = ""
+            try:
+                with open(f, "rb") as bf:
+                    header = bf.read(24)
+                    if len(header) >= 24 and header[:4] == b"BRZV":
+                        import struct
+                        _, _, _, _, _, text_len = struct.unpack("<4sIIIII", header)
+                        if 0 < text_len < 10000:
+                            ref_text = bf.read(text_len).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            voices.append({
+                "name": f.stem,
+                "path": str(f.resolve()),
+                "ref_text": ref_text,
+                "size_bytes": f.stat().st_size
+            })
     return voices
 
 
@@ -863,8 +875,10 @@ class BreezeTTS:
             cmd.append("--cpu")
 
         if mode == "Saved Voice" and saved_voice:
-            tts_dir = get_tts_dir()
-            cmd.extend(["--voice", saved_voice, "--voices-dir", str(tts_dir)])
+            v_dir = get_voices_dir()
+            if not (v_dir / f"{saved_voice}.breeze").exists() and (get_tts_dir() / f"{saved_voice}.breeze").exists():
+                v_dir = get_tts_dir()
+            cmd.extend(["--voice", saved_voice, "--voices-dir", str(v_dir)])
             if instruction:
                 cmd.extend(["--instruction", instruction])
         elif mode in ("Voice Cloning", "Voice Direction") and ref_audio and os.path.exists(ref_audio):
@@ -1305,17 +1319,14 @@ def process_book_breeze(txt_path_str: str):
                 has_vocal = chunk.get("has_vocal_events", False)
 
                 filename = f"{i:06d}.wav"
-                norm_filename = f"{i:06d}_norm.wav"
                 local_wav = temp_dir / filename
-                norm_wav = temp_dir / norm_filename
 
                 # Check cache
-                cached_target = norm_wav if (do_loudnorm and norm_wav.exists() and norm_wav.stat().st_size > 1000) else local_wav
-                if cached_target.exists() and cached_target.stat().st_size > 1000:
+                if local_wav.exists() and local_wav.stat().st_size > 1000:
                     status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
-                    chunk_files.append(cached_target)
+                    chunk_files.append(local_wav)
 
-                    duration = get_wav_duration(str(cached_target))
+                    duration = get_wav_duration(str(local_wav))
                     start_str = format_srt_time(current_time)
                     end_str = format_srt_time(current_time + duration)
                     srt_lines.append(f"{i}")
@@ -1328,9 +1339,8 @@ def process_book_breeze(txt_path_str: str):
                     live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
                     continue
 
-                # Controlled CFG scale: Elevate smoothly when vocal tags are present (default 1.5 instead of 2.5)
-                effective_cfg = vocal_cfg_boost if (auto_vocal_cfg and has_vocal) else base_cfg
-                # Fixed seed: locks acoustic timbre/pitch across chunks to eliminate roller-coaster drift
+                # Dynamic CFG scale: Elevate to 2.5 when vocal event tags are present (per Breeze-TTS README)
+                effective_cfg = 2.5 if (auto_vocal_cfg and has_vocal) else base_cfg
                 chunk_seed = seed if fixed_seed else (seed + i)
 
                 _active_chunk_num = i
@@ -1385,17 +1395,10 @@ def process_book_breeze(txt_path_str: str):
 
                 if success and local_wav.exists() and local_wav.stat().st_size > 1000:
                     tag_note = " [sexy_pink](Vocal Event)[/sexy_pink]" if has_vocal else ""
-
-                    # EBU R128 Loudness Normalization: smooths volume so every chunk speaks at studio standard
-                    active_chunk_wav = local_wav
-                    if do_loudnorm:
-                        if normalize_chunk_loudness(local_wav, norm_wav, lufs_target, true_peak):
-                            active_chunk_wav = norm_wav
-
                     status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]{tag_note}")
-                    chunk_files.append(active_chunk_wav)
+                    chunk_files.append(local_wav)
 
-                    duration = get_wav_duration(str(active_chunk_wav))
+                    duration = get_wav_duration(str(local_wav))
                     start_str = format_srt_time(current_time)
                     end_str = format_srt_time(current_time + duration)
 
@@ -1410,6 +1413,7 @@ def process_book_breeze(txt_path_str: str):
                     status_log.append(f"[error]●[/error] [bold red]Chunk {i} failed[/bold red]")
 
                 live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
+
 
             status_log.append("[bold yellow]● Merging audio chunks with ffmpeg...[/bold yellow]")
             live.update(update_tui("Merging Audio...", f"{total_chunks}/{total_chunks}"))
