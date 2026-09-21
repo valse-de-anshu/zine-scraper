@@ -171,7 +171,7 @@ def main():
             wav=wav,
             sr=sr,
             max_chunk_sec=args.max_chunk_sec,
-            search_expand_sec=2.5,
+            search_expand_sec=4.0,
             min_window_ms=100.0,
         )
 
@@ -180,6 +180,7 @@ def main():
 
         # Transcribe each chunk sequentially
         lang_arg = args.language if args.language and args.language.lower() != "none" else None
+        locked_lang = lang_arg
 
         for idx, (chunk_wav, offset_sec) in enumerate(chunks):
             dur_sec = len(chunk_wav) / float(sr)
@@ -190,13 +191,15 @@ def main():
             try:
                 results = asr.transcribe(
                     audio=[(chunk_wav, sr)],
-                    language=[lang_arg] if lang_arg else None,
+                    language=[locked_lang] if locked_lang else None,
                     return_time_stamps=False,
                 )
                 if results and len(results) > 0:
                     raw_text = results[0].text or ""
-                    text = raw_text.split("|")[0].strip()
-                    detected_lang = results[0].language or (lang_arg or "Unknown")
+                    text = raw_text.replace("|", "").strip()
+                    detected_lang = results[0].language or (locked_lang or "Unknown")
+                    if not locked_lang and detected_lang and detected_lang.lower() not in ["none", "unknown"]:
+                        locked_lang = detected_lang
                     if text and text != "None":
                         trans_text = translate_segment(text, args.target_lang, source_hint=detected_lang) if args.target_lang else ""
                         emit_event(

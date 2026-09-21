@@ -82,6 +82,46 @@ def detect_source_language(text: str, hint: str = None) -> str:
     return "en-US"
 
 _google_failed = False
+_ollama_model_cached = None
+_ollama_checked = False
+
+def get_ollama_model() -> Optional[str]:
+    global _ollama_model_cached, _ollama_checked
+    if _ollama_checked:
+        return _ollama_model_cached
+    _ollama_checked = True
+    try:
+        import urllib.request, json
+        req = urllib.request.Request("http://localhost:11434/api/tags", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [m.get("name", "") for m in data.get("models", [])]
+            for cand in ["luna", "emma", "qwen", "mistral", "llama"]:
+                for m in models:
+                    if cand in m.lower():
+                        _ollama_model_cached = m
+                        return _ollama_model_cached
+            if models:
+                _ollama_model_cached = models[0]
+                return _ollama_model_cached
+    except Exception:
+        pass
+    _ollama_model_cached = None
+    return None
+
+def unload_ollama_model():
+    m = get_ollama_model()
+    if m:
+        try:
+            import urllib.request, json
+            req = urllib.request.Request(
+                "http://localhost:11434/api/generate",
+                data=json.dumps({"model": m, "keep_alive": 0}).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            urllib.request.urlopen(req, timeout=2)
+        except Exception:
+            pass
 
 def translate_text(text: str, target_lang: str = "English", source_hint: str = None) -> str:
     global _google_failed
@@ -99,6 +139,49 @@ def translate_text(text: str, target_lang: str = "English", source_hint: str = N
     if source_code == target_code:
         return text
 
+    # Priority 1: High-fidelity Local LLM via Ollama (dialogue & character persona aware)
+    ollama_model = get_ollama_model()
+    if ollama_model:
+        try:
+            import urllib.request, json, re
+            payload = {
+                "model": ollama_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": f"You are a professional subtitle translator for media and anime dialogue. Translate the given spoken dialogue line into natural, conversational {target_lang}. Never introduce yourself, never mention your name or creator, and never offer assistance. Output ONLY the raw {target_lang} translated line without explanations or quotes."
+                    },
+                    {
+                        "role": "user",
+                        "content": text
+                    }
+                ],
+                "think": False,
+                "stream": False
+            }
+            req = urllib.request.Request(
+                "http://localhost:11434/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                ans = data.get("message", {}).get("content", "").strip()
+                if ans:
+                    ans = re.sub(r'\(?https?://[^\s)]+\)?', '', ans)
+                    ans = re.sub(r'(?:Hello!?\s*)?I am Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+                    ans = re.sub(r'How (?:may|can) I assist.*?(?:\?|\.|$)', '', ans, flags=re.IGNORECASE)
+                    ans = re.sub(r'(?:an AI model )?created by Empero AI.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+                    ans = re.sub(r'Qwythos.*?(?:\.|$)', '', ans, flags=re.IGNORECASE)
+                    ans = ans.strip()
+                    if (ans.startswith('"') and ans.endswith('"')) or (ans.startswith("'") and ans.endswith("'")):
+                        ans = ans[1:-1].strip()
+                    if ans:
+                        return ans
+        except Exception:
+            pass
+
+    # Priority 2: Google Translator (Web)
     if not _google_failed:
         try:
             from deep_translator import GoogleTranslator
@@ -108,6 +191,7 @@ def translate_text(text: str, target_lang: str = "English", source_hint: str = N
         except Exception:
             _google_failed = True
 
+    # Priority 3: MyMemory Translator (Web Fallback)
     try:
         from deep_translator import MyMemoryTranslator
         res = MyMemoryTranslator(source=source_code, target=target_code).translate(text)
@@ -136,7 +220,23 @@ def is_confucius_model(model_path: str, engine_setting: str = "Auto") -> bool:
     mp = str(model_path).lower()
     return any(k in mp for k in ["confucius", "qwen3", "r2t2"])
 
-def generate_subtitles_whisper(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str):
+def ensure_cuda_libraries():
+    candidates = [
+        "/home/valse-de-anshu/confucius-env/lib/python3.12/site-packages/nvidia/cublas/lib/libcublas.so.12",
+        "/home/valse-de-anshu/confucius-env/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn.so.9",
+        "/home/valse-de-anshu/.local/lib/python3.14/site-packages/nvidia/cublas/lib/libcublas.so.12",
+        "/home/valse-de-anshu/.local/share/translator-env/lib/python3.12/site-packages/nvidia/cublas/lib/libcublas.so.12",
+    ]
+    import ctypes
+    for c in candidates:
+        if os.path.exists(c):
+            try:
+                ctypes.CDLL(c)
+            except Exception:
+                pass
+
+def generate_subtitles_whisper(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, spoken_lang: str = "Auto"):
+    ensure_cuda_libraries()
     from faster_whisper import WhisperModel
     import gc
     
@@ -181,12 +281,28 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
                 time.sleep(3)
                 return
                 
+            whisper_lang = None
+            if spoken_lang and spoken_lang.lower() not in ["auto", "auto-detect", "none"]:
+                sl = spoken_lang.lower()
+                if "jap" in sl or sl == "ja": whisper_lang = "ja"
+                elif "chi" in sl or sl == "zh": whisper_lang = "zh"
+                elif "kor" in sl or sl == "ko": whisper_lang = "ko"
+                elif "eng" in sl or sl == "en": whisper_lang = "en"
+                else: whisper_lang = sl[:2]
+
             kwargs = {
                 "task": "transcribe", 
                 "vad_filter": True, 
+                "vad_parameters": dict(
+                    min_silence_duration_ms=400,
+                    speech_pad_ms=150
+                ),
+                "word_timestamps": True,
                 "beam_size": 5,
                 "condition_on_previous_text": False
             }
+            if whisper_lang:
+                kwargs["language"] = whisper_lang
             
             vtt_target_path = os.path.splitext(video_path)[0] + f".{target_lang}.vtt"
             vtt_orig_path = os.path.splitext(video_path)[0] + ".Original.vtt"
@@ -278,8 +394,9 @@ def generate_subtitles_whisper(video_path: str, model_path: str, languages: list
             if model is not None:
                 del model
             gc.collect()
+            unload_ollama_model()
 
-def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = ""):
+def generate_subtitles_confucius(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, confucius_py: str = "", spoken_lang: str = "Auto"):
     import gc
     import json
 
@@ -338,8 +455,10 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                 "--model_path", actual_model,
                 "--backend", "transformers",
                 "--device", device,
-                "--max_chunk_sec", "8.0"
+                "--max_chunk_sec", "10.0"
             ]
+            if spoken_lang and spoken_lang.lower() not in ["auto", "auto-detect", "none"]:
+                cmd.extend(["--language", spoken_lang])
             if do_target and target_lang:
                 cmd.extend(["--target_lang", target_lang])
 
@@ -456,12 +575,13 @@ def generate_subtitles_confucius(video_path: str, model_path: str, languages: li
                 try: os.remove(temp_wav)
                 except Exception: pass
             gc.collect()
+            unload_ollama_model()
 
-def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = ""):
+def generate_subtitles(video_path: str, model_path: str, languages: list, target_lang: str, vram_target: str, engine_type: str = "Auto", confucius_py: str = "", spoken_lang: str = "Auto"):
     if is_confucius_model(model_path, engine_type):
-        generate_subtitles_confucius(video_path, model_path, languages, target_lang, vram_target, confucius_py)
+        generate_subtitles_confucius(video_path, model_path, languages, target_lang, vram_target, confucius_py, spoken_lang)
     else:
-        generate_subtitles_whisper(video_path, model_path, languages, target_lang, vram_target)
+        generate_subtitles_whisper(video_path, model_path, languages, target_lang, vram_target, spoken_lang)
 
 def run_subtitle_tui(initial_path: Optional[str] = None):
     paths = PathAuthority()
@@ -473,16 +593,36 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
 
     curr_engine = config.get("ai_subtitles_engine", "Auto")
     engine_opts = [
-        ("🧠 Confucius4-R2T2 (Qwen3-ASR — High Fidelity, 30+ Langs)", "Confucius4-R2T2"),
-        ("⚡ Faster-Whisper (Large-v3-Turbo — Fast Standard Whisper)", "Faster-Whisper"),
+        ("🧠 Faster-Whisper (Large-v3-Turbo — Speaker-Accurate VAD & Timing)", "Faster-Whisper"),
+        ("⚡ Confucius4-R2T2 (Qwen3-ASR — High Fidelity Streaming)", "Confucius4-R2T2"),
         (f"⚙️ Use Default from Settings ({curr_engine})", curr_engine)
     ]
     from core.ui import BoxSelector
-    chosen_engine = BoxSelector(engine_opts, title="Select Subtitle STT Engine", width=76).select()
+    chosen_engine = BoxSelector(engine_opts, title="Select Subtitle STT Engine", width=78).select()
     if not chosen_engine or chosen_engine in ("ESC", "CTRL_C"):
         return
 
     engine_type = chosen_engine
+
+    lang_opts = [
+        ("🇯🇵 Japanese (Anime / J-Media — Speaker-Accurate Dialogue)", "Japanese"),
+        ("🌐 Auto-Detect Spoken Language", "Auto"),
+        ("🇺🇸 English (Western Media / Audiobooks / Videos)", "English"),
+        ("🇨🇳 Chinese (Mandarin / Donghua)", "Chinese"),
+        ("🇰🇷 Korean (K-Media / Audio)", "Korean")
+    ]
+    spoken_lang = BoxSelector(lang_opts, title="Select Spoken Audio Language", width=78).select()
+    if not spoken_lang or spoken_lang in ("ESC", "CTRL_C"):
+        return
+
+    mode_opts = [
+        ("🎯 Both (Pristine Original Audio .vtt + English Translation .vtt)", "Both"),
+        ("🇯🇵 Original Spoken Audio Only (.Original.vtt — Character Dialogue)", "Original"),
+        ("🌐 Translated Subtitles Only (.English.vtt)", "Target")
+    ]
+    chosen_mode = BoxSelector(mode_opts, title="Select Subtitle Mode", width=78).select()
+    if not chosen_mode or chosen_mode in ("ESC", "CTRL_C"):
+        return
     
     console.print("\n[bold #bb9af7]AI Subtitle Engine[/]")
     from core.paths import sanitize_user_path
@@ -547,7 +687,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
                 else:
                     model_path = str(local_stt_model)
 
-    sub_mode = config.get("ai_subtitles_mode", "Both")
+    sub_mode = chosen_mode or config.get("ai_subtitles_mode", "Both")
     target_lang = config.get("ai_target_lang", "English")
     vram_target = config.get("ai_subtitles_vram", "6GB (INT8)")
     
@@ -574,7 +714,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
     
-    p = multiprocessing.Process(target=generate_subtitles, args=(video_path, model_path, langs, target_lang, vram_target, engine_type, confucius_py))
+    p = multiprocessing.Process(target=generate_subtitles, args=(video_path, model_path, langs, target_lang, vram_target, engine_type, confucius_py, spoken_lang))
     p.start()
     
     try:
