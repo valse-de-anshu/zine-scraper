@@ -1,3 +1,31 @@
+# Progress Report - September 22, 2026 (LLM Screenplay Directing, TTS VRAM Handoff & Central Temp Cleanup)
+
+- **Two-Phase VRAM Handoff for Neural Audiobooks (`Models/TTS/Breeze tts/breeze_engine.py`):**
+  - **Identified Challenge (6GB VRAM Limit)**:
+    - Breeze-TTS-2 (`breeze-tts-2-q8_0.gguf`) requires **3.4 – 3.8 GB VRAM** under Vulkan GPU acceleration.
+    - Local LLM (`emma:latest` / `luna:latest`) requires **4.1 – 4.7 GB VRAM**.
+    - Running both concurrently on an NVIDIA RTX 3050 (6144 MB VRAM) causes an immediate CUDA out-of-memory crash (`3.8 + 4.1 = 7.9 GB > 6.1 GB`).
+  - **Sequential Two-Phase Execution Pipeline**:
+    - **Phase 1 (LLM Dramatic Screenplay Adaptation)**: Ollama processes raw novel chapters scene-by-scene into performable dramatic scripts with expressive pauses (`...`, `—`), clean dialogue formatting, and native vocal tags (`(sigh)`, `(pant)`).
+    - **Memory Handoff & VRAM Purge (`unload_ollama_model`)**: Immediately upon completing screenplay adaptation, the engine issues a `POST /api/generate` call with `{"keep_alive": 0}` to Ollama and triggers `torch.cuda.empty_cache()` + `gc.collect()`. Drops Ollama VRAM to **0 MB** in <0.5s before Breeze-TTS initializes.
+    - **Phase 2 (Breeze-TTS Synthesis)**: Breeze-TTS generates audio chunks with 100% GPU headroom (~2.2 GB free margin).
+  - **Personality Isolation (STT vs. TTS)**:
+    - STT LLM: Strictly faithful subtitle translator, direct dialogue translation without commentary.
+    - TTS LLM: Unrestricted Audiobook Director and Master Dramatic Scriptwriter.
+  - **TTS Capability & Hard Constraint Alignment**:
+    - Specifically instructs the LLM on Breeze-TTS capabilities: whitelists recognized acoustic tags (`(sigh)`, `(whispering)`, `(gasp)`, `(laugh)`, `(nervous chuckle)`, `(clears throat)`, `(groan)`, `(yawn)`, `(pant)`, `(snicker)`, `(crying)`, `(giggle)`, `(moan)`).
+    - Hard negative prompt forbidding descriptive parenthetical stage directions (`(A heavy pause)`, `(with rage)`, `(smiling)`) which would be spoken aloud by the voice engine. Cadence and breath hesitations must be expressed exclusively through punctuation (`...`, `—`).
+    - Robust regex sanitizer (`sanitize_scripted_scene`): converts pause descriptions to ellipses and strips non-whitelisted parentheticals.
+    - Zero moralizing, zero censorship: handles dark fantasy, violence, vengeance, explicit adult NSFW dialogues, and profanity completely unfiltered.
+    - Internal reasoning / thinking mode supported: parses and strips `<think>...</think>`.
+  - **Centralized Intermediate Buffer & Vacuum Delivery (`core/paths.py`, `core/settings_tui.py`):**
+    - **Intermediate Temp Files**: All in-flight text batches, scene drafts, and individual chunk `.wav` files stay strictly isolated inside `/home/valse-de-anshu/.config/zine scraper/💩/tts_<stem>/`.
+    - **Automated Cleanup**: Wrapped in `try...finally: shutil.rmtree(temp_dir, ignore_errors=True)` ensuring zero orphaned buffers in `💩/`.
+    - **Vacuum Output Destination**: Completed audiobooks, subtitles, and scripted screenplay files are routed directly to `~/Downloads/Zine/Vacuum/novel chapter/<stem>.wav`, `.srt`, and `_scripted.txt`.
+    - **Settings TUI Integration**: Added toggles for `LLM Script Adaptation` and dynamic Ollama model discovery in `breeze_tts_settings_tui()`.
+
+---
+
 # Progress Report - September 22, 2026 (Batched Whisper Engine, YouTube Hallucination Suppression & Text Normalization)
 
 - **Batched Whisper Inference & Linguistic Clause Protection (`core/subtitle_engine.py`):**

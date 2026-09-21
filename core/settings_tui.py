@@ -900,6 +900,8 @@ def breeze_tts_settings_tui():
         curr_top_p = config.get("breeze_top_p", 1.0)
         curr_rep_pen = config.get("breeze_rep_penalty", 1.1)
         curr_split_chars = config.get("breeze_split_chars", 600)
+        curr_llm_adapt = "Enabled (Ollama Directing)" if config.get("breeze_llm_adaptation", True) else "Disabled (Direct Text)"
+        curr_llm_model = config.get("breeze_llm_model", "") or "Auto (emma:latest / luna:latest)"
 
         is_saved = curr_mode == "Saved Voice"
         is_clone = curr_mode in ("Voice Cloning", "Voice Direction")
@@ -907,6 +909,8 @@ def breeze_tts_settings_tui():
         options = [
             (("Execution Backend",     curr_backend),        "breeze_backend"),
             (("Breeze TTS Mode",       curr_mode),           "breeze_mode"),
+            (("LLM Script Adaptation", curr_llm_adapt),      "breeze_llm_adaptation"),
+            (("LLM Directing Model",   curr_llm_model),      "breeze_llm_model"),
         ]
 
         if "Server" in curr_backend:
@@ -1089,6 +1093,32 @@ def breeze_tts_settings_tui():
             if new_val is not None and new_val != "":
                 try: config.set("breeze_split_chars", int(new_val))
                 except: pass
+
+        elif choice == "breeze_llm_adaptation":
+            opts = [
+                ("Enabled (Dramatic Screenplay Adaptation & Voice Directing via Ollama)", True),
+                ("Disabled (Feed raw novel text directly into Breeze-TTS)", False)
+            ]
+            new_val = BoxSelector(opts, "Configure LLM Screenplay Adaptation").select()
+            if new_val is not None:
+                config.set("breeze_llm_adaptation", bool(new_val))
+
+        elif choice == "breeze_llm_model":
+            opts = [("Auto (Detect best: emma:latest / luna:latest)", "")]
+            try:
+                import urllib.request, json
+                req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "ZineTTS"})
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    for m in data.get("models", []):
+                        m_name = m.get("name", "")
+                        if m_name:
+                            opts.append((f"Ollama: {m_name}", m_name))
+            except Exception:
+                pass
+            new_model = BoxSelector(opts, "Select LLM Screenplay Director Model").select()
+            if new_model is not None:
+                config.set("breeze_llm_model", new_model)
 
 
 def launch_settings_tui():

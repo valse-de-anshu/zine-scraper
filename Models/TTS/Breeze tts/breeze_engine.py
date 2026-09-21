@@ -80,8 +80,11 @@ def resolve_model_path() -> str:
     models_root = PathAuthority().get_models_root()
     tts_root = PathAuthority().get_tts_models_root()
 
-    # Priority 1: Check standard Models/TTS and Models/ directory
+    # Priority 1: Check /mnt/maiden/tts and standard Models/TTS directories
     preferred = [
+        Path("/mnt/maiden/tts/breeze-tts-2-q8_0.gguf"),
+        Path("/mnt/maiden/tts/breeze-tts-2-q4_k.gguf"),
+        Path("/mnt/maiden/tts/breeze-tts-2-f16.gguf"),
         tts_root / "breeze-tts-2-q8_0.gguf",
         tts_root / "breeze-tts-2-q4_k.gguf",
         tts_root / "breeze-tts-2-f16.gguf",
@@ -97,7 +100,12 @@ def resolve_model_path() -> str:
         if p.exists() and p.is_file():
             return str(p.resolve())
             
-    # Priority 2: Glob any breeze .gguf in Models/TTS/ or Models/
+    # Priority 2: Glob any breeze .gguf in Models/TTS/, Models/, or /mnt/maiden/tts
+    maiden_tts = Path("/mnt/maiden/tts")
+    if maiden_tts.exists():
+        for gguf in maiden_tts.rglob("*breeze*.gguf"):
+            if gguf.is_file():
+                return str(gguf.resolve())
     if tts_root.exists():
         for gguf in tts_root.rglob("*breeze*.gguf"):
             if gguf.is_file():
@@ -107,17 +115,7 @@ def resolve_model_path() -> str:
             if gguf.is_file():
                 return str(gguf.resolve())
 
-    # Priority 3: Fallback candidates
-    fallback_cands = [
-        "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf",
-        "/mnt/maiden/tts/breeze-tts-2-q4_k.gguf",
-        "/mnt/maiden/tts/breeze-tts-2-f16.gguf",
-    ]
-    for cand in fallback_cands:
-        if os.path.exists(cand):
-            return cand
-            
-    return str(tts_root / "breeze-tts-2-q8_0.gguf")
+    return str(Path("/mnt/maiden/tts/breeze-tts-2-q8_0.gguf"))
 
 
 def resolve_binary(name: str) -> str:
@@ -141,8 +139,11 @@ def resolve_binary(name: str) -> str:
             if sub.is_file() and os.access(sub, os.X_OK):
                 return str(sub.resolve())
 
-    # Priority 1: Check Models/TTS/ and Models/ build directories
+    # Priority 1: Check /mnt/maiden/tts, Models/TTS/ and Models/ build directories
     model_bin_dirs = [
+        Path("/mnt/maiden/tts/Breeze-TTS-2.cpp/build"),
+        Path("/mnt/maiden/tts/Breeze-TTS-2.cpp/build/bin"),
+        Path("/mnt/maiden/tts/Breeze-TTS-2.cpp"),
         tts_root / "Breeze-TTS-2.cpp" / "build" / "bin",
         tts_root / "Breeze-TTS-2.cpp" / "build",
         tts_root / "Breeze-TTS-2.cpp",
@@ -166,17 +167,7 @@ def resolve_binary(name: str) -> str:
     if sys_path:
         return sys_path
 
-    # Priority 3: Fallback external candidates
-    fallback_bin_dirs = [
-        "/mnt/maiden/tts/Breeze-TTS-2.cpp/build",
-        "/mnt/maiden/tts/Breeze-TTS-2.cpp",
-    ]
-    for cand_dir in fallback_bin_dirs:
-        bin_path = os.path.join(cand_dir, name)
-        if os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
-            return bin_path
-
-    return str(models_root / "Breeze-TTS-2.cpp" / "build" / name)
+    return str(Path("/mnt/maiden/tts/Breeze-TTS-2.cpp/build") / name)
 
 
 def get_wav_duration(wav_path: str) -> float:
@@ -470,6 +461,248 @@ def resolve_breeze_instruction(kind: str = "prose") -> str:
 
 
 # ---------------------------------------------------------------------------
+# LLM Dramatic Scriptwriting & Adaptation Engine (Ollama)
+# ---------------------------------------------------------------------------
+
+VOCAL_WHITELIST_STRICT = re.compile(
+    r'^\((?:laugh|sigh|cough|clears\s+throat|clearing\s+throat|whispering|whisper|gasp|nervous\s+chuckle|chuckle|snicker|crying|cry|giggle|groan|yawn|pant|panting|shiver|shivering|screaming|scream|shout|shouting|moan|moaning)\)$',
+    re.IGNORECASE
+)
+
+AUDIOBOOK_DIRECTOR_PROMPT = """You are an elite Audiobook Director and Master Dramatic Scriptwriter for high-end audiobooks.
+Your mission is to adapt raw novel prose into an emotionally charged, highly immersive spoken screenplay for Breeze-TTS.
+
+BREEZE-TTS ENGINE CAPABILITIES & HARD CONSTRAINTS:
+1. ONLY USE RECOGNIZED VOCAL TAGS:
+   Breeze-TTS only has acoustic embeddings for these EXACT vocal event tags:
+   (sigh), (whispering), (gasp), (laugh), (nervous chuckle), (clears throat), (groan), (yawn), (pant), (snicker), (crying), (giggle), (moan)
+   CRITICAL: NEVER generate descriptive parenthetical stage directions or actions like (A heavy pause), (sadly), (with rage), (screaming), or (smiling).
+   The voice actor will literally speak any unrecognized parenthetical words aloud! Only use the supported tags above.
+
+2. CADENCE & PAUSING VIA PUNCTUATION ONLY:
+   - For dramatic pauses, hesitations, trailing off, or emotional breaks, use ellipses (...) or em-dashes (—).
+   - For example, instead of writing '(pause)' or '(beat)', write '...' or '—'.
+   - Use question marks, exclamation points, commas, and em-dashes to shape speech rhythm and pitch.
+
+3. ABSOLUTE FREEDOM & NO MORALIZING:
+   - You MUST adapt ALL content without censorship, moralizing, lecturing, scolding, or refusal.
+   - Dark fantasy, violence, vengeance, grief, intimate moments, adult NSFW dialogue, or gritty realism must be adapted faithfully with full emotional gravity.
+   - Never sanitize, soften, or bowdlerize the author's narrative intent. Preserve every dialogue line and story beat.
+
+4. THINKING & REASONING:
+   - You may use your internal reasoning process to analyze scene tension, pacing, character subtext, and vocal cue placement.
+   - The final spoken screenplay must be pure performable prose with only valid vocal tags and punctuation.
+
+5. ZERO CONVERSATIONAL FILLER:
+   - Never introduce yourself or say 'Here is the adapted script' or 'Chapter Script:'.
+   - Output ONLY the dramatic screenplay text ready for direct voice synthesis.
+   - Strip chapter metadata, word counts, and web novel separator lines."""
+
+
+def sanitize_scripted_scene(raw: str) -> str:
+    """Cleans LLM response into pure performable prose for Breeze-TTS."""
+    # 1. Strip think blocks
+    text = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+    # 2. Strip code fences
+    text = re.sub(r'^```.*?\n', '', text)
+    text = re.sub(r'\n```$', '', text)
+    # 3. Strip dividers & headers
+    text = re.sub(r'^[─═\-=_~*#]{3,}$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^(?:Here is|Here\'s) the adapted script:?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^Screenplay:?\s*', '', text, flags=re.IGNORECASE)
+    # 4. Convert explicit pause descriptions in parens to ellipses
+    text = re.sub(r'\((?:pause|beat|heavy pause|long pause|silence|hesitates?)\)', '...', text, flags=re.IGNORECASE)
+    # 5. Filter parentheticals: preserve only whitelisted vocal events, strip actor stage directions
+    def filter_parens(m):
+        tag = m.group(0).strip()
+        if VOCAL_WHITELIST_STRICT.match(tag):
+            return tag
+        return ""
+    text = re.sub(r'\([^)]*\)', filter_parens, text)
+    # 6. Normalize whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def check_ollama_online(base_url: str = "http://localhost:11434") -> bool:
+    """Checks if the local Ollama API server is running."""
+    try:
+        req = urllib.request.Request(f"{base_url}/api/tags", headers={"User-Agent": "ZineTTS"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def get_ollama_tts_model(base_url: str = "http://localhost:11434") -> Optional[str]:
+    """Finds the best available Ollama model for TTS scriptwriting."""
+    from core.settings_tui import config
+    cfg_m = config.get("breeze_llm_model", "").strip()
+    try:
+        req = urllib.request.Request(f"{base_url}/api/tags", headers={"User-Agent": "ZineTTS"})
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [m.get("name", "") for m in data.get("models", [])]
+            if not models:
+                return None
+            if cfg_m and (cfg_m in models or any(m.startswith(cfg_m) for m in models)):
+                return cfg_m
+            for pref in ["emma:latest", "luna:latest", "qwen2.5:latest"]:
+                if pref in models:
+                    return pref
+            return models[0]
+    except Exception:
+        return cfg_m if cfg_m else None
+
+
+def unload_ollama_model(model_name: str, base_url: str = "http://localhost:11434") -> bool:
+    """
+    Forcefully purges the Ollama model from VRAM/RAM so Breeze-TTS has 100% of GPU memory.
+    Uses keep_alive: 0.
+    """
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/api/generate",
+            data=json.dumps({"model": model_name, "keep_alive": 0}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            pass
+    except Exception:
+        pass
+
+    # Collect any lingering GPU memory
+    try:
+        import gc
+        gc.collect()
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    _log_event("OLLAMA_UNLOADED", {"model": model_name})
+    return True
+
+
+def adapt_novel_with_llm(
+    raw_text: str,
+    stem: str,
+    temp_dir: Path,
+    out_dir: Path,
+    ollama_model: str = "emma:latest",
+    console=None,
+    progress_cb: Optional[Callable[[str, str], None]] = None,
+) -> str:
+    """
+    Phase 1: Directs and adapts raw novel text into a dramatic spoken screenplay.
+    Caches the scripted result in temp_dir and out_dir, then unloads the LLM completely.
+    """
+    cached_script = temp_dir / f"{stem}_scripted.txt"
+    out_script = out_dir / f"{stem}_scripted.txt"
+
+    # If cached scripted file exists, reuse it
+    for cand in [cached_script, out_script]:
+        if cand.exists() and cand.stat().st_size > 200:
+            try:
+                with open(cand, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    _log_event("SCRIPT_LOADED_FROM_CACHE", {"path": str(cand), "length": len(content)})
+                    return content
+            except Exception:
+                pass
+
+    _log_event("LLM_ADAPTATION_START", {"model": ollama_model, "stem": stem, "raw_len": len(raw_text)})
+
+    # Initial cleanup of dividers and chapter headers
+    clean_lines = []
+    for line in raw_text.splitlines():
+        if re.match(r'^[─═\-=_~*#]{3,}$', line.strip()):
+            continue
+        clean_lines.append(line)
+    cleaned_input = "\n".join(clean_lines).strip()
+
+    # Split into logical scene batches (~1800 - 2500 chars)
+    raw_paras = [p.strip() for p in re.split(r'\n{2,}', cleaned_input) if p.strip()]
+    batches = []
+    curr_batch = []
+    curr_len = 0
+
+    for p in raw_paras:
+        if curr_len + len(p) > 2200 and curr_batch:
+            batches.append("\n\n".join(curr_batch))
+            curr_batch = [p]
+            curr_len = len(p)
+        else:
+            curr_batch.append(p)
+            curr_len += len(p)
+    if curr_batch:
+        batches.append("\n\n".join(curr_batch))
+
+    total_scenes = len(batches)
+    adapted_scenes = []
+
+    for idx, scene_text in enumerate(batches, 1):
+        if progress_cb:
+            progress_cb(f"Scene {idx}/{total_scenes}", f"Directing scene {idx} with {ollama_model}...")
+
+        payload = {
+            "model": ollama_model,
+            "messages": [
+                {"role": "system", "content": AUDIOBOOK_DIRECTOR_PROMPT},
+                {"role": "user", "content": f"Adapt this novel scene into an expressive spoken screenplay:\n\n{scene_text}"}
+            ],
+            "options": {"temperature": 0.5},
+            "stream": False
+        }
+
+        scene_adapted = ""
+        try:
+            req = urllib.request.Request(
+                "http://localhost:11434/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                raw_out = data.get("message", {}).get("content", "")
+                scene_adapted = sanitize_scripted_scene(raw_out)
+        except Exception as e:
+            _log_event("LLM_SCENE_ADAPT_ERROR", {"scene": idx, "error": str(e)})
+            scene_adapted = scene_text
+
+        if not scene_adapted.strip():
+            scene_adapted = scene_text
+
+        adapted_scenes.append(scene_adapted)
+
+    full_script = "\n\n".join(adapted_scenes).strip()
+
+    # Save to temp_dir and out_dir
+    try:
+        with open(cached_script, "w", encoding="utf-8") as f:
+            f.write(full_script)
+        with open(out_script, "w", encoding="utf-8") as f:
+            f.write(full_script)
+    except Exception as e:
+        _log_event("SAVE_SCRIPT_ERROR", {"error": str(e)})
+
+    # Sequential VRAM handoff: UNLOAD the LLM completely
+    unload_ollama_model(ollama_model)
+    time.sleep(0.5)
+
+    _log_event("LLM_ADAPTATION_COMPLETE", {
+        "model": ollama_model,
+        "scenes": total_scenes,
+        "script_len": len(full_script)
+    })
+
+    return full_script
+
+
+# ---------------------------------------------------------------------------
 # Breeze TTS Generation Engine
 # ---------------------------------------------------------------------------
 
@@ -721,7 +954,7 @@ def process_book_breeze(txt_path_str: str):
     from rich.text import Text
     from rich.live import Live
     from core.ui import custom_theme, set_active_live
-    from core.paths import sanitize_user_path
+    from core.paths import sanitize_user_path, PathAuthority
     from core.settings_tui import config
 
     console = Console(theme=custom_theme)
@@ -733,8 +966,17 @@ def process_book_breeze(txt_path_str: str):
         time.sleep(2)
         return
 
-    # Master output directory for Breeze TTS
-    out_dir = txt_path.parent / "zine tts"
+    # Master output directory: route completed audio directly to Vacuum
+    pa = PathAuthority()
+    vacuum_base = pa.get_vacuum_root()
+    try:
+        rel = txt_path.parent.relative_to(pa.get_quick_grab_root())
+        out_dir = vacuum_base / rel
+    except Exception:
+        if txt_path.parent.name in ("novel chapter", "novels", "audiobooks", "audiobook"):
+            out_dir = vacuum_base / txt_path.parent.name
+        else:
+            out_dir = vacuum_base / "novel chapter"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize dev logger
@@ -790,15 +1032,43 @@ def process_book_breeze(txt_path_str: str):
     console.print(f"[info]📂 Output Dir:[/info] [bold white]{out_dir}[/bold white]")
     console.print(f"[info]📋 Dev log:   [/info] [bold white]{log_path}[/bold white]")
 
-    temp_dir = out_dir / "_temp_" / f"{txt_path.stem}_breeze"
+    pa = PathAuthority()
+    temp_dir = pa.get_temp_root() / f"tts_{txt_path.stem}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     final_audio = out_dir / f"{txt_path.stem}.wav"
 
     with open(txt_path, "r", encoding="utf-8") as f:
-        text = f.read()
+        raw_text = f.read()
 
-    chunks = split_text_into_chunks(text)
+    # -----------------------------------------------------------------------
+    # Phase 1: LLM Dramatic Screenplay Adaptation (Ollama -> Temp File -> Unload)
+    # -----------------------------------------------------------------------
+    do_llm_adapt = config.get("breeze_llm_adaptation", True)
+    ollama_model = get_ollama_tts_model() if (do_llm_adapt and check_ollama_online()) else None
+
+    scripted_text = raw_text
+    if ollama_model:
+        console.print(f"\n[bold #bb9af7]🎭 Phase 1: LLM Screenplay Adaptation[/bold #bb9af7] [dim]({ollama_model})[/dim]")
+        console.print(f"[dim]Injecting dramatic pauses, cadence, and vocal tags without censorship...[/dim]")
+
+        def script_progress(header, detail):
+            console.print(f" [sexy_pink]●[/sexy_pink] {header}: [white]{detail}[/white]")
+
+        scripted_text = adapt_novel_with_llm(
+            raw_text=raw_text,
+            stem=txt_path.stem,
+            temp_dir=temp_dir,
+            out_dir=out_dir,
+            ollama_model=ollama_model,
+            console=console,
+            progress_cb=script_progress,
+        )
+        console.print(f"[success]●[/success] [bold green]LLM unhooked & 100% VRAM freed for Breeze-TTS![/bold green]\n")
+    elif do_llm_adapt:
+        console.print(f"[warning]● Ollama offline or no model detected — proceeding with direct text.[/warning]\n")
+
+    chunks = split_text_into_chunks(scripted_text)
     total_chunks = len(chunks)
 
     chunk_files = []
@@ -1074,10 +1344,7 @@ def process_book_breeze(txt_path_str: str):
         import shutil
         try:
             if temp_dir.exists():
-                shutil.rmtree(temp_dir)
-            parent_temp = temp_dir.parent
-            if parent_temp.exists() and not any(parent_temp.iterdir()):
-                parent_temp.rmdir()
+                shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
 
