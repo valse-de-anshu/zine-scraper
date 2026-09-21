@@ -1,3 +1,30 @@
+# Progress Report - September 22, 2026 (Seductive Female Director Voice, Acoustic Vocal Boost & Categorized Settings TUI)
+
+- **Seductive Female Director Voice Persona & Dynamic Cadence Styling (`Models/TTS/Breeze tts/breeze_engine.py`):**
+  - **Voice Design Prompt (`DEFAULT_SEXY_DIRECTOR_INSTRUCT`)**:
+    - Configured base vocal identity: *"A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, alluring nuance, and spine-tingling emotional presence."*
+  - **Dynamic Genre & Pacing Modifiers (`_KIND_INSTRUCT_MAP`)**:
+    - `quote`: *"Whisper intimately with a breathless, velvety, seductive tone right into the listener's ear."*
+    - `title`: *"Deliver as a commanding chapter title with slow, majestic authority, dark allure, and hypnotic presence."*
+    - `verse`: *"Deliver with rhythmic, haunting, hypnotic cadence and deep breathy sensuality."*
+    - `oneliner`: *"Deliver with breathless, intense, spine-tingling passion and electrifying allure."*
+    - `dream`: *"Deliver in a soft, ethereal, breathless, seductive dreamlike whisper."*
+  - **Automatic Vocal CFG Boost (`breeze_auto_vocal_cfg`)**:
+    - Automatically elevates the acoustic CFG scale from 1.0 to **2.5** exclusively during chunks containing recognized vocal event tags (`(sigh)`, `(whispering)`, `(pant)`), triggering hyper-expressive acoustic conditioning without inducing artifacts during standard narrative prose.
+  - **Hard Constraints & Regex Sanitization (`sanitize_scripted_scene`)**:
+    - Informs the LLM that parentheticals outside the 13 supported Breeze tags are spoken aloud as literal words. Converts pause descriptions (`(A heavy pause)`) to ellipses (`...`) and strictly purges non-whitelisted parentheticals.
+
+- **Comprehensive Multi-Section Breeze TTS Settings TUI (`core/settings_tui.py`):**
+  - Completely re-architected `breeze_tts_settings_tui()` into 6 modular categories:
+    1. **🎭 LLM Screenplay & Directing Engine**: LLM scriptwriting toggle, Ollama model selector, VRAM purge toggle (`keep_alive: 0`), director temperature slider.
+    2. **🎙️ Voice Persona & Narration Design**: TTS mode (Voice Design, Voice Direction, Voice Cloning, Saved Voice), 4 crafted voice presets, custom prompt/txt file path, saved `.breeze` profile selector, reference audio & transcript config.
+    3. **⚡ Vocal Acting & Acoustic Nuance**: Base CFG scale slider, 2.5x Vocal Event auto-boost toggle, strict stage direction sanitizer toggle, interactive modal listing all 13 supported vocal event tags.
+    4. **📁 Storage & Vacuum Routing**: Output directory selector (Vacuum vs Custom path), `.srt` subtitle toggle, `_scripted.txt` screenplay export toggle, intermediate buffer auto-cleanup toggle.
+    5. **⚙️ Engine Architecture & Hardware**: Backend selector (Direct CLI vs HTTP Server), Hardware selector (Vulkan GPU via NVIDIA RTX 3050 vs CPU), Model path, Binaries directory, Server URL, RNG seed, Sampling temperature, Top-K/Top-P, Repetition penalty, Split characters cap, Audio technical specifications modal (24kHz, 16-bit PCM mono).
+    6. **↺ Defaults & Reset**: One-click restore to factory defaults (Seductive Director Voice, Vulkan GPU, Vacuum destination, auto-vocal CFG).
+
+---
+
 # Progress Report - September 22, 2026 (LLM Screenplay Directing, TTS VRAM Handoff & Central Temp Cleanup)
 
 - **Two-Phase VRAM Handoff for Neural Audiobooks (`Models/TTS/Breeze tts/breeze_engine.py`):**
