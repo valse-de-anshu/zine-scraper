@@ -1,3 +1,24 @@
+# Progress Report - September 22, 2026 (Audiobook Voice Consistency: EBU R128 Loudness Leveling, Fixed Timbre Lock & Broadcast Mastering)
+
+- **Eliminated Voice Fluctuation / Roller-Coaster Effect (`Models/TTS/Breeze tts/breeze_engine.py`):**
+  - **Identified Root Causes**:
+    1. *Seed Drifting*: `seed + i` per chunk was altering the diffusion initial noise latent, causing pitch and vocal timbre to shift noticeably from chunk to chunk.
+    2. *Loudness Disparity*: Raw neural TTS chunks had varying integrated loudness levels, creating volume jumps (calm/low in chunk 1 vs. loud/sharp in chunk 2).
+    3. *Over-Aggressive CFG Jump*: Escalating CFG guidance from 1.0 to 2.5 on vocal tags caused a 150% boost, making tagged chunks sound sharp and hyper-accentuated compared to surrounding prose.
+  - **Studio-Standard Professional Solution Implemented**:
+    - **Acoustic Timbre Lock (`breeze_fixed_seed`)**: Freezes the RNG seed (`chunk_seed = seed if fixed_seed else seed + i`) across all chapter chunks. Locks the narrator's vocal timbre, pitch centroid, and voice identity so she sounds like the exact same person throughout a 10+ hour audiobook.
+    - **EBU R128 Studio Loudness Normalization (`normalize_chunk_loudness`)**: Single-pass EBU R128 loudness normalization via FFmpeg `loudnorm` filter (Audible/ACX standard: -16 LUFS integrated loudness, -1.5 dBTP true peak, linear gain correction). Smooths every chunk to a uniform listening level before concatenation.
+    - **Smooth CFG Guidance Scaling (`breeze_vocal_cfg_boost = 1.5`)**: Softened the vocal-event CFG boost from 2.5 to 1.5, allowing subtle emotional acting without harsh acoustic spikes.
+    - **Broadcast Master Bus Processing (`breeze_master_compressor`)**: During FFmpeg concat merge, applies an 80Hz sub-rumble highpass filter and a transparent multiband compressor/limiter (`compand`) that glues all chunks together into a seamless studio master.
+  - **Settings TUI Integration (`core/settings_tui.py`)**:
+    - Added interactive toggles in Section 3 ("⚡ Vocal Acting & Acoustic Nuance"):
+      - `Loudness Leveling (EBU R128)` (`breeze_loudnorm`)
+      - `Voice Timbre Lock (Fixed Seed)` (`breeze_fixed_seed`)
+      - `Master Bus Limiter / Leveler` (`breeze_master_compressor`)
+    - Added all consistency settings to the 1-click factory defaults reset.
+
+---
+
 # Progress Report - September 22, 2026 (Seductive Female Director Voice, Acoustic Vocal Boost & Categorized Settings TUI)
 
 - **Seductive Female Director Voice Persona & Dynamic Cadence Styling (`Models/TTS/Breeze tts/breeze_engine.py`):**

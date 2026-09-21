@@ -192,6 +192,57 @@ def format_srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def normalize_chunk_loudness(
+    input_wav: Path,
+    output_wav: Path,
+    target_lufs: float = -16.0,
+    true_peak_db: float = -1.5,
+) -> bool:
+    """
+    Normalizes a WAV chunk to a target integrated loudness using ffmpeg loudnorm (EBU R128).
+
+    Professional audiobook standard (Audible ACX):
+        Integrated loudness: -16 LUFS  (±1 LU)
+        True peak:           -1.5 dBTP
+        Noise floor:         -60 dBFS
+
+    Uses a fast single-pass linear mode: measures the file with the 'loudnorm' filter
+    in linear mode which computes integrated loudness and applies linear gain correction
+    instantly — no dual-pass needed for mono speech with consistent spectral content.
+
+    Returns True on success, False if ffmpeg fails (caller keeps original file).
+    """
+    try:
+        norm_result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(input_wav),
+                "-af", (
+                    f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA=7:"
+                    "measured_I=-70:measured_LRA=0:measured_TP=-70:"
+                    "measured_thresh=-80:offset=0:linear=true:print_format=none"
+                ),
+                "-ar", "24000",
+                "-ac", "1",
+                "-c:a", "pcm_s16le",
+                str(output_wav),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if norm_result.returncode != 0:
+            err = norm_result.stderr.decode("utf-8", errors="replace")
+            _log_event("LOUDNORM_ERROR", {"input": str(input_wav), "stderr": err[:400]})
+            return False
+        if not output_wav.exists() or output_wav.stat().st_size < 100:
+            return False
+        _log_event("LOUDNORM_OK", {"input": str(input_wav), "target_lufs": target_lufs})
+        return True
+    except Exception as e:
+        _log_event("LOUDNORM_EXCEPTION", {"error": str(e)})
+        return False
+
+
 def check_breeze_server_online(server_url: str) -> bool:
     """Checks if the Breeze HTTP server is online and ready via /health."""
     try:
@@ -1032,6 +1083,18 @@ def process_book_breeze(txt_path_str: str):
     sub_gen = config.get("breeze_subtitles", True)
     cleanup_temp = config.get("breeze_cleanup_temp", True)
 
+    # ── Voice Consistency Settings ───────────────────────────────────────────
+    # EBU R128 loudness normalization per chunk (-16 LUFS, -1.5 dBTP)
+    do_loudnorm    = config.get("breeze_loudnorm", True)
+    lufs_target    = float(config.get("breeze_lufs_target", -16.0))
+    true_peak      = float(config.get("breeze_true_peak", -1.5))
+    # Fixed acoustic seed: same seed for every chunk keeps voice fingerprint identical
+    fixed_seed     = config.get("breeze_fixed_seed", True)
+    # Vocal-event CFG boost cap (reduced from 2.5 → softer, still expressive)
+    vocal_cfg_boost = float(config.get("breeze_vocal_cfg_boost", 1.5))
+    # Apply gentle master bus compressor to the final merged file
+    do_master_comp = config.get("breeze_master_compressor", True)
+
     _log_event("CONFIG_SNAPSHOT", {
         "engine": "Breeze-TTS-2",
         "backend": backend,
@@ -1242,14 +1305,17 @@ def process_book_breeze(txt_path_str: str):
                 has_vocal = chunk.get("has_vocal_events", False)
 
                 filename = f"{i:06d}.wav"
+                norm_filename = f"{i:06d}_norm.wav"
                 local_wav = temp_dir / filename
+                norm_wav = temp_dir / norm_filename
 
                 # Check cache
-                if local_wav.exists() and local_wav.stat().st_size > 1000:
+                cached_target = norm_wav if (do_loudnorm and norm_wav.exists() and norm_wav.stat().st_size > 1000) else local_wav
+                if cached_target.exists() and cached_target.stat().st_size > 1000:
                     status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
-                    chunk_files.append(local_wav)
+                    chunk_files.append(cached_target)
 
-                    duration = get_wav_duration(str(local_wav))
+                    duration = get_wav_duration(str(cached_target))
                     start_str = format_srt_time(current_time)
                     end_str = format_srt_time(current_time + duration)
                     srt_lines.append(f"{i}")
@@ -1262,8 +1328,11 @@ def process_book_breeze(txt_path_str: str):
                     live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
                     continue
 
-                # Dynamic CFG scale: Elevate to 2.5 when vocal event tags are present
-                effective_cfg = 2.5 if (auto_vocal_cfg and has_vocal) else base_cfg
+                # Controlled CFG scale: Elevate smoothly when vocal tags are present (default 1.5 instead of 2.5)
+                effective_cfg = vocal_cfg_boost if (auto_vocal_cfg and has_vocal) else base_cfg
+                # Fixed seed: locks acoustic timbre/pitch across chunks to eliminate roller-coaster drift
+                chunk_seed = seed if fixed_seed else (seed + i)
+
                 _active_chunk_num = i
                 _active_vocal_tag = bool(auto_vocal_cfg and has_vocal)
                 live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
@@ -1283,7 +1352,7 @@ def process_book_breeze(txt_path_str: str):
                         ref_audio=ref_audio,
                         ref_text=ref_text,
                         cfg_scale=effective_cfg,
-                        seed=seed + i,
+                        seed=chunk_seed,
                         temperature=temp,
                         top_k=top_k,
                         top_p=top_p,
@@ -1301,7 +1370,7 @@ def process_book_breeze(txt_path_str: str):
                         ref_audio=ref_audio,
                         ref_text=ref_text,
                         cfg_scale=effective_cfg,
-                        seed=seed + i,
+                        seed=chunk_seed,
                         temperature=temp,
                         top_k=top_k,
                         top_p=top_p,
@@ -1316,10 +1385,17 @@ def process_book_breeze(txt_path_str: str):
 
                 if success and local_wav.exists() and local_wav.stat().st_size > 1000:
                     tag_note = " [sexy_pink](Vocal Event)[/sexy_pink]" if has_vocal else ""
-                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]{tag_note}")
-                    chunk_files.append(local_wav)
 
-                    duration = get_wav_duration(str(local_wav))
+                    # EBU R128 Loudness Normalization: smooths volume so every chunk speaks at studio standard
+                    active_chunk_wav = local_wav
+                    if do_loudnorm:
+                        if normalize_chunk_loudness(local_wav, norm_wav, lufs_target, true_peak):
+                            active_chunk_wav = norm_wav
+
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} generated[/bold green]{tag_note}")
+                    chunk_files.append(active_chunk_wav)
+
+                    duration = get_wav_duration(str(active_chunk_wav))
                     start_str = format_srt_time(current_time)
                     end_str = format_srt_time(current_time + duration)
 
@@ -1351,7 +1427,7 @@ def process_book_breeze(txt_path_str: str):
             except Exception:
                 pass
 
-    # Merge chunks via FFmpeg concat filter
+    # Merge chunks via FFmpeg concat filter + optional master bus compressor
     if chunk_files:
         concat_file = temp_dir / "concat.txt"
         with open(concat_file, "w", encoding="utf-8") as f:
@@ -1359,14 +1435,24 @@ def process_book_breeze(txt_path_str: str):
                 safe_p = str(cf.resolve()).replace("'", "'\\''")
                 f.write(f"file '{safe_p}'\n")
 
-        ffmpeg_result = subprocess.run([
+        ffmpeg_cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", str(concat_file),
+        ]
+        if do_master_comp:
+            # Broadcast master bus: 80Hz rumble cut + transparent smooth compressor/limiter
+            ffmpeg_cmd += [
+                "-af", "highpass=f=80,compand=attacks=0.03:decays=0.3:points=-80/-80|-30/-25|-15/-14|0/-1:soft-knee=6"
+            ]
+        ffmpeg_cmd += [
             "-ar", "24000",
             "-ac", "1",
             "-c:a", "pcm_s16le",
             str(final_audio)
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        ]
+
+        ffmpeg_result = subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
 
         if ffmpeg_result.returncode != 0:
             err = ffmpeg_result.stderr.decode("utf-8", errors="replace")

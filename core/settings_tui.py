@@ -898,7 +898,10 @@ def breeze_tts_settings_tui():
 
         # 3. Acoustic Dynamics & Vocal Events
         curr_cfg = float(config.get("breeze_cfg_scale", 1.0))
-        curr_auto_vocal = "Enabled (2.5x Boost on Vocal Tags)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
+        curr_auto_vocal = "Enabled (Controlled Boost on Vocal Tags)" if config.get("breeze_auto_vocal_cfg", True) else "Disabled"
+        curr_loudnorm = "Enabled (-16 LUFS Studio Standard)" if config.get("breeze_loudnorm", True) else "Disabled"
+        curr_fixed_seed = "Locked (Fixed Timbre Consistency)" if config.get("breeze_fixed_seed", True) else "Drifting (seed + i)"
+        curr_master_comp = "Enabled (Limiter / Leveler)" if config.get("breeze_master_compressor", True) else "Disabled"
         curr_stage_filter = "Strict (Convert Pauses & Strip Directions)" if config.get("breeze_stage_filter", True) else "Disabled"
 
         # 4. Storage & Vacuum Routing
@@ -965,6 +968,9 @@ def breeze_tts_settings_tui():
             ("⚡ Vocal Acting & Acoustic Nuance", [
                 ("Base CFG Scale", str(curr_cfg), "breeze_cfg_scale"),
                 ("Vocal Event Auto-Boost", curr_auto_vocal, "breeze_auto_vocal_cfg"),
+                ("Loudness Leveling (EBU R128)", curr_loudnorm, "breeze_loudnorm"),
+                ("Voice Timbre Lock (Fixed Seed)", curr_fixed_seed, "breeze_fixed_seed"),
+                ("Master Bus Limiter / Leveler", curr_master_comp, "breeze_master_compressor"),
                 ("Stage Direction Filter", curr_stage_filter, "breeze_stage_filter"),
                 ("Supported Vocal Tags", "13 Tags Supported (Click for List)", "breeze_tags_info"),
             ]),
@@ -1108,12 +1114,39 @@ def breeze_tts_settings_tui():
 
         elif choice == "breeze_auto_vocal_cfg":
             opts = [
-                ("Enabled (Elevates CFG to 2.5 when vocal tags are detected — Recommended)", True),
-                ("Disabled (Keeps base CFG constant)", False)
+                ("Enabled (Elevates CFG smoothly when vocal tags are detected — Recommended)", True),
+                ("Disabled (Keeps base CFG constant across all chunks)", False)
             ]
             new_val = BoxSelector(opts, "Auto-Boost CFG on Vocal Event Tags").select()
             if new_val is not None and new_val != "ESC":
                 config.set("breeze_auto_vocal_cfg", bool(new_val))
+
+        elif choice == "breeze_loudnorm":
+            opts = [
+                ("Enabled (EBU R128 -16 LUFS — Studio-grade uniform loudness across chunks — Recommended)", True),
+                ("Disabled (Raw volume levels from TTS engine — May fluctuate)", False)
+            ]
+            new_val = BoxSelector(opts, "Loudness Leveling (EBU R128)").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_loudnorm", bool(new_val))
+
+        elif choice == "breeze_fixed_seed":
+            opts = [
+                ("Locked (Same Seed — Prevents voice pitch/timbre drifting across chunks — Recommended)", True),
+                ("Drifting (seed + i — Each chunk uses a different random variation)", False)
+            ]
+            new_val = BoxSelector(opts, "Voice Timbre Lock (Fixed Seed)").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_fixed_seed", bool(new_val))
+
+        elif choice == "breeze_master_compressor":
+            opts = [
+                ("Enabled (80Hz sub-rumble cut + smooth transparent vocal compressor/limiter)", True),
+                ("Disabled (Direct concat merge without bus compression)", False)
+            ]
+            new_val = BoxSelector(opts, "Master Bus Compressor / Limiter").select()
+            if new_val is not None and new_val != "ESC":
+                config.set("breeze_master_compressor", bool(new_val))
 
         elif choice == "breeze_stage_filter":
             opts = [
@@ -1309,6 +1342,10 @@ def breeze_tts_settings_tui():
                 config.set("breeze_clone_ref_transcript", "")
                 config.set("breeze_cfg_scale", 1.0)
                 config.set("breeze_auto_vocal_cfg", True)
+                config.set("breeze_vocal_cfg_boost", 1.5)
+                config.set("breeze_loudnorm", True)
+                config.set("breeze_fixed_seed", True)
+                config.set("breeze_master_compressor", True)
                 config.set("breeze_stage_filter", True)
                 config.set("breeze_output_dir", "")
                 config.set("breeze_subtitles", True)
