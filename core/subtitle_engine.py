@@ -1060,6 +1060,7 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
 
     curr_engine = config.get("ai_subtitles_engine", "Auto")
     engine_opts = [
+        ("🌸 Anime-Whisper (Fine-Tuned on 5,300 hrs Anime Speech & Character Emotion)", "Anime-Whisper"),
         ("🧠 Faster-Whisper (Large-v3-Turbo — Speaker-Accurate VAD & Timing)", "Faster-Whisper"),
         ("⚡ Confucius4-R2T2 (Qwen3-ASR — High Fidelity Streaming)", "Confucius4-R2T2"),
         (f"⚙️ Use Default from Settings ({curr_engine})", curr_engine)
@@ -1156,6 +1157,16 @@ def run_subtitle_tui(initial_path: Optional[str] = None):
                 model_path = str(conf_dir)
             else:
                 model_path = "netease-youdao/Confucius4-R2T2"
+    elif engine_type == "Anime-Whisper":
+        anime_stt = stt_root / "anime-whisper"
+        anime_root = models_root / "anime-whisper"
+        if anime_stt.exists() and (anime_stt / "model.bin").exists():
+            model_path = str(anime_stt)
+        elif anime_root.exists() and (anime_root / "model.bin").exists():
+            model_path = str(anime_root)
+        else:
+            local_stt_model = stt_root / "faster-whisper-large-v3-turbo"
+            model_path = str(local_stt_model)
     else:
         # Priority 1: Check absolute or relative configured path
         candidate_path = Path(clean_configured).expanduser().resolve() if os.path.isabs(clean_configured) else (paths.get_app_root() / clean_configured).resolve()
