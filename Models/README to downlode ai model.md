@@ -82,6 +82,20 @@ cd ../../..
 git clone https://huggingface.co/deepdml/faster-whisper-large-v3-turbo Models/STT/faster-whisper-large-v3-turbo
 ```
 
+### 🧠 Option 2: Confucius4-R2T2 (Qwen3-ASR) — Next-Gen STT
+
+Powered by NetEase Youdao & Alibaba Qwen3-ASR, offering ultra-high fidelity transcription across 30+ languages (Japanese, Chinese, Cantonese, English, etc.) with silence-boundary chunking and real-time streaming alignment.
+
+#### 🚀 1-Click Python Download
+```bash
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='netease-youdao/Confucius4-R2T2', local_dir='Models/STT/Confucius4')"
+```
+
+#### ⚡ Multi-Threaded aria2c Download
+```bash
+aria2c -x 16 -s 16 -k 1M -d "Models/STT/Confucius4" -o "model.safetensors" "https://huggingface.co/netease-youdao/Confucius4-R2T2/resolve/main/model.safetensors"
+```
+
 ---
 
 ## 🗣️ Part 2: Text-to-Speech (`Models/TTS/`) — `Breeze-TTS-2` (GGUF / C++)

@@ -71,7 +71,9 @@ zine breeze/
 *.breeze
 
 # AI Models & Multi-Gigabyte Binary Weights (Strictly Ignored)
-Models/STT/*
+Models/STT/faster-whisper*
+Models/STT/Confucius4/Confucius4-R2T2/
+Models/STT/Confucius4/weights
 !Models/STT/.gitkeep
 Models/TTS/*.gguf
 Models/TTS/*.bin

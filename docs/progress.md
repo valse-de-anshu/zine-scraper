@@ -1,3 +1,27 @@
+# Progress Report - September 21, 2026 (Feature: Confucius4-R2T2 / Qwen3-ASR Speech-to-Text Integration)
+
+- **Confucius4-R2T2 / Qwen3-ASR Subtitle Engine Integration (`Models/STT/Confucius4/confucius_engine.py`, `core/subtitle_engine.py`, `core/config.py`, `core/settings_tui.py`, `core/paths.py`, `Models/README to downlode ai model.md`):**
+  - **Context & Motivation**:
+    - Integrated NetEase Youdao & Alibaba Qwen3-ASR speech-to-text architecture (`Confucius4-R2T2`) into Zine Scraper's media archiving suite.
+    - Delivers ultra-high fidelity transcription across 30+ languages (with flagship accuracy in Japanese, Chinese, Cantonese, English, etc.) with real-time silence boundary splitting and streaming alignment.
+  - **Architectural Implementation**:
+    - **Standalone Neural Worker (`Models/STT/Confucius4/confucius_engine.py`)**:
+      - Created a standalone Python worker script operating inside Python 3.12 CUDA virtualenv (`confucius-env`), eliminating Python 3.14 C-extension compatibility constraints.
+      - Uses `split_audio_into_chunks` to segment continuous audio at low-energy silence boundaries into natural spoken dialogue blocks.
+      - Emits structured JSON lines over stdout (`status`, `chunk_info`, `segment`, `progress`, `done`) for real-time IPC.
+    - **Unified Subtitle Coordinator (`core/subtitle_engine.py`)**:
+      - Added `is_confucius_model()`, `generate_subtitles_confucius()`, and refactored `generate_subtitles_whisper()`.
+      - Real-time Rich Live TUI dynamically streams both original spoken audio segments and translated output (`GoogleTranslator`) side-by-side into synchronized `.Original.vtt` and `.{target_lang}.vtt` subtitle tracks.
+      - Clean child process teardown and GPU memory reclamation on completion or user cancellation (Ctrl+C).
+    - **Configuration & TUI Settings (`core/config.py`, `core/settings_tui.py`, `core/paths.py`)**:
+      - Added `ai_subtitles_engine` setting ("Auto", "Confucius4-R2T2", "Faster-Whisper") and `confucius_python_path`.
+      - Added `STT Engine` selection to `whisper_settings_tui()` in Settings TUI with intelligent model path switching.
+      - Added `get_confucius_stt_dir()` in `PathAuthority`.
+    - **Documentation (`Models/README to downlode ai model.md`)**:
+      - Documented 1-click Python download and multi-threaded `aria2c` instructions for Confucius4-R2T2 weights.
+
+---
+
 # Progress Report - September 20, 2026 (Bugfix: Idagio Music Scraper `is_music` NameError)
 
 - **Idagio Scraper Scope Correction (`scrapers/1_SFW/MUSIC/idagio/workflow.py`):**

@@ -570,12 +570,14 @@ def whisper_settings_tui():
         startup_clear()
         print_banner()
         curr_sub_mode = config.get("ai_subtitles_mode", "Both")
+        curr_sub_engine = config.get("ai_subtitles_engine", "Auto")
         curr_sub_model = config.get("ai_subtitles_model", "Models/STT/faster-whisper-large-v3-turbo")
         curr_sub_vram = config.get("ai_subtitles_vram", "6GB (INT8)")
         curr_target_lang = config.get("ai_target_lang", "English")
 
         options = [
             (("AI Subtitle Generation", curr_sub_mode), "ai_subtitles_mode"),
+            (("STT Engine",             curr_sub_engine), "ai_subtitles_engine"),
             (("Translation Language",   curr_target_lang), "ai_target_lang"),
             (("AI Model Path",          _short_path(curr_sub_model)), "ai_subtitles_model"),
             (("AI GPU Mode",            curr_sub_vram), "ai_subtitles_vram"),
@@ -583,6 +585,19 @@ def whisper_settings_tui():
         choice = SettingsSelector(options).select()
         if not choice or choice in ("ESC", "CTRL_C"):
             break
+        elif choice == "ai_subtitles_engine":
+            engine_opts = [
+                ("Auto-Detect (Based on selected model path)      ", "Auto"),
+                ("Confucius4-R2T2 (Qwen3-ASR — High Fidelity)     ", "Confucius4-R2T2"),
+                ("Faster-Whisper (Standard Whisper Architecture)  ", "Faster-Whisper")
+            ]
+            new_engine = BoxSelector(engine_opts, "Select STT Engine").select()
+            if new_engine and new_engine != "ESC":
+                config.set("ai_subtitles_engine", new_engine)
+                if new_engine == "Confucius4-R2T2" and "faster-whisper" in curr_sub_model.lower():
+                    config.set("ai_subtitles_model", "Models/STT/Confucius4")
+                elif new_engine == "Faster-Whisper" and "confucius" in curr_sub_model.lower():
+                    config.set("ai_subtitles_model", "Models/STT/faster-whisper-large-v3-turbo")
         elif choice == "ai_subtitles_mode":
             table = Table(box=None, show_header=False, padding=(0, 1))
             table.add_column("info", width=70)
