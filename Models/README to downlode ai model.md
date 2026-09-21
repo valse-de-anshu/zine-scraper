@@ -82,6 +82,30 @@ cd ../../..
 git clone https://huggingface.co/deepdml/faster-whisper-large-v3-turbo Models/STT/faster-whisper-large-v3-turbo
 ```
 
+---
+
+### 🌸 Option 1B: Anime-Whisper (~1.4 GB) — Fine-Tuned on 5,300 hrs Anime Dialogue
+
+Fine-tuned by `litagin` specifically for Japanese anime voice acting, visual novels, screaming, crying, and character speech delivery. Converted to CTranslate2 format by `flyfront`.
+
+#### Fast Multi-Threaded Download via `aria2c`
+```bash
+TARGET="Models/STT/anime-whisper"
+mkdir -p "$TARGET"
+
+aria2c -d "$TARGET" -x 16 -s 16 -k 1M -j 5 \
+  "https://huggingface.co/flyfront/anime-whisper-faster/resolve/main/config.json" \
+  "https://huggingface.co/flyfront/anime-whisper-faster/resolve/main/vocabulary.json" \
+  "https://huggingface.co/flyfront/anime-whisper-faster/resolve/main/preprocessor_config.json" \
+  "https://huggingface.co/flyfront/anime-whisper-faster/resolve/main/tokenizer_config.json" \
+  "https://huggingface.co/quantumcookie/anime-whisper-ct2/resolve/main/tokenizer.json"
+
+aria2c -c -d "$TARGET" -o "model.bin" -x 16 -s 16 -k 1M \
+  "https://huggingface.co/flyfront/anime-whisper-faster/resolve/main/model.bin"
+```
+
+---
+
 ### 🧠 Option 2: Confucius4-R2T2 (Qwen3-ASR) — Next-Gen High-Fidelity STT
 
 Powered by NetEase Youdao & Alibaba Qwen3-ASR. Delivers ultra-high fidelity speech recognition across 30+ languages (with flagship conversational accuracy in Japanese, Chinese, Cantonese, English, etc.) with automatic low-energy silence-boundary audio chunking and real-time streaming translation.
