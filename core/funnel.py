@@ -1282,11 +1282,18 @@ def main():
                 else:
                     handle_vacuum_queue(history, storage, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
 
-            # 3. Direct File Path Queue Detection (e.g. "path/to/file.txt" --meta)
+            # 3. Direct File Path Media or Queue Detection (e.g. "song.flac" / "video.mp4" or "queue.txt" --meta)
             elif (lambda p: p.exists() and p.is_file())(Path(sanitize_user_path(clean_candidate)).expanduser().resolve()):
                 custom_file = Path(sanitize_user_path(clean_candidate)).expanduser().resolve()
-                logging.info(f"User launched file queue: {custom_file} (only_metadata={only_metadata})")
-                handle_vacuum_queue(history, storage, custom_file=custom_file, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
+                ext = custom_file.suffix.lower()
+                media_exts = {".mp4", ".mkv", ".avi", ".webm", ".mov", ".flv", ".wmv", ".ts", ".m4v", ".3gp",
+                              ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma"}
+                if ext in media_exts:
+                    from core.subtitle_engine import run_subtitle_tui
+                    run_subtitle_tui(initial_path=str(custom_file))
+                else:
+                    logging.info(f"User launched file queue: {custom_file} (only_metadata={only_metadata})")
+                    handle_vacuum_queue(history, storage, custom_file=custom_file, default_only_metadata=only_metadata, default_flags=flags, default_chapter_limit=chapter_limit, default_quick_grab=batch_quick_grab, default_all=batch_all)
                 if cli_args:
                     break
 
@@ -1318,9 +1325,14 @@ def main():
             elif clean_lower in ["slice", "/slice", "slicer"]:
                 from core.image_slicer import run_image_slicer_tui
                 run_image_slicer_tui()
-            elif clean_lower in ["subs", "/subs", "subtitles"]:
+            elif clean_lower in ["subs", "/subs", "subtitles"] or clean_lower.startswith(("subs ", "/subs ", "subtitles ")):
+                target_media = None
+                for prefix in ["subtitles ", "/subs ", "subs "]:
+                    if clean_candidate.lower().startswith(prefix):
+                        target_media = clean_candidate[len(prefix):].strip()
+                        break
                 from core.subtitle_engine import run_subtitle_tui
-                run_subtitle_tui()
+                run_subtitle_tui(initial_path=target_media if target_media else None)
             elif clean_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
                 startup_clear()
                 print_banner()

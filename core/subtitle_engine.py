@@ -38,10 +38,14 @@ def format_timestamp(seconds: float) -> str:
     millis = int((seconds - int(seconds)) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
 
-def extract_audio(video_path: str) -> str:
-    temp_wav = os.path.splitext(video_path)[0] + "_temp_audio.wav"
+def extract_audio(media_path: str) -> str:
+    import uuid
+    paths = PathAuthority()
+    temp_dir = paths.get_app_root() / "💩"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_wav = str(temp_dir / f"temp_{uuid.uuid4().hex[:8]}.wav")
     subprocess.run([
-        "ffmpeg", "-y", "-i", video_path,
+        "ffmpeg", "-y", "-i", media_path,
         "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
         temp_wav
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -459,7 +463,7 @@ def generate_subtitles(video_path: str, model_path: str, languages: list, target
     else:
         generate_subtitles_whisper(video_path, model_path, languages, target_lang, vram_target)
 
-def run_subtitle_tui():
+def run_subtitle_tui(initial_path: Optional[str] = None):
     paths = PathAuthority()
     storage = StorageLayer()
     config = ConfigLayer(paths, storage)
@@ -481,17 +485,18 @@ def run_subtitle_tui():
     engine_type = chosen_engine
     
     console.print("\n[bold #bb9af7]AI Subtitle Engine[/]")
-    from core.settings_tui import prompt_field_value
-    video_path = prompt_field_value("Video File Path", "", "(Enter absolute path to the video file)")
+    from core.paths import sanitize_user_path
+    video_path = ""
+    if initial_path:
+        video_path = sanitize_user_path(initial_path)
+    else:
+        from core.settings_tui import prompt_field_value
+        video_path = prompt_field_value("Media File Path", "", "(Enter path to video or audio file — .mp4, .mkv, .mp3, .flac, .wav, etc.)")
     
     if not video_path:
         return
-    from core.paths import sanitize_user_path
     video_path = sanitize_user_path(video_path)
     video_path = os.path.expanduser(video_path)
-        
-    if not os.path.exists(video_path) and '\\ ' in video_path:
-        video_path = video_path.replace('\\ ', ' ')
         
     if not os.path.exists(video_path):
         console.print(f"[error]Invalid or non-existent file path:\n{video_path}[/error]")

@@ -25,7 +25,19 @@ def sanitize_user_path(raw_path: str) -> str:
     # Fix missing root slash for absolute paths if dropped by terminal
     if clean.startswith(("home/", "mnt/", "media/", "usr/", "opt/", "Users/", "var/", "etc/", "tmp/")):
         clean = "/" + clean
-        
+
+    # Handle bash/terminal escape sequences if path doesn't exist as-is
+    expanded = os.path.expanduser(clean)
+    if not os.path.exists(expanded) and "\\" in clean:
+        import re
+        unescaped = re.sub(r"\\(.)", r"\1", clean)
+        if os.path.exists(os.path.expanduser(unescaped)):
+            clean = unescaped
+        elif os.path.exists(os.path.expanduser(clean.replace("\\ ", " "))):
+            clean = clean.replace("\\ ", " ")
+        else:
+            clean = unescaped
+
     return clean
 
 class PathAuthority:
