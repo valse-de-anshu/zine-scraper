@@ -1199,7 +1199,7 @@ def main():
             from core.cli_help import run_cli_clean
             run_cli_clean()
             sys.exit(0)
-        elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
+        elif raw_arg.startswith("-") and not re.match(r"^--?(\d+|[aA]|all)\b", raw_arg) and not first_arg.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
             from core.cli_help import handle_unknown_flag
             handle_unknown_flag(raw_arg)
             if sys.stdin.isatty():
@@ -1232,13 +1232,13 @@ def main():
             batch_quick_grab = False
             chapter_limit = None
             batch_all = False
-            only_metadata = bool(re.search(r"--(?:meta|metadata)\b", url, re.IGNORECASE))
+            only_metadata = bool(re.search(r"--?(?:meta|metadata)\b", url, re.IGNORECASE))
             if only_metadata:
                 flags.append("--meta")
 
-            flag_matches = re.findall(r"--(\d+|[aA])\b", url)
+            flag_matches = re.findall(r"--?(\d+|[aA]|all)\b", url)
             for flag_str in flag_matches:
-                if flag_str.lower() == 'a':
+                if flag_str.lower() in ('a', 'all'):
                     batch_all = True
                     if "--a" not in flags:
                         flags.append("--a")
@@ -1254,7 +1254,7 @@ def main():
                             flags.append(f"--{val}")
 
             # Strip all flags to get pure command / path / url candidate
-            clean_candidate = re.sub(r"(?i)\s*--(?:meta|metadata|vacuum|batch|all|\d+|[aA])\b", "", url).strip()
+            clean_candidate = re.sub(r"(?i)\s*--?(?:meta|metadata|vacuum|batch|all|\d+|[aA])\b", "", url).strip()
             clean_lower = clean_candidate.lower()
 
             # 1. Exit Commands
