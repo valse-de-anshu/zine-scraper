@@ -35,7 +35,8 @@ from core.localsend_client import LocalSendClient
 
 logger = logging.getLogger("core.server")
 
-tasks: Dict[str, Dict[str, Any]] = {}
+tasks_lock = threading.Lock()
+tasks: Dict[str, Any] = {}
 
 class ScrapeTask:
     def __init__(
@@ -261,7 +262,7 @@ class ZineServerHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
@@ -278,7 +279,8 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 "server_time": time.time()
             })
         elif path == "/api/tasks":
-            all_tasks = [t.to_dict() for t in tasks.values()]
+            with tasks_lock:
+                all_tasks = [t.to_dict() for t in list(tasks.values())]
             all_tasks.sort(key=lambda t: t.get("created_at", 0), reverse=True)
             self._send_json(200, {"tasks": all_tasks})
         elif path == "/api/discover":
@@ -287,14 +289,16 @@ class ZineServerHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"devices": devices})
         elif path.startswith("/api/tasks/"):
             task_id = path.replace("/api/tasks/", "").strip()
-            task = tasks.get(task_id)
+            with tasks_lock:
+                task = tasks.get(task_id)
             if task:
                 self._send_json(200, task.to_dict())
             else:
                 self._send_json(404, {"error": "Task not found"})
         elif path.startswith("/api/download/"):
             task_id = path.replace("/api/download/", "").strip()
-            task = tasks.get(task_id)
+            with tasks_lock:
+                task = tasks.get(task_id)
             if not task:
                 self._send_json(404, {"error": "Task not found"})
                 return
@@ -341,6 +345,19 @@ class ZineServerHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path in ["/api/tasks/clear", "/api/clear"]:
+            with tasks_lock:
+                for t in list(tasks.values()):
+                    if getattr(t, "zip_path", None) and t.zip_path.exists():
+                        try:
+                            t.zip_path.unlink()
+                        except Exception:
+                            pass
+                tasks.clear()
+            logger.info("Cleared all scrape tasks on companion server.")
+            self._send_json(200, {"status": "cleared", "message": "All tasks cleared"})
+            return
+
         if path == "/api/scrape":
             content_len = int(self.headers.get("Content-Length", 0))
             body_bytes = self.rfile.read(content_len)
@@ -385,7 +402,8 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 flags=flags,
                 limit=limit
             )
-            tasks[task_id] = task
+            with tasks_lock:
+                tasks[task_id] = task
 
             flags_display = ", ".join(flags) if flags else ("-a (All)" if mode == "vacuum" else "--0 (Single Item)")
             banner = (
@@ -408,6 +426,33 @@ class ZineServerHandler(BaseHTTPRequestHandler):
             thread.start()
 
             self._send_json(200, task.to_dict())
+        else:
+            self._send_json(404, {"error": "Endpoint not found"})
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path in ["/api/tasks", "/api/tasks/clear"]:
+            with tasks_lock:
+                for t in list(tasks.values()):
+                    if getattr(t, "zip_path", None) and t.zip_path.exists():
+                        try:
+                            t.zip_path.unlink()
+                        except Exception:
+                            pass
+                tasks.clear()
+            self._send_json(200, {"status": "cleared", "message": "All tasks cleared"})
+        elif path.startswith("/api/tasks/"):
+            task_id = path.replace("/api/tasks/", "").strip()
+            with tasks_lock:
+                task = tasks.pop(task_id, None)
+                if task and getattr(task, "zip_path", None) and task.zip_path.exists():
+                    try:
+                        task.zip_path.unlink()
+                    except Exception:
+                        pass
+            self._send_json(200, {"status": "deleted", "task_id": task_id})
         else:
             self._send_json(404, {"error": "Endpoint not found"})
 
