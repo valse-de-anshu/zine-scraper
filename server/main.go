@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -13,7 +12,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -376,210 +374,7 @@ func createZipArchive(destZip string, baseDir string, files []string, seriesTitl
 	return nil
 }
 
-// sendViaLocalSend transmits files to phone running LocalSend via LocalSend Protocol v2.
-func sendViaLocalSend(targetIP string, files []string, baseDir string, updateProgress func(msg string, pct float64)) bool {
-	if len(files) == 0 {
-		return true
-	}
-	updateProgress("Preparing LocalSend transfer...", 0.72)
 
-	// Auto-launch LocalSend on PC in background if not already active
-	if _, err := exec.LookPath("localsend"); err == nil {
-		check := exec.Command("pgrep", "-f", "localsend")
-		if err := check.Run(); err != nil {
-			log.Println("Starting LocalSend in background on PC...")
-			bgProc := exec.Command("localsend", "--hidden")
-			_ = bgProc.Start()
-			time.Sleep(1000 * time.Millisecond)
-		}
-	}
-
-	type fileMeta struct {
-		ID       string `json:"id"`
-		FileName string `json:"fileName"`
-		Size     int64  `json:"size"`
-		FileType string `json:"fileType"`
-	}
-
-	filesMap := make(map[string]fileMeta)
-	filePathByID := make(map[string]string)
-
-	for i, f := range files {
-		fi, err := os.Stat(f)
-		if err != nil || fi.IsDir() {
-			continue
-		}
-		id := fmt.Sprintf("file_%d_%s", i, filepath.Base(f))
-		rel, err := filepath.Rel(baseDir, f)
-		if err != nil {
-			rel = filepath.Base(f)
-		}
-
-		ext := strings.ToLower(filepath.Ext(f))
-		mimeType := mime.TypeByExtension(ext)
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
-		}
-
-		filesMap[id] = fileMeta{
-			ID:       id,
-			FileName: filepath.ToSlash(rel),
-			Size:     fi.Size(),
-			FileType: mimeType,
-		}
-		filePathByID[id] = f
-	}
-
-	if len(filesMap) == 0 {
-		return false
-	}
-
-	preparePayload := map[string]any{
-		"info": map[string]any{
-			"alias":       "Zine Scraper (Go Engine)",
-			"version":     "2.1",
-			"deviceModel": "Linux Workstation",
-			"deviceType":  "desktop",
-			"fingerprint": "zine-scraper-go",
-			"port":        53318,
-			"protocol":    "http",
-			"download":    false,
-		},
-		"files": filesMap,
-	}
-
-	payloadBytes, _ := json.Marshal(preparePayload)
-	client := &http.Client{Timeout: 15 * time.Second}
-
-	var sessionID string
-	var tokens map[string]string
-
-	prepareURL := fmt.Sprintf("http://%s:53317/api/localsend/v2/prepare-upload", targetIP)
-	for attempt := 1; attempt <= 4; attempt++ {
-		resp, err := client.Post(prepareURL, "application/json", bytes.NewReader(payloadBytes))
-		if err == nil && resp.StatusCode == http.StatusOK {
-			var respData struct {
-				SessionID string            `json:"sessionId"`
-				Files     map[string]string `json:"files"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&respData); err == nil && respData.SessionID != "" {
-				sessionID = respData.SessionID
-				tokens = respData.Files
-				resp.Body.Close()
-				break
-			}
-			resp.Body.Close()
-		}
-		updateProgress(fmt.Sprintf("Connecting to phone LocalSend (%d/4)...", attempt), 0.72)
-		time.Sleep(1200 * time.Millisecond)
-	}
-
-	if sessionID == "" || len(tokens) == 0 {
-		log.Printf("LocalSend prepare-upload failed on %s:53317", targetIP)
-		return false
-	}
-
-	// Stream files individually
-	uploadClient := &http.Client{Timeout: 120 * time.Second}
-	uploadedCount := 0
-	totalFiles := len(tokens)
-
-	for id, token := range tokens {
-		path := filePathByID[id]
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-
-		fi, _ := f.Stat()
-		uploadedCount++
-		pct := 0.75 + (0.23 * (float64(uploadedCount) / float64(totalFiles)))
-		updateProgress(fmt.Sprintf("Sending %s (%d/%d)", filepath.Base(path), uploadedCount, totalFiles), pct)
-
-		uploadURL := fmt.Sprintf("http://%s:53317/api/localsend/v2/upload?sessionId=%s&fileId=%s&token=%s", targetIP, sessionID, id, token)
-		req, err := http.NewRequest(http.MethodPost, uploadURL, f)
-		if err != nil {
-			f.Close()
-			return false
-		}
-		req.Header.Set("Content-Type", "application/octet-stream")
-		req.ContentLength = fi.Size()
-
-		resp, err := uploadClient.Do(req)
-		f.Close()
-		if err != nil || resp.StatusCode != http.StatusOK {
-			log.Printf("LocalSend upload failed for %s: %v", filepath.Base(path), err)
-			return false
-		}
-		resp.Body.Close()
-	}
-
-	return true
-}
-
-// getKDEConnectDeviceID returns the ID and name of an available or paired KDE Connect device.
-func getKDEConnectDeviceID() (string, string) {
-	if _, err := exec.LookPath("kdeconnect-cli"); err != nil {
-		return "", ""
-	}
-	// Try available devices (-a) first
-	out, err := exec.Command("kdeconnect-cli", "-a", "--id-name-only").Output()
-	if err == nil {
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		for _, l := range lines {
-			parts := strings.SplitN(strings.TrimSpace(l), " ", 2)
-			if len(parts) >= 1 && parts[0] != "" {
-				name := "Android Phone"
-				if len(parts) == 2 {
-					name = parts[1]
-				}
-				return parts[0], name
-			}
-		}
-	}
-	// Fallback to any paired device (-l)
-	out, err = exec.Command("kdeconnect-cli", "-l", "--id-name-only").Output()
-	if err == nil {
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		for _, l := range lines {
-			parts := strings.SplitN(strings.TrimSpace(l), " ", 2)
-			if len(parts) >= 1 && parts[0] != "" {
-				name := "Android Phone"
-				if len(parts) == 2 {
-					name = parts[1]
-				}
-				return parts[0], name
-			}
-		}
-	}
-	return "", ""
-}
-
-func isKDEConnectAvailable() bool {
-	id, _ := getKDEConnectDeviceID()
-	return id != ""
-}
-
-// sendViaKDEConnect shares a file directly to the phone via KDE Connect daemon over TLS.
-func sendViaKDEConnect(filePath string, updateProgress func(msg string, pct float64)) bool {
-	deviceID, devName := getKDEConnectDeviceID()
-	if deviceID == "" {
-		log.Println("[KDE Connect] No paired/available devices found.")
-		return false
-	}
-
-	updateProgress(fmt.Sprintf("Connecting to %s...", devName), 0.80)
-	log.Printf("[KDE Connect] Sharing %s with device %s (%s)...", filepath.Base(filePath), devName, deviceID)
-
-	shareCmd := exec.Command("kdeconnect-cli", "-d", deviceID, "--share", filePath)
-	if err := shareCmd.Run(); err != nil {
-		log.Printf("[KDE Connect] Transfer failed: %v", err)
-		return false
-	}
-
-	updateProgress(fmt.Sprintf("Sent to %s via KDE Connect!", devName), 1.0)
-	return true
-}
 
 // runScrapeWorker executes the zine scraper in the background and prepares delivery.
 func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
@@ -766,45 +561,11 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 		log.Printf("Warning: Could not pre-package zip for task %s: %v", task.TaskID, err)
 	}
 
-	// Priority 1: KDE Connect (Default & user preferred bridge)
-	useKDEConnect := (task.Transfer == "kdeconnect") || (task.Transfer == "hybrid" && isKDEConnectAvailable())
-	if useKDEConnect && task.ZipPath != "" {
-		task.Status = "transferring"
-		task.Message = fmt.Sprintf("Sending to phone via KDE Connect (%.1f MB)...", sizeMB)
-		kdeSuccess := sendViaKDEConnect(task.ZipPath, func(msg string, pct float64) {
-			task.Message = msg
-			task.Progress = pct
-		})
-		if kdeSuccess {
-			task.Status = "completed"
-			task.Progress = 1.0
-			task.Message = fmt.Sprintf("Delivered via KDE Connect (Saved in Download/%s)", zipFileName)
-			return
-		}
-		log.Println("KDE Connect delivery failed or device unreachable, falling back...")
-	}
-
-	// Priority 2: LocalSend
-	useLocalSend := (task.Transfer == "localsend") || (task.Transfer == "hybrid" && sizeMB > 500.0)
-	if useLocalSend && task.TargetIP != "" {
-		task.Status = "transferring"
-		task.Message = fmt.Sprintf("Payload (%.1f MB) -> LocalSend transfer...", sizeMB)
-		localsendSuccess := sendViaLocalSend(task.TargetIP, newFiles, targetRoot, func(msg string, pct float64) {
-			task.Message = msg
-			task.Progress = pct
-		})
-		if localsendSuccess {
-			task.Status = "completed"
-			task.Progress = 1.0
-			task.Message = "Sent to phone via LocalSend successfully!"
-			return
-		}
-	}
-
-	// Priority 3: Direct Stream (HTTP fallback)
+	// Direct Stream: instant HTTP streaming directly to Hwaran
 	task.Status = "completed"
 	task.Progress = 1.0
 	task.Message = fmt.Sprintf("Media ready for direct download (%.1f MB)", sizeMB)
+	log.Printf("[TASK %s] Media ready for direct download: %s (%.1f MB)", task.TaskID, zipFileName, sizeMB)
 }
 
 // killExistingServerOnPort terminates any older instance of zine-server or processes holding the port.
@@ -1010,7 +771,7 @@ func main() {
 				"📦 Source App    : %s v%s\n"+
 				"🔗 Target URL    : %s\n"+
 				"🎯 Scrape Scope  : %s (Flags: %s)\n"+
-				"🚚 Delivery Mode : %s (Direct <=500MB | LocalSend >500MB)\n"+
+				"🚚 Delivery Mode : DIRECT STREAM\n"+
 				"🆔 Task Assigned : %s\n"+
 				"⏱️  Timestamp     : %s\n"+
 				"%s\n",
@@ -1019,7 +780,6 @@ func main() {
 			payload.AppName, payload.AppVersion,
 			url,
 			strings.ToUpper(mode), flagsDisplay,
-			strings.ToUpper(transfer),
 			taskID,
 			time.Now().Format("2006-01-02 15:04:05"),
 			strings.Repeat("=", 64),
