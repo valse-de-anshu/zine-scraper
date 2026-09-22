@@ -16,6 +16,7 @@ import logging
 import threading
 import io
 from pathlib import Path
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Dict, Any, List
@@ -35,18 +36,21 @@ logger = logging.getLogger("core.server")
 tasks: Dict[str, Dict[str, Any]] = {}
 
 class ScrapeTask:
-    def __init__(self, task_id: str, url: str, mode: str, target_ip: str = "", transfer: str = "hybrid"):
+    def __init__(self, task_id: str, url: str, mode: str, target_ip: str = "", transfer: str = "hybrid", device_name: str = "Android Device", device_brand: str = "Android"):
         self.task_id = task_id
         self.url = url
         self.mode = mode  # "quick_grab" or "vacuum"
         self.target_ip = target_ip
         self.transfer = transfer  # "hybrid", "localsend", "direct"
+        self.device_name = device_name
+        self.device_brand = device_brand
         self.status = "queued"  # "queued", "scraping", "transferring", "completed", "failed"
         self.progress = 0.0
-        self.message = "Queued"
+        self.message = "Queued on server"
         self.downloaded_files: List[Path] = []
         self.base_dir: Path = Path()
         self.error: str = ""
+        self.media_title: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -57,7 +61,10 @@ class ScrapeTask:
             "progress": self.progress,
             "message": self.message,
             "file_count": len(self.downloaded_files),
-            "error": self.error
+            "media_title": self.media_title,
+            "error": self.error,
+            "device_name": self.device_name,
+            "device_brand": self.device_brand
         }
 
 def run_scrape_worker(task: ScrapeTask):
@@ -239,10 +246,40 @@ class ZineServerHandler(BaseHTTPRequestHandler):
             mode = payload.get("mode", "quick_grab")
             target_ip = payload.get("target_ip", self.client_address[0])
             transfer = payload.get("transfer", "hybrid")
+            device_name = payload.get("device_name", "Android Device")
+            device_brand = payload.get("device_brand", "Android")
+            app_name = payload.get("app_name", "Hwaran")
+            app_version = payload.get("app_version", "2.1.0")
+            client_ip = self.client_address[0]
+            timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            task_id = str(uuid.uuid4())[:8]
-            task = ScrapeTask(task_id, url, mode, target_ip, transfer)
+            task_id = f"tsk_{str(uuid.uuid4())[:8]}"
+            task = ScrapeTask(
+                task_id=task_id,
+                url=url,
+                mode=mode,
+                target_ip=target_ip,
+                transfer=transfer,
+                device_name=device_name,
+                device_brand=device_brand
+            )
             tasks[task_id] = task
+
+            # Prominent terminal logging for incoming ingestion signals
+            banner = (
+                f"\n{'='*64}\n"
+                f"📡 [HWARAN INGESTION SIGNAL RECEIVED]\n"
+                f"📱 Client Device : {device_brand} {device_name} ({client_ip})\n"
+                f"📦 Source App    : {app_name} v{app_version}\n"
+                f"🔗 Target URL    : {url}\n"
+                f"🎯 Scrape Scope  : {mode.upper()} ({'Single Item' if mode == 'quick_grab' else 'Full Series Vacuum'})\n"
+                f"🚚 Delivery Mode : {transfer.upper()}\n"
+                f"🆔 Task Assigned : {task_id}\n"
+                f"⏱️  Timestamp     : {timestamp_str}\n"
+                f"{'='*64}\n"
+            )
+            print(banner, flush=True)
+            logger.info(f"Signal received from {device_brand} {device_name} ({client_ip}): URL={url}, Mode={mode}, Task={task_id}")
 
             # Run in worker thread
             thread = threading.Thread(target=run_scrape_worker, args=(task,), daemon=True)

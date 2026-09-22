@@ -984,7 +984,10 @@ def signal_handler(sig, frame):
     logging.warning("SIGINT (Ctrl+C) received. Forcing clean_exit.")
     clean_exit(forceful=True)
 
-signal.signal(signal.SIGINT, signal_handler)
+try:
+    signal.signal(signal.SIGINT, signal_handler)
+except ValueError:
+    pass
 
 class Selector:
     def __init__(self, options: List[Tuple[str, Any]], title: str = "Select", vertical: bool = False, align_width: int = 8, default_index: int = 0):
