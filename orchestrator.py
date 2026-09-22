@@ -45,13 +45,22 @@ if len(sys.argv) > 1:
         run_cli_clean()
         sys.exit(0)
     elif arg_first in ["--server", "-server", "server"]:
-        from core.server import start_server
         port = 53318
         if len(sys.argv) > 2:
             try:
                 port = int(sys.argv[2])
             except ValueError:
                 pass
+        import shutil
+        go_binary = script_dir / "server" / "zine-server"
+        if not go_binary.exists():
+            found = shutil.which("zine-server")
+            if found:
+                go_binary = Path(found)
+        if go_binary.exists() and os.access(go_binary, os.X_OK):
+            os.execv(str(go_binary), [str(go_binary), "-port", str(port)])
+
+        from core.server import start_server
         start_server(port=port)
         sys.exit(0)
     elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
