@@ -36,10 +36,23 @@ logger = logging.getLogger("core.server")
 tasks: Dict[str, Dict[str, Any]] = {}
 
 class ScrapeTask:
-    def __init__(self, task_id: str, url: str, mode: str, target_ip: str = "", transfer: str = "hybrid", device_name: str = "Android Device", device_brand: str = "Android"):
+    def __init__(
+        self,
+        task_id: str,
+        url: str,
+        mode: str,
+        target_ip: str = "",
+        transfer: str = "hybrid",
+        device_name: str = "Android Device",
+        device_brand: str = "Android",
+        flags: Optional[List[str]] = None,
+        limit: Optional[int] = None
+    ):
         self.task_id = task_id
         self.url = url
         self.mode = mode  # "quick_grab" or "vacuum"
+        self.flags = flags or []
+        self.limit = limit
         self.target_ip = target_ip
         self.transfer = transfer  # "hybrid", "localsend", "direct"
         self.device_name = device_name
@@ -57,6 +70,8 @@ class ScrapeTask:
             "task_id": self.task_id,
             "url": self.url,
             "mode": self.mode,
+            "flags": self.flags,
+            "limit": self.limit,
             "status": self.status,
             "progress": self.progress,
             "message": self.message,
@@ -89,6 +104,7 @@ def run_scrape_worker(task: ScrapeTask):
     is_quick_grab = (task.mode == "quick_grab")
 
     try:
+        # Pass flags and limit into route_url
         success = route_url(
             task.url,
             history,
@@ -96,7 +112,9 @@ def run_scrape_worker(task: ScrapeTask):
             batch_path=None,
             is_batch=True,
             batch_quick_grab=is_quick_grab,
-            batch_all=True
+            batch_all=(task.mode == "vacuum" and not task.limit),
+            flags=task.flags if task.flags else None,
+            chapter_limit=task.limit
         )
 
         files_after = set(target_root.rglob("*"))
@@ -116,13 +134,18 @@ def run_scrape_worker(task: ScrapeTask):
             task.error = "Could not extract media from URL"
             return
 
-        task.progress = 0.70
-        task.message = f"Scraped {len(new_files)} file(s). Preparing transfer..."
+        # Size threshold: <= 500MB -> Direct HTTP stream, > 500MB -> LocalSend
+        total_bytes = sum(f.stat().st_size for f in new_files if f.is_file())
+        size_mb = total_bytes / (1024 * 1024)
+        use_localsend = (size_mb > 500.0) or (task.transfer == "localsend")
 
-        # Transfer via LocalSend if requested or in hybrid mode
+        task.progress = 0.70
+        task.message = f"Scraped {len(new_files)} file(s) ({size_mb:.1f} MB). Preparing delivery..."
+
         localsend_success = False
-        if task.transfer in ["hybrid", "localsend"] and task.target_ip:
+        if use_localsend and task.target_ip:
             task.status = "transferring"
+            task.message = f"Payload ({size_mb:.1f} MB > 500MB) -> LocalSend transfer..."
             client = LocalSendClient()
 
             def transfer_cb(msg: str, pct: float):
@@ -141,14 +164,14 @@ def run_scrape_worker(task: ScrapeTask):
             task.progress = 1.0
             task.message = "Sent to phone via LocalSend successfully!"
         else:
-            if task.transfer == "localsend":
+            if use_localsend and task.transfer == "localsend":
                 task.status = "failed"
-                task.message = "LocalSend push failed (Receiver unreachable)"
-                task.error = "Target phone LocalSend receiver not reachable"
+                task.message = "LocalSend push failed (Please ensure LocalSend app is open on phone)"
+                task.error = "LocalSend receiver unreachable on port 53317"
             else:
                 task.status = "completed"
                 task.progress = 1.0
-                task.message = "Media ready for direct download"
+                task.message = f"Media ready for direct download ({size_mb:.1f} MB)"
 
     except Exception as e:
         logger.exception("Error running scrape task")
@@ -207,21 +230,29 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 self._send_json(404, {"error": "Files not ready or task not found"})
                 return
 
-            # Stream files as a single ZIP archive directly to the client
-            self.send_response(200)
-            self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Disposition", f'attachment; filename="zine_{task_id}.zip"')
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
+            # Stream files as a single ZIP archive directly to the client (ZIP_STORED avoids recompressing already compressed media)
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".zip") as tmp_zip:
+                with zipfile.ZipFile(tmp_zip.name, "w", zipfile.ZIP_STORED) as zf:
+                    for f in task.downloaded_files:
+                        if f.exists() and f.is_file():
+                            arcname = str(f.relative_to(task.base_dir)) if f.is_relative_to(task.base_dir) else f.name
+                            zf.write(f, arcname=arcname)
 
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for f in task.downloaded_files:
-                    if f.exists() and f.is_file():
-                        arcname = str(f.relative_to(task.base_dir)) if f.is_relative_to(task.base_dir) else f.name
-                        zf.write(f, arcname=arcname)
+                file_size = os.path.getsize(tmp_zip.name)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Length", str(file_size))
+                self.send_header("Content-Disposition", f'attachment; filename="zine_{task_id}.zip"')
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
 
-            self.wfile.write(zip_buffer.getvalue())
+                with open(tmp_zip.name, "rb") as f_in:
+                    while True:
+                        chunk = f_in.read(65536)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
         else:
             self._send_json(404, {"error": "Endpoint not found"})
 
@@ -244,6 +275,14 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 return
 
             mode = payload.get("mode", "quick_grab")
+            flags = payload.get("flags", [])
+            limit = payload.get("limit", None)
+            if limit is not None:
+                try:
+                    limit = int(limit)
+                except Exception:
+                    limit = None
+
             target_ip = payload.get("target_ip", self.client_address[0])
             transfer = payload.get("transfer", "hybrid")
             device_name = payload.get("device_name", "Android Device")
@@ -261,25 +300,27 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 target_ip=target_ip,
                 transfer=transfer,
                 device_name=device_name,
-                device_brand=device_brand
+                device_brand=device_brand,
+                flags=flags,
+                limit=limit
             )
             tasks[task_id] = task
 
-            # Prominent terminal logging for incoming ingestion signals
+            flags_display = ", ".join(flags) if flags else ("-a (All)" if mode == "vacuum" else "--0 (Single Item)")
             banner = (
                 f"\n{'='*64}\n"
                 f"📡 [HWARAN INGESTION SIGNAL RECEIVED]\n"
                 f"📱 Client Device : {device_brand} {device_name} ({client_ip})\n"
                 f"📦 Source App    : {app_name} v{app_version}\n"
                 f"🔗 Target URL    : {url}\n"
-                f"🎯 Scrape Scope  : {mode.upper()} ({'Single Item' if mode == 'quick_grab' else 'Full Series Vacuum'})\n"
-                f"🚚 Delivery Mode : {transfer.upper()}\n"
+                f"🎯 Scrape Scope  : {mode.upper()} (Flags: {flags_display})\n"
+                f"🚚 Delivery Mode : {transfer.upper()} (Threshold: Direct <=500MB | LocalSend >500MB)\n"
                 f"🆔 Task Assigned : {task_id}\n"
                 f"⏱️  Timestamp     : {timestamp_str}\n"
                 f"{'='*64}\n"
             )
             print(banner, flush=True)
-            logger.info(f"Signal received from {device_brand} {device_name} ({client_ip}): URL={url}, Mode={mode}, Task={task_id}")
+            logger.info(f"Signal received from {device_brand} {device_name} ({client_ip}): URL={url}, Mode={mode}, Flags={flags}, Task={task_id}")
 
             # Run in worker thread
             thread = threading.Thread(target=run_scrape_worker, args=(task,), daemon=True)
