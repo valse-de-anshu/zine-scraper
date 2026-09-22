@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -500,6 +501,47 @@ func sendViaLocalSend(targetIP string, files []string, baseDir string, updatePro
 	return true
 }
 
+// isKDEConnectAvailable checks if kdeconnect-cli is present and has at least one paired, reachable device.
+func isKDEConnectAvailable() bool {
+	if _, err := exec.LookPath("kdeconnect-cli"); err != nil {
+		return false
+	}
+	out, err := exec.Command("kdeconnect-cli", "-a", "--id-only").Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.Fields(strings.TrimSpace(string(out)))) > 0
+}
+
+// sendViaKDEConnect shares a file directly to the phone via KDE Connect daemon over TLS.
+func sendViaKDEConnect(filePath string, updateProgress func(msg string, pct float64)) bool {
+	updateProgress("Connecting via KDE Connect...", 0.72)
+
+	cmd := exec.Command("kdeconnect-cli", "-a", "--id-only")
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("kdeconnect-cli list error: %v", err)
+		return false
+	}
+
+	devices := strings.Fields(strings.TrimSpace(string(out)))
+	if len(devices) == 0 {
+		log.Println("No reachable KDE Connect devices found.")
+		return false
+	}
+	deviceID := devices[0]
+
+	updateProgress("Sending media to phone via KDE Connect...", 0.85)
+	shareCmd := exec.Command("kdeconnect-cli", "-d", deviceID, "--share", filePath)
+	if err := shareCmd.Run(); err != nil {
+		log.Printf("kdeconnect-cli share error: %v", err)
+		return false
+	}
+
+	updateProgress("Delivered to phone via KDE Connect!", 1.0)
+	return true
+}
+
 // runScrapeWorker executes the zine scraper in the background and prepares delivery.
 func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 	task.Status = "scraping"
@@ -637,47 +679,65 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 	}
 	sizeMB := float64(totalBytes) / (1024 * 1024)
 
-	// Threshold: >500MB -> LocalSend, <=500MB -> Direct Stream (Hybrid)
-	useLocalSend := (sizeMB > 500.0) || (task.Transfer == "localsend")
+	// Pre-package ZIP archive for transfer
+	task.Message = fmt.Sprintf("Packaging %d file(s) (%.1f MB)...", len(newFiles), sizeMB)
+	task.Progress = 0.75
 
-	task.Progress = 0.70
-	task.Message = fmt.Sprintf("Scraped %d file(s) (%.1f MB). Preparing delivery...", len(newFiles), sizeMB)
+	zipFileName := fmt.Sprintf("zine_%s.zip", task.TaskID)
+	if task.MediaTitle != "" {
+		re := regexp.MustCompile(`[^a-zA-Z0-9_\-\. ]+`)
+		cleanTitle := re.ReplaceAllString(task.MediaTitle, "_")
+		cleanTitle = strings.TrimSpace(cleanTitle)
+		if cleanTitle != "" {
+			zipFileName = fmt.Sprintf("%s.zip", cleanTitle)
+		}
+	}
+	tmpZip := filepath.Join(os.TempDir(), zipFileName)
+	if err := createZipArchive(tmpZip, targetRoot, newFiles); err == nil {
+		task.ZipPath = tmpZip
+	} else {
+		log.Printf("Warning: Could not pre-package zip for task %s: %v", task.TaskID, err)
+	}
 
-	localsendSuccess := false
-	if useLocalSend && task.TargetIP != "" {
+	// Priority 1: KDE Connect (Default & user preferred bridge)
+	useKDEConnect := (task.Transfer == "kdeconnect") || (task.Transfer == "hybrid" && isKDEConnectAvailable())
+	if useKDEConnect && task.ZipPath != "" {
 		task.Status = "transferring"
-		task.Message = fmt.Sprintf("Large payload (%.1f MB) -> LocalSend transfer...", sizeMB)
-
-		localsendSuccess = sendViaLocalSend(task.TargetIP, newFiles, targetRoot, func(msg string, pct float64) {
+		task.Message = fmt.Sprintf("Sending to phone via KDE Connect (%.1f MB)...", sizeMB)
+		kdeSuccess := sendViaKDEConnect(task.ZipPath, func(msg string, pct float64) {
 			task.Message = msg
 			task.Progress = pct
 		})
-	}
-
-	if localsendSuccess {
-		task.Status = "completed"
-		task.Progress = 1.0
-		task.Message = "Sent to phone via LocalSend successfully!"
-	} else if useLocalSend && task.Transfer == "localsend" {
-		task.Status = "failed"
-		task.Message = "LocalSend push failed (Please ensure LocalSend app is open on phone)"
-		task.Error = "LocalSend receiver unreachable on port 53317"
-	} else {
-		// Pre-package ZIP archive for instant direct streaming
-		task.Message = fmt.Sprintf("Packaging %d file(s) (%.1f MB)...", len(newFiles), sizeMB)
-		task.Progress = 0.90
-
-		tmpZip := filepath.Join(os.TempDir(), fmt.Sprintf("zine_%s.zip", task.TaskID))
-		if err := createZipArchive(tmpZip, targetRoot, newFiles); err == nil {
-			task.ZipPath = tmpZip
-		} else {
-			log.Printf("Warning: Could not pre-package zip for task %s: %v", task.TaskID, err)
+		if kdeSuccess {
+			task.Status = "completed"
+			task.Progress = 1.0
+			task.Message = fmt.Sprintf("Delivered via KDE Connect (Saved in Download/%s)", zipFileName)
+			return
 		}
-
-		task.Status = "completed"
-		task.Progress = 1.0
-		task.Message = fmt.Sprintf("Media ready for direct download (%.1f MB)", sizeMB)
+		log.Println("KDE Connect delivery failed or device unreachable, falling back...")
 	}
+
+	// Priority 2: LocalSend
+	useLocalSend := (task.Transfer == "localsend") || (task.Transfer == "hybrid" && sizeMB > 500.0)
+	if useLocalSend && task.TargetIP != "" {
+		task.Status = "transferring"
+		task.Message = fmt.Sprintf("Payload (%.1f MB) -> LocalSend transfer...", sizeMB)
+		localsendSuccess := sendViaLocalSend(task.TargetIP, newFiles, targetRoot, func(msg string, pct float64) {
+			task.Message = msg
+			task.Progress = pct
+		})
+		if localsendSuccess {
+			task.Status = "completed"
+			task.Progress = 1.0
+			task.Message = "Sent to phone via LocalSend successfully!"
+			return
+		}
+	}
+
+	// Priority 3: Direct Stream (HTTP fallback)
+	task.Status = "completed"
+	task.Progress = 1.0
+	task.Message = fmt.Sprintf("Media ready for direct download (%.1f MB)", sizeMB)
 }
 
 func main() {
