@@ -218,18 +218,38 @@ class LocalSendClient:
                 progress_cb(f"Sending {f_path.name} ({uploaded_count}/{total_files})", pct)
 
             upload_url = f"{protocol}://{target_ip}:{port}/api/localsend/v2/upload?sessionId={session_id}&fileId={file_id}&token={token}"
+            file_size = f_path.stat().st_size
             try:
+                # Chunked streaming upload — never loads entire file into RAM
+                # Uses a raw HTTPConnection to stream with Content-Length set upfront
+                import http.client
+                conn_host = target_ip
+                conn_port = port
+                connection = http.client.HTTPConnection(conn_host, conn_port, timeout=120)
+                connection.connect()
+                connection.putrequest("POST", f"/api/localsend/v2/upload?sessionId={session_id}&fileId={file_id}&token={token}")
+                connection.putheader("Content-Type", "application/octet-stream")
+                connection.putheader("Content-Length", str(file_size))
+                connection.endheaders()
+
+                bytes_sent = 0
+                chunk_size = 65536  # 64 KB chunks
                 with open(f_path, "rb") as fp:
-                    upload_req = urllib.request.Request(
-                        upload_url,
-                        data=fp.read(),  # stream upload
-                        headers={"Content-Type": "application/octet-stream"},
-                        method="POST"
-                    )
-                    with urllib.request.urlopen(upload_req, timeout=60.0) as up_resp:
-                        if up_resp.status != 200:
-                            logger.error(f"Failed uploading {f_path.name}: {up_resp.status}")
-                            return False
+                    while True:
+                        chunk = fp.read(chunk_size)
+                        if not chunk:
+                            break
+                        connection.send(chunk)
+                        bytes_sent += len(chunk)
+
+                response = connection.getresponse()
+                response_status = response.status
+                response.read()  # drain
+                connection.close()
+
+                if response_status != 200:
+                    logger.error(f"Failed uploading {f_path.name}: HTTP {response_status}")
+                    return False
             except Exception as e:
                 logger.error(f"Error streaming file {f_path.name} to {target_ip} -> {e}")
                 return False
