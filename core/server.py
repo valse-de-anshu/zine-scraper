@@ -19,7 +19,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Dict, Any, List
 
@@ -106,7 +106,10 @@ def run_scrape_worker(task: ScrapeTask):
     is_quick_grab = (task.mode == "quick_grab")
 
     try:
-        # Pass flags and limit into route_url
+        # Check if metadata-only flag is active
+        is_metadata_only = any(f in ["--meta", "--metadata"] for f in (task.flags or []))
+
+        # Pass flags, limit, and metadata mode into route_url
         success = route_url(
             task.url,
             history,
@@ -116,7 +119,8 @@ def run_scrape_worker(task: ScrapeTask):
             batch_quick_grab=is_quick_grab,
             batch_all=(task.mode == "vacuum" and not task.limit),
             flags=task.flags if task.flags else None,
-            chapter_limit=task.limit
+            chapter_limit=task.limit,
+            only_metadata=is_metadata_only
         )
 
         files_after = set(target_root.rglob("*"))
@@ -431,7 +435,8 @@ def run_udp_beacon(server_port: int, stop_event: threading.Event):
     beacon_sock.close()
 
 def start_server(port: int = 53318, host: str = "0.0.0.0"):
-    server = HTTPServer((host, port), ZineServerHandler)
+    server = ThreadingHTTPServer((host, port), ZineServerHandler)
+    server.daemon_threads = True
     stop_event = threading.Event()
     beacon_thread = threading.Thread(target=run_udp_beacon, args=(port, stop_event), daemon=True)
     beacon_thread.start()
