@@ -167,21 +167,34 @@ class LocalSendClient:
         if pin:
             prepare_url += f"?pin={pin}"
 
-        try:
-            req_data = json.dumps(prepare_payload).encode("utf-8")
-            req = urllib.request.Request(
-                prepare_url,
-                data=req_data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=10.0) as resp:
-                if resp.status != 200:
-                    logger.error(f"prepare-upload failed with status {resp.status}")
+        res_json = None
+        for attempt in range(5):
+            try:
+                req_data = json.dumps(prepare_payload).encode("utf-8")
+                req = urllib.request.Request(
+                    prepare_url,
+                    data=req_data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=10.0) as resp:
+                    if resp.status == 200:
+                        res_json = json.loads(resp.read().decode("utf-8"))
+                        break
+                    else:
+                        logger.error(f"prepare-upload failed with status {resp.status}")
+                        return False
+            except Exception as e:
+                if attempt < 4:
+                    if progress_cb:
+                        progress_cb(f"Connecting to LocalSend on phone ({attempt+1}/5)...", 0.05)
+                    import time
+                    time.sleep(1.2)
+                else:
+                    logger.error(f"Failed to communicate with LocalSend receiver at {target_ip}:{port} -> {e}")
                     return False
-                res_json = json.loads(resp.read().decode("utf-8"))
-        except Exception as e:
-            logger.error(f"Failed to communicate with LocalSend receiver at {target_ip}:{port} -> {e}")
+
+        if not res_json:
             return False
 
         session_id = res_json.get("sessionId")
