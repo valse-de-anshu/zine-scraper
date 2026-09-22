@@ -265,12 +265,55 @@ def run_udp_beacon(server_port: int, stop_event: threading.Event):
         "version": "2.1"
     }).encode("utf-8")
 
+def get_lan_ips() -> List[str]:
+    ips = []
+    try:
+        import socket
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip not in ips:
+            ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
+def run_udp_beacon(server_port: int, stop_event: threading.Event):
+    """
+    Broadcasts UDP announcements on LAN so Hwaran can automatically find the server.
+    """
+    import socket
+    beacon_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    beacon_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    beacon_data = json.dumps({
+        "service": "zine-scraper-server",
+        "port": server_port,
+        "version": "2.1"
+    }).encode("utf-8")
+
+    lan_ips = get_lan_ips()
+    broadcast_targets = ["255.255.255.255", "<broadcast>"]
+    for ip in lan_ips:
+        parts = ip.split(".")
+        if len(parts) == 4:
+            broadcast_targets.append(f"{parts[0]}.{parts[1]}.{parts[2]}.255")
+
     while not stop_event.is_set():
-        try:
-            beacon_sock.sendto(beacon_data, ("<broadcast>", 53318))
-        except Exception:
-            pass
-        time.sleep(3.0)
+        for target in broadcast_targets:
+            try:
+                beacon_sock.sendto(beacon_data, (target, 53318))
+            except Exception:
+                pass
+        time.sleep(2.5)
     beacon_sock.close()
 
 def start_server(port: int = 53318, host: str = "0.0.0.0"):
@@ -279,9 +322,18 @@ def start_server(port: int = 53318, host: str = "0.0.0.0"):
     beacon_thread = threading.Thread(target=run_udp_beacon, args=(port, stop_event), daemon=True)
     beacon_thread.start()
 
-    print(f"\n[Zine Scraper Server] Listening on http://{host}:{port}")
-    print("[Zine Scraper Server] Automatic LAN discovery beacon active on UDP 53318")
-    print("[Zine Scraper Server] Press Ctrl+C to stop.\n")
+    lan_ips = get_lan_ips()
+    primary_ip = lan_ips[0] if lan_ips else "127.0.0.1"
+
+    print("\n" + "=" * 60)
+    print(" 🚀 [Zine Scraper Server] Active & Listening!")
+    print(f"    • Local URL:   http://127.0.0.1:{port}")
+    for ip in lan_ips:
+        print(f"    • Network URL: http://{ip}:{port}")
+    print("=" * 60)
+    print(f" 📡 LAN Discovery Beacon broadcasting on UDP {port}")
+    print(f" 📱 In Hwaran on your phone, connect to: {primary_ip}:{port}")
+    print("    Press Ctrl+C to stop.\n")
 
     try:
         server.serve_forever()
