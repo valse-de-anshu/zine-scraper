@@ -665,3 +665,45 @@ Zine Scraper is licensed under the **[Creative Commons Attribution-NonCommercial
 * 🔄 **Share-Alike (`SA`)**: If you remix, adapt, or build upon this codebase, you must distribute your contributions under the exact same license terms.
 * 🛡️ **Personal Archival Disclaimer**: This software is provided as-is, strictly for personal, non-commercial media archiving and offline backup. Always respect content creators, rights holders, and platform terms of service.
 
+---
+
+<div align="center">
+
+## 🔗 Soulmate App
+
+<a href="https://github.com/valse-de-anshu/hwaran">
+  <img src="assets/hwaran_banner.png" alt="Hwaran Hero Banner" width="100%" />
+</a>
+
+<a href="https://github.com/valse-de-anshu/hwaran">
+  <img src="assets/hwaran.png" alt="Hwaran" width="100%" />
+</a>
+
+### [Hwaran (화란)](https://github.com/valse-de-anshu/hwaran) — *The Experience That Completes Zine*
+
+Zine Scraper is the **supply chain**. Hwaran is the **experience**.
+
+Everything Zine downloads is structured, tagged, and ready for instant import into Hwaran — a modern, privacy-first, 100% offline Android media vault.
+
+| What Zine Scraper Does | What Hwaran Does |
+|:---|:---|
+| 🌐 Scrapes 48+ platforms (manga, anime, music, novels, video) | 📱 Reads, watches, and plays everything offline |
+| 📦 Generates `.zine/*.json` metadata + cover art | 🏷️ Imports metadata with 1-tap SAF import |
+| 📂 Structures folders for instant Hwaran import | 🔒 Vaults content behind biometric/PIN protection |
+| 🎵 Downloads lossless FLAC + synced `.lrc` lyrics | 🎶 Plays with 8 reactive Canvas shaders + lyrics sync |
+| 🤖 AI TTS audiobooks + AI subtitle generation | 📖 Renders books, PDFs, and novels with checkpoints |
+
+<br>
+
+<img src="assets/hwaran_preview.jpg" alt="Hwaran App Preview" width="60%" />
+
+<br>
+
+**One scrapes. One plays. Built for each other.**
+
+[![Hwaran](https://img.shields.io/badge/Hwaran-Android%20Media%20Vault-7F52FF?style=for-the-badge)](https://github.com/valse-de-anshu/hwaran)
+[![Zine Scraper](https://img.shields.io/badge/Zine%20Scraper-Companion%20CLI-orange?style=for-the-badge)](https://github.com/valse-de-anshu/zine-scraper)
+
+<sub>Crafted with passion for offline media enthusiasts.</sub>
+
+</div>
