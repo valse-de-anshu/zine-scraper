@@ -66,6 +66,8 @@ class ScrapeTask:
         self.base_dir: Path = Path()
         self.error: str = ""
         self.media_title: str = ""
+        self.zip_path: Optional[Path] = None
+        self.created_at: float = time.time()
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -81,7 +83,8 @@ class ScrapeTask:
             "media_title": self.media_title,
             "error": self.error,
             "device_name": self.device_name,
-            "device_brand": self.device_brand
+            "device_brand": self.device_brand,
+            "created_at": self.created_at
         }
 
 def run_scrape_worker(task: ScrapeTask):
@@ -209,6 +212,21 @@ def run_scrape_worker(task: ScrapeTask):
                 task.message = "LocalSend push failed (Please ensure LocalSend app is open on phone)"
                 task.error = "LocalSend receiver unreachable on port 53317"
             else:
+                # Pre-package ZIP asynchronously in background thread so download starts instantly without blocking
+                task.message = f"Packaging {len(new_files)} file(s) ({size_mb:.1f} MB)..."
+                task.progress = 0.90
+                try:
+                    import tempfile
+                    tmp_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+                    with zipfile.ZipFile(tmp_zip.name, "w", zipfile.ZIP_STORED) as zf:
+                        for f in new_files:
+                            if f.exists() and f.is_file():
+                                arcname = str(f.relative_to(target_root)) if f.is_relative_to(target_root) else f.name
+                                zf.write(f, arcname=arcname)
+                    task.zip_path = Path(tmp_zip.name)
+                except Exception as ze:
+                    logger.warning(f"Could not pre-package zip: {ze}")
+
                 task.status = "completed"
                 task.progress = 1.0
                 task.message = f"Media ready for direct download ({size_mb:.1f} MB)"
@@ -220,6 +238,8 @@ def run_scrape_worker(task: ScrapeTask):
         task.error = str(e)
 
 class ZineServerHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, format, *args):
         logger.debug("%s - - [%s] %s" % (self.address_string(), self.log_date_time_string(), format % args))
 
@@ -231,14 +251,19 @@ class ZineServerHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Connection", "keep-alive")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Connection", "keep-alive")
         self.end_headers()
 
     def do_GET(self):
@@ -252,12 +277,16 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 "version": "2.1",
                 "server_time": time.time()
             })
+        elif path == "/api/tasks":
+            all_tasks = [t.to_dict() for t in tasks.values()]
+            all_tasks.sort(key=lambda t: t.get("created_at", 0), reverse=True)
+            self._send_json(200, {"tasks": all_tasks})
         elif path == "/api/discover":
             client = LocalSendClient()
             devices = client.discover_devices(timeout=1.5)
             self._send_json(200, {"devices": devices})
         elif path.startswith("/api/tasks/"):
-            task_id = path.substringAfter("/api/tasks/") if hasattr(path, "substringAfter") else path.replace("/api/tasks/", "").strip()
+            task_id = path.replace("/api/tasks/", "").strip()
             task = tasks.get(task_id)
             if task:
                 self._send_json(200, task.to_dict())
@@ -266,33 +295,45 @@ class ZineServerHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/download/"):
             task_id = path.replace("/api/download/", "").strip()
             task = tasks.get(task_id)
-            if not task or not task.downloaded_files:
-                self._send_json(404, {"error": "Files not ready or task not found"})
+            if not task:
+                self._send_json(404, {"error": "Task not found"})
                 return
 
-            # Stream files as a single ZIP archive directly to the client (ZIP_STORED avoids recompressing already compressed media)
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix=".zip") as tmp_zip:
+            zip_to_stream = task.zip_path
+            if not zip_to_stream or not zip_to_stream.exists():
+                if not task.downloaded_files:
+                    self._send_json(404, {"error": "Files not ready or task not found"})
+                    return
+                # On-the-fly fallback packaging
+                import tempfile
+                tmp_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
                 with zipfile.ZipFile(tmp_zip.name, "w", zipfile.ZIP_STORED) as zf:
                     for f in task.downloaded_files:
                         if f.exists() and f.is_file():
                             arcname = str(f.relative_to(task.base_dir)) if f.is_relative_to(task.base_dir) else f.name
                             zf.write(f, arcname=arcname)
+                zip_to_stream = Path(tmp_zip.name)
+                task.zip_path = zip_to_stream
 
-                file_size = os.path.getsize(tmp_zip.name)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Length", str(file_size))
-                self.send_header("Content-Disposition", f'attachment; filename="zine_{task_id}.zip"')
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
+            file_size = zip_to_stream.stat().st_size
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Content-Disposition", f'attachment; filename="zine_{task_id}.zip"')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
 
-                with open(tmp_zip.name, "rb") as f_in:
-                    while True:
-                        chunk = f_in.read(65536)
-                        if not chunk:
-                            break
+            with open(zip_to_stream, "rb") as f_in:
+                while True:
+                    chunk = f_in.read(65536)
+                    if not chunk:
+                        break
+                    try:
                         self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        logger.warning(f"Download stream aborted by client for task {task_id}")
+                        break
         else:
             self._send_json(404, {"error": "Endpoint not found"})
 
