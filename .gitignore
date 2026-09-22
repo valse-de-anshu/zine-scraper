@@ -66,12 +66,14 @@ _temp_/
 zine tts/
 */zine tts/*
 zine breeze/
+voices/
+*/voices/*
 *.raw_pcm
 *.pcm
 *.breeze
 
 # AI Models & Multi-Gigabyte Binary Weights (Strictly Ignored)
-Models/STT/*
+Models/STT/faster-whisper*
 !Models/STT/.gitkeep
 Models/TTS/*.gguf
 Models/TTS/*.bin

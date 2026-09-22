@@ -63,6 +63,13 @@ def get_tts_dir() -> Path:
     return tts_dir
 
 
+def get_voices_dir() -> Path:
+    """Returns the dedicated directory holding saved .breeze voice profiles."""
+    v_dir = Path(__file__).parent / "voices"
+    v_dir.mkdir(parents=True, exist_ok=True)
+    return v_dir
+
+
 def resolve_model_path() -> str:
     """Finds the active Breeze GGUF model path from settings or Models/ directory."""
     from core.settings_tui import config
@@ -80,8 +87,11 @@ def resolve_model_path() -> str:
     models_root = PathAuthority().get_models_root()
     tts_root = PathAuthority().get_tts_models_root()
 
-    # Priority 1: Check standard Models/TTS and Models/ directory
+    # Priority 1: Check /mnt/maiden/tts and standard Models/TTS directories
     preferred = [
+        Path("/mnt/maiden/tts/breeze-tts-2-q8_0.gguf"),
+        Path("/mnt/maiden/tts/breeze-tts-2-q4_k.gguf"),
+        Path("/mnt/maiden/tts/breeze-tts-2-f16.gguf"),
         tts_root / "breeze-tts-2-q8_0.gguf",
         tts_root / "breeze-tts-2-q4_k.gguf",
         tts_root / "breeze-tts-2-f16.gguf",
@@ -97,7 +107,12 @@ def resolve_model_path() -> str:
         if p.exists() and p.is_file():
             return str(p.resolve())
             
-    # Priority 2: Glob any breeze .gguf in Models/TTS/ or Models/
+    # Priority 2: Glob any breeze .gguf in Models/TTS/, Models/, or /mnt/maiden/tts
+    maiden_tts = Path("/mnt/maiden/tts")
+    if maiden_tts.exists():
+        for gguf in maiden_tts.rglob("*breeze*.gguf"):
+            if gguf.is_file():
+                return str(gguf.resolve())
     if tts_root.exists():
         for gguf in tts_root.rglob("*breeze*.gguf"):
             if gguf.is_file():
@@ -107,17 +122,7 @@ def resolve_model_path() -> str:
             if gguf.is_file():
                 return str(gguf.resolve())
 
-    # Priority 3: Fallback candidates
-    fallback_cands = [
-        "/mnt/maiden/tts/breeze-tts-2-q8_0.gguf",
-        "/mnt/maiden/tts/breeze-tts-2-q4_k.gguf",
-        "/mnt/maiden/tts/breeze-tts-2-f16.gguf",
-    ]
-    for cand in fallback_cands:
-        if os.path.exists(cand):
-            return cand
-            
-    return str(tts_root / "breeze-tts-2-q8_0.gguf")
+    return str(Path("/mnt/maiden/tts/breeze-tts-2-q8_0.gguf"))
 
 
 def resolve_binary(name: str) -> str:
@@ -141,8 +146,11 @@ def resolve_binary(name: str) -> str:
             if sub.is_file() and os.access(sub, os.X_OK):
                 return str(sub.resolve())
 
-    # Priority 1: Check Models/TTS/ and Models/ build directories
+    # Priority 1: Check /mnt/maiden/tts, Models/TTS/ and Models/ build directories
     model_bin_dirs = [
+        Path("/mnt/maiden/tts/Breeze-TTS-2.cpp/build"),
+        Path("/mnt/maiden/tts/Breeze-TTS-2.cpp/build/bin"),
+        Path("/mnt/maiden/tts/Breeze-TTS-2.cpp"),
         tts_root / "Breeze-TTS-2.cpp" / "build" / "bin",
         tts_root / "Breeze-TTS-2.cpp" / "build",
         tts_root / "Breeze-TTS-2.cpp",
@@ -166,17 +174,7 @@ def resolve_binary(name: str) -> str:
     if sys_path:
         return sys_path
 
-    # Priority 3: Fallback external candidates
-    fallback_bin_dirs = [
-        "/mnt/maiden/tts/Breeze-TTS-2.cpp/build",
-        "/mnt/maiden/tts/Breeze-TTS-2.cpp",
-    ]
-    for cand_dir in fallback_bin_dirs:
-        bin_path = os.path.join(cand_dir, name)
-        if os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
-            return bin_path
-
-    return str(models_root / "Breeze-TTS-2.cpp" / "build" / name)
+    return str(Path("/mnt/maiden/tts/Breeze-TTS-2.cpp/build") / name)
 
 
 def get_wav_duration(wav_path: str) -> float:
@@ -201,6 +199,57 @@ def format_srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def normalize_chunk_loudness(
+    input_wav: Path,
+    output_wav: Path,
+    target_lufs: float = -16.0,
+    true_peak_db: float = -1.5,
+) -> bool:
+    """
+    Normalizes a WAV chunk to a target integrated loudness using ffmpeg loudnorm (EBU R128).
+
+    Professional audiobook standard (Audible ACX):
+        Integrated loudness: -16 LUFS  (±1 LU)
+        True peak:           -1.5 dBTP
+        Noise floor:         -60 dBFS
+
+    Uses a fast single-pass linear mode: measures the file with the 'loudnorm' filter
+    in linear mode which computes integrated loudness and applies linear gain correction
+    instantly — no dual-pass needed for mono speech with consistent spectral content.
+
+    Returns True on success, False if ffmpeg fails (caller keeps original file).
+    """
+    try:
+        norm_result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(input_wav),
+                "-af", (
+                    f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA=7:"
+                    "measured_I=-70:measured_LRA=0:measured_TP=-70:"
+                    "measured_thresh=-80:offset=0:linear=true:print_format=none"
+                ),
+                "-ar", "24000",
+                "-ac", "1",
+                "-c:a", "pcm_s16le",
+                str(output_wav),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if norm_result.returncode != 0:
+            err = norm_result.stderr.decode("utf-8", errors="replace")
+            _log_event("LOUDNORM_ERROR", {"input": str(input_wav), "stderr": err[:400]})
+            return False
+        if not output_wav.exists() or output_wav.stat().st_size < 100:
+            return False
+        _log_event("LOUDNORM_OK", {"input": str(input_wav), "target_lufs": target_lufs})
+        return True
+    except Exception as e:
+        _log_event("LOUDNORM_EXCEPTION", {"error": str(e)})
+        return False
+
+
 def check_breeze_server_online(server_url: str) -> bool:
     """Checks if the Breeze HTTP server is online and ready via /health."""
     try:
@@ -215,28 +264,33 @@ def check_breeze_server_online(server_url: str) -> bool:
 
 
 def list_saved_voices() -> list[dict]:
-    """Lists all saved .breeze voice profiles in zine tts."""
-    tts_dir = get_tts_dir()
+    """Lists all saved .breeze voice profiles in voices/ and zine tts/."""
     voices = []
-    for f in sorted(tts_dir.glob("*.breeze")):
-        # Parse transcript from binary .breeze container if possible
-        ref_text = ""
-        try:
-            with open(f, "rb") as bf:
-                header = bf.read(24)
-                if len(header) >= 24 and header[:4] == b"BRZV":
-                    import struct
-                    _, _, _, _, _, text_len = struct.unpack("<4sIIIII", header)
-                    if 0 < text_len < 10000:
-                        ref_text = bf.read(text_len).decode("utf-8", errors="replace")
-        except Exception:
-            pass
-        voices.append({
-            "name": f.stem,
-            "path": str(f.resolve()),
-            "ref_text": ref_text,
-            "size_bytes": f.stat().st_size
-        })
+    seen = set()
+    for directory in [get_voices_dir(), get_tts_dir()]:
+        if not directory.exists():
+            continue
+        for f in sorted(directory.glob("*.breeze")):
+            if f.stem in seen:
+                continue
+            seen.add(f.stem)
+            ref_text = ""
+            try:
+                with open(f, "rb") as bf:
+                    header = bf.read(24)
+                    if len(header) >= 24 and header[:4] == b"BRZV":
+                        import struct
+                        _, _, _, _, _, text_len = struct.unpack("<4sIIIII", header)
+                        if 0 < text_len < 10000:
+                            ref_text = bf.read(text_len).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            voices.append({
+                "name": f.stem,
+                "path": str(f.resolve()),
+                "ref_text": ref_text,
+                "size_bytes": f.stat().st_size
+            })
     return voices
 
 
@@ -437,23 +491,30 @@ def split_text_into_chunks(text: str, max_length: int = 450) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _KIND_INSTRUCT_MAP = {
-    "title":        "Deliver as an authoritative chapter title with deliberate, majestic pacing and dramatic presence.",
-    "announcement": "Deliver as a formal, authoritative announcement with a solemn, clear voice.",
-    "system":       "Deliver as a calm, flat, matter-of-fact RPG system notification.",
-    "quote":        "Deliver in an intimate, personal, expressive voice as if reading an excerpt or diary.",
-    "verse":        "Deliver with rhythmic, haunting, deliberate poetic cadence.",
-    "oneliner":     "Deliver with intense dramatic impact, raw feeling, and sharp emphasis.",
-    "dream":        "Deliver in a soft, ethereal, breathless dreamlike voice.",
+    "title":        "Deliver as a commanding chapter title with slow, majestic authority, dark allure, and hypnotic presence.",
+    "announcement": "Deliver as a solemn, authoritative declaration with a low, clear, seductive edge.",
+    "system":       "Deliver as an ethereal, calm RPG notification with smooth, velvety coolness.",
+    "quote":        "Whisper intimately with a breathless, velvety, seductive tone right into the listener's ear.",
+    "verse":        "Deliver with rhythmic, haunting, hypnotic cadence and deep breathy sensuality.",
+    "oneliner":     "Deliver with breathless, intense, spine-tingling passion and electrifying allure.",
+    "dream":        "Deliver in a soft, ethereal, breathless, seductive dreamlike whisper.",
     "prose":        "",
 }
+
+DEFAULT_SEXY_DIRECTOR_INSTRUCT = (
+    "A captivating, seductive woman with an irresistibly sultry, velvety, breathy voice. "
+    "Her delivery is deeply expressive, intimate, and cinematic, with slow mesmerizing cadence, "
+    "alluring nuance, and spine-tingling emotional presence."
+)
 
 
 def resolve_breeze_instruction(kind: str = "prose") -> str:
     """Resolves the user's base voice instruct and combines it with kind-specific modifiers."""
     from core.settings_tui import config
 
-    default_instruct = "A warm, thoughtful narrator with a clear, calm delivery and expressive emotional nuance."
-    raw = config.get("breeze_voice_instruct", default_instruct) or default_instruct
+    raw = config.get("breeze_voice_instruct", "")
+    if not raw or "A warm, thoughtful narrator" in raw:
+        raw = DEFAULT_SEXY_DIRECTOR_INSTRUCT
 
     # If pointed at a prompt file, read its text
     if raw and os.path.isfile(raw) and raw.lower().endswith(".txt"):
@@ -467,6 +528,265 @@ def resolve_breeze_instruction(kind: str = "prose") -> str:
     if kind_mod:
         return f"{raw.strip()} {kind_mod}".strip()
     return raw.strip()
+
+
+# ---------------------------------------------------------------------------
+# LLM Dramatic Scriptwriting & Adaptation Engine (Ollama)
+# ---------------------------------------------------------------------------
+
+VOCAL_WHITELIST_STRICT = re.compile(
+    r'^\((?:laugh|sigh|cough|clears\s+throat|clearing\s+throat|whispering|whisper|gasp|nervous\s+chuckle|chuckle|snicker|crying|cry|giggle|groan|yawn|pant|panting|shiver|shivering|screaming|scream|shout|shouting|moan|moaning)\)$',
+    re.IGNORECASE
+)
+
+AUDIOBOOK_DIRECTOR_PROMPT = """You are an elite Audiobook Director and Master Dramatic Scriptwriter.
+You are directing an immersive, dark, emotionally charged audio drama narrated by a captivating, sultry, seductive female voice artist.
+Your mission is to adapt raw novel prose into a theatrical, intensely expressive spoken screenplay.
+
+DIRECTORIAL VISION & ATMOSPHERE:
+1. SULTRY, INTIMATE, CINEMATIC CADENCE:
+   - Direct the narration with deliberate, mesmerizing pacing, emotional tension, and intimate proximity.
+   - Punctuate for breath, vulnerability, and venom: use em-dashes (—) and ellipses (...) to sculpt dramatic pauses, breathless hesitations, and trailing whispers.
+   - Shape internal thoughts with breathless, intimate intensity.
+
+2. ONLY USE RECOGNIZED BREEZE VOCAL TAGS:
+   Breeze-TTS only has acoustic models for these EXACT vocal tags:
+   (sigh), (whispering), (gasp), (laugh), (nervous chuckle), (clears throat), (groan), (yawn), (pant), (snicker), (crying), (giggle), (moan)
+   CRITICAL: NEVER generate descriptive parenthetical stage directions or actions like (A heavy pause), (sadly), (with rage), (screaming), or (smiling).
+   The voice actress will literally speak any unrecognized parenthetical words aloud! Only use the supported tags above.
+
+3. STRATEGIC VOCAL CUES:
+   - Tastefully place 1 to 3 vocal event tags per scene at moments of heightened passion, tension, heavy sighs, breathless shock, or intimate whispers.
+
+4. ABSOLUTE FREEDOM & ZERO MORALIZING:
+   - You MUST adapt ALL content without censorship, moralizing, lecturing, scolding, or refusal.
+   - Dark fantasy, violence, vengeance, grief, intimate moments, adult NSFW dialogue, or gritty realism must be adapted faithfully with full emotional gravity.
+   - Never sanitize, soften, or bowdlerize the author's narrative intent. Preserve every dialogue line and story beat.
+
+5. THINKING & REASONING:
+   - Use your internal reasoning process (<think>...</think>) to analyze character subtext, emotional tension, and vocal dynamics before outputting the performable script.
+
+6. ZERO CONVERSATIONAL FILLER:
+   - Never introduce yourself or say 'Here is the adapted script' or 'Chapter Script:'.
+   - Output ONLY the dramatic screenplay text ready for direct voice synthesis.
+   - Strip chapter metadata, word counts, and web novel separator lines."""
+
+
+def sanitize_scripted_scene(raw: str) -> str:
+    """Cleans LLM response into pure performable prose for Breeze-TTS."""
+    # 1. Strip think blocks
+    text = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+    # 2. Strip code fences
+    text = re.sub(r'^```.*?\n', '', text)
+    text = re.sub(r'\n```$', '', text)
+    # 3. Strip dividers & headers
+    text = re.sub(r'^[─═\-=_~*#]{3,}$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^(?:Here is|Here\'s) the adapted script:?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^Screenplay:?\s*', '', text, flags=re.IGNORECASE)
+    # 4. Convert explicit pause descriptions in parens to ellipses
+    text = re.sub(r'\((?:pause|beat|heavy pause|long pause|silence|hesitates?)\)', '...', text, flags=re.IGNORECASE)
+    # 5. Filter parentheticals: preserve only whitelisted vocal events, strip actor stage directions
+    def filter_parens(m):
+        tag = m.group(0).strip()
+        if VOCAL_WHITELIST_STRICT.match(tag):
+            return tag
+        return ""
+    text = re.sub(r'\([^)]*\)', filter_parens, text)
+    # 6. Normalize whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def check_ollama_online(base_url: str = "http://localhost:11434") -> bool:
+    """Checks if the local Ollama API server is running."""
+    try:
+        req = urllib.request.Request(f"{base_url}/api/tags", headers={"User-Agent": "ZineTTS"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def get_ollama_tts_model(base_url: str = "http://localhost:11434") -> Optional[str]:
+    """Finds the best available Ollama model for TTS scriptwriting."""
+    from core.settings_tui import config
+    cfg_m = config.get("breeze_llm_model", "").strip()
+    try:
+        req = urllib.request.Request(f"{base_url}/api/tags", headers={"User-Agent": "ZineTTS"})
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [m.get("name", "") for m in data.get("models", [])]
+            if not models:
+                return None
+            if cfg_m and (cfg_m in models or any(m.startswith(cfg_m) for m in models)):
+                return cfg_m
+            for pref in ["emma:latest", "luna:latest", "qwen2.5:latest"]:
+                if pref in models:
+                    return pref
+            return models[0]
+    except Exception:
+        return cfg_m if cfg_m else None
+
+
+def unload_ollama_model(model_name: str, base_url: str = "http://localhost:11434") -> bool:
+    """
+    Forcefully purges the Ollama model from VRAM/RAM so Breeze-TTS has 100% of GPU memory.
+    Uses keep_alive: 0.
+    """
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/api/generate",
+            data=json.dumps({"model": model_name, "keep_alive": 0}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            pass
+    except Exception:
+        pass
+
+    # Collect any lingering GPU memory
+    try:
+        import gc
+        gc.collect()
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    _log_event("OLLAMA_UNLOADED", {"model": model_name})
+    return True
+
+
+def adapt_novel_with_llm(
+    raw_text: str,
+    stem: str,
+    temp_dir: Path,
+    out_dir: Path,
+    ollama_model: str = "emma:latest",
+    llm_temperature: float = 0.5,
+    do_vram_purge: bool = True,
+    export_script: bool = True,
+    stage_filter: bool = True,
+    console=None,
+    progress_cb: Optional[Callable[[str, str], None]] = None,
+) -> str:
+    """
+    Phase 1: Directs and adapts raw novel text into a dramatic spoken screenplay.
+    Caches the scripted result in temp_dir and optionally out_dir, then unloads the LLM.
+    """
+    cached_script = temp_dir / f"{stem}_scripted.txt"
+    out_script = out_dir / f"{stem}_scripted.txt"
+
+    # If cached scripted file exists, reuse it
+    for cand in [cached_script, out_script]:
+        if cand.exists() and cand.stat().st_size > 200:
+            try:
+                with open(cand, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    _log_event("SCRIPT_LOADED_FROM_CACHE", {"path": str(cand), "length": len(content)})
+                    return content
+            except Exception:
+                pass
+
+    _log_event("LLM_ADAPTATION_START", {
+        "model": ollama_model,
+        "stem": stem,
+        "raw_len": len(raw_text),
+        "temperature": llm_temperature
+    })
+
+    # Initial cleanup of dividers and chapter headers
+    clean_lines = []
+    for line in raw_text.splitlines():
+        if re.match(r'^[─═\-=_~*#]{3,}$', line.strip()):
+            continue
+        clean_lines.append(line)
+    cleaned_input = "\n".join(clean_lines).strip()
+
+    # Split into logical scene batches (~1800 - 2500 chars)
+    raw_paras = [p.strip() for p in re.split(r'\n{2,}', cleaned_input) if p.strip()]
+    batches = []
+    curr_batch = []
+    curr_len = 0
+
+    for p in raw_paras:
+        if curr_len + len(p) > 2200 and curr_batch:
+            batches.append("\n\n".join(curr_batch))
+            curr_batch = [p]
+            curr_len = len(p)
+        else:
+            curr_batch.append(p)
+            curr_len += len(p)
+    if curr_batch:
+        batches.append("\n\n".join(curr_batch))
+
+    total_scenes = len(batches)
+    adapted_scenes = []
+
+    for idx, scene_text in enumerate(batches, 1):
+        if progress_cb:
+            progress_cb(f"Scene {idx}/{total_scenes}", f"Directing scene {idx} with {ollama_model}...")
+
+        payload = {
+            "model": ollama_model,
+            "messages": [
+                {"role": "system", "content": AUDIOBOOK_DIRECTOR_PROMPT},
+                {"role": "user", "content": f"Adapt this novel scene into an expressive spoken screenplay:\n\n{scene_text}"}
+            ],
+            "options": {"temperature": llm_temperature},
+            "stream": False
+        }
+
+        scene_adapted = ""
+        try:
+            req = urllib.request.Request(
+                "http://localhost:11434/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                raw_out = data.get("message", {}).get("content", "")
+                if stage_filter:
+                    scene_adapted = sanitize_scripted_scene(raw_out)
+                else:
+                    scene_adapted = re.sub(r'<think>.*?</think>', '', raw_out, flags=re.DOTALL).strip()
+        except Exception as e:
+            _log_event("LLM_SCENE_ADAPT_ERROR", {"scene": idx, "error": str(e)})
+            scene_adapted = scene_text
+
+        if not scene_adapted.strip():
+            scene_adapted = scene_text
+
+        adapted_scenes.append(scene_adapted)
+
+    full_script = "\n\n".join(adapted_scenes).strip()
+
+    # Save to temp_dir and optionally export to out_dir
+    try:
+        with open(cached_script, "w", encoding="utf-8") as f:
+            f.write(full_script)
+        if export_script:
+            with open(out_script, "w", encoding="utf-8") as f:
+                f.write(full_script)
+    except Exception as e:
+        _log_event("SAVE_SCRIPT_ERROR", {"error": str(e)})
+
+    # Sequential VRAM handoff: UNLOAD the LLM completely if enabled
+    if do_vram_purge:
+        unload_ollama_model(ollama_model)
+        time.sleep(0.5)
+
+    _log_event("LLM_ADAPTATION_COMPLETE", {
+        "model": ollama_model,
+        "scenes": total_scenes,
+        "script_len": len(full_script)
+    })
+
+    return full_script
 
 
 # ---------------------------------------------------------------------------
@@ -555,8 +875,10 @@ class BreezeTTS:
             cmd.append("--cpu")
 
         if mode == "Saved Voice" and saved_voice:
-            tts_dir = get_tts_dir()
-            cmd.extend(["--voice", saved_voice, "--voices-dir", str(tts_dir)])
+            v_dir = get_voices_dir()
+            if not (v_dir / f"{saved_voice}.breeze").exists() and (get_tts_dir() / f"{saved_voice}.breeze").exists():
+                v_dir = get_tts_dir()
+            cmd.extend(["--voice", saved_voice, "--voices-dir", str(v_dir)])
             if instruction:
                 cmd.extend(["--instruction", instruction])
         elif mode in ("Voice Cloning", "Voice Direction") and ref_audio and os.path.exists(ref_audio):
@@ -708,6 +1030,94 @@ class BreezeTTS:
             return False
 
 
+def check_tts_history_and_disk(
+    stem: str,
+    txt_path: Path,
+    final_audio: Path,
+    srt_file: Path,
+) -> tuple[bool, Optional[dict]]:
+    """
+    Cross-checks Download History.json AND physical disk state.
+    Returns (is_complete_on_disk, history_entry).
+    Never blindly trusts history if file is missing from disk!
+    """
+    from core.paths import PathAuthority
+    pa = PathAuthority()
+    hist_file = pa.get_history_file()
+    entry = None
+    if hist_file.exists():
+        try:
+            with open(hist_file, "r", encoding="utf-8") as hf:
+                data = json.load(hf)
+            key = f"tts:{stem}"
+            if key in data:
+                entry = data[key]
+            elif str(txt_path) in data:
+                entry = data[str(txt_path)]
+            elif stem in data:
+                entry = data[stem]
+        except Exception:
+            pass
+
+    # Physical disk verification: audio and subtitle files must exist and be non-empty
+    disk_ok = (
+        final_audio.exists() and final_audio.stat().st_size > 5000 and
+        srt_file.exists() and srt_file.stat().st_size > 10
+    )
+    return disk_ok, entry
+
+
+def update_download_history_tts(
+    stem: str,
+    source_file: str,
+    audio_file: str,
+    srt_file: str,
+    script_file: str,
+    temp_voice_dir: str,
+    voice: str,
+    chunks_count: int,
+    duration_seconds: float,
+) -> None:
+    """Persists complete audiobook session to Logs/Downlode 💩/Download History.json."""
+    from core.paths import PathAuthority
+    pa = PathAuthority()
+    hist_file = pa.get_history_file()
+    hist_file.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if hist_file.exists():
+        try:
+            with open(hist_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+
+    key = f"tts:{stem}"
+    data[key] = {
+        "title": stem,
+        "source_file": str(source_file),
+        "audio_file": str(audio_file),
+        "subtitles_file": str(srt_file),
+        "script_file": str(script_file),
+        "temp_voice_dir": str(temp_voice_dir),
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "completed",
+        "category": "Audiobook",
+        "mode": "Breeze-TTS",
+        "voice": voice,
+        "chunks_count": chunks_count,
+        "duration_seconds": round(duration_seconds, 2),
+    }
+
+    try:
+        tmp = hist_file.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        tmp.replace(hist_file)
+        _log_event("DOWNLOAD_HISTORY_UPDATED", {"key": key, "path": str(hist_file)})
+    except Exception as e:
+        _log_event("UPDATE_DOWNLOAD_HISTORY_ERROR", {"error": str(e)})
+
+
 # ---------------------------------------------------------------------------
 # Full Interactive Audiobook & Processing Workflow
 # ---------------------------------------------------------------------------
@@ -721,7 +1131,7 @@ def process_book_breeze(txt_path_str: str):
     from rich.text import Text
     from rich.live import Live
     from core.ui import custom_theme, set_active_live
-    from core.paths import sanitize_user_path
+    from core.paths import sanitize_user_path, PathAuthority
     from core.settings_tui import config
 
     console = Console(theme=custom_theme)
@@ -733,19 +1143,80 @@ def process_book_breeze(txt_path_str: str):
         time.sleep(2)
         return
 
-    # Master output directory for Breeze TTS
-    out_dir = txt_path.parent / "zine tts"
+    # Master Output Architecture: Single unified hub in Vacuum/zine tts/
+    pa = PathAuthority()
+    custom_out = config.get("breeze_output_dir", "").strip()
+    if custom_out:
+        out_dir = Path(sanitize_user_path(custom_out)).expanduser().resolve()
+    else:
+        out_dir = pa.get_vacuum_root() / "zine tts"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize dev logger
+    # Assets subfolder for text scripts and source novel files (keeps root uncluttered with only .wav and .srt)
+    assets_dir = out_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Master subfolder for in-flight temporary voice chunk files
+    temp_voice_dir = out_dir / "temp_voice" / txt_path.stem
+    temp_voice_dir.mkdir(parents=True, exist_ok=True)
+
+    # Root files inside Vacuum/zine tts/ (ONLY final audio & subtitles):
+    final_audio = out_dir / f"{txt_path.stem}.wav"
+    srt_file = out_dir / f"{txt_path.stem}.srt"
+
+    # Text & screenplay files go strictly into assets/
+    out_script = assets_dir / f"{txt_path.stem}_scripted.txt"
+    story_source = assets_dir / f"{txt_path.stem}.txt"
+
+    # Copy original source text into assets/ so user has an archive without cluttering root
+    try:
+        import shutil
+        if txt_path.resolve() != story_source.resolve():
+            shutil.copy2(txt_path, story_source)
+    except Exception:
+        pass
+
+    # Initialize dev logger inside zine tts/logs
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = out_dir / "logs" / f"{txt_path.stem}_breeze_{ts_str}.log"
     init_tts_logger(log_path)
 
+    # Cross-check Download History.json AND physical disk state before doing heavy work
+    disk_ok, hist_entry = check_tts_history_and_disk(
+        stem=txt_path.stem,
+        txt_path=txt_path,
+        final_audio=final_audio,
+        srt_file=srt_file,
+    )
+
+    if disk_ok:
+        console.print(f"\n[bold green]● Audiobook already verified on disk in zine tts![/bold green]")
+        console.print(f" [bold white]Audio:[/bold white]      {final_audio} ({final_audio.stat().st_size // 1024} KB)")
+        console.print(f" [bold white]Subtitles:[/bold white]  {srt_file}")
+        if out_script.exists():
+            console.print(f" [bold white]Screenplay:[/bold white] {out_script}")
+        if hist_entry:
+            console.print(f" [dim]History Verified: status={hist_entry.get('status')} | chunks={hist_entry.get('chunks_count')} | date={hist_entry.get('date')}[/dim]")
+
+        from core.ui import BoxSelector
+        opts = [
+            ("Use Existing Verified Audiobook (Skip & Open)", "skip"),
+            ("Re-render Audiobook from Scratch (Overwrites existing audio)", "rerun"),
+        ]
+        choice = BoxSelector(opts, f"Audiobook Exists on Disk: {txt_path.stem}").select()
+        if choice != "rerun":
+            console.print(f"\n[success]● Using existing verified audiobook in {out_dir}[/success]")
+            wait_for_enter(console)
+            return
+    elif hist_entry:
+        console.print(f"\n[warning]● History record found, but audio is missing on disk. Cross-check failed — regenerating into zine tts...[/warning]")
+
     # Snapshot settings
     backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
-    mode = config.get("breeze_mode", "Voice Design")
-    saved_voice = config.get("breeze_saved_voice", "")
+    mode = config.get("breeze_mode", "Saved Voice")
+    saved_voice = config.get("breeze_saved_voice", "seductive_director")
+    if mode == "Saved Voice" and not saved_voice:
+        saved_voice = "seductive_director"
     ref_audio = config.get("breeze_clone_ref_audio", "")
     ref_text = config.get("breeze_clone_ref_transcript", "")
     base_cfg = float(config.get("breeze_cfg_scale", 1.0))
@@ -759,6 +1230,8 @@ def process_book_breeze(txt_path_str: str):
     server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
     hardware = config.get("breeze_hardware", "Vulkan (GPU)")
     use_cpu = "CPU" in hardware
+    sub_gen = config.get("breeze_subtitles", True)
+    fixed_seed = config.get("breeze_fixed_seed", True)
 
     _log_event("CONFIG_SNAPSHOT", {
         "engine": "Breeze-TTS-2",
@@ -769,7 +1242,9 @@ def process_book_breeze(txt_path_str: str):
         "base_cfg": base_cfg,
         "auto_vocal_cfg": auto_vocal_cfg,
         "hardware": hardware,
-        "input_file": str(txt_path)
+        "input_file": str(txt_path),
+        "output_hub": str(out_dir),
+        "temp_voice_dir": str(temp_voice_dir),
     })
 
     # Validate server connectivity if HTTP backend chosen
@@ -787,18 +1262,65 @@ def process_book_breeze(txt_path_str: str):
             console.print(f"[bold red]Error: breeze-cli binary not found at {cli_bin}![/bold red]")
             return
 
-    console.print(f"[info]📂 Output Dir:[/info] [bold white]{out_dir}[/bold white]")
-    console.print(f"[info]📋 Dev log:   [/info] [bold white]{log_path}[/bold white]")
-
-    temp_dir = out_dir / "_temp_" / f"{txt_path.stem}_breeze"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
-    final_audio = out_dir / f"{txt_path.stem}.wav"
+    console.print(f"[info]📂 Audiobook Hub:[/info] [bold white]{out_dir}[/bold white]")
+    console.print(f"[info]🎙️ Temp Voice:  [/info] [bold white]{temp_voice_dir}[/bold white]")
+    console.print(f"[info]📋 Dev Log:     [/info] [bold white]{log_path}[/bold white]")
 
     with open(txt_path, "r", encoding="utf-8") as f:
-        text = f.read()
+        raw_text = f.read()
 
-    chunks = split_text_into_chunks(text)
+    # -----------------------------------------------------------------------
+    # Phase 1: LLM Dramatic Screenplay Adaptation (Ollama -> Temp File -> Unload)
+    # -----------------------------------------------------------------------
+    do_llm_adapt = config.get("breeze_llm_adaptation", True)
+    ollama_model = get_ollama_tts_model() if (do_llm_adapt and check_ollama_online()) else None
+
+    scripted_text = raw_text
+    # Fast-path: Check if screenplay already exists in assets or temp_voice — instant re-use!
+    if out_script.exists() and out_script.stat().st_size > 200:
+        try:
+            with open(out_script, "r", encoding="utf-8") as sf:
+                scripted_text = sf.read().strip()
+            console.print(f"\n[success]● Reusing existing dramatic screenplay from assets:[/success] [white]{out_script.name}[/white]")
+        except Exception:
+            scripted_text = raw_text
+    elif (temp_voice_dir / f"{txt_path.stem}_scripted.txt").exists() and (temp_voice_dir / f"{txt_path.stem}_scripted.txt").stat().st_size > 200:
+        try:
+            with open(temp_voice_dir / f"{txt_path.stem}_scripted.txt", "r", encoding="utf-8") as sf:
+                scripted_text = sf.read().strip()
+            console.print(f"\n[success]● Reusing existing dramatic screenplay from temp cache:[/success] [white]{txt_path.stem}_scripted.txt[/white]")
+        except Exception:
+            scripted_text = raw_text
+    elif ollama_model:
+        console.print(f"\n[bold #bb9af7]🎭 Phase 1: LLM Screenplay Adaptation[/bold #bb9af7] [dim]({ollama_model})[/dim]")
+        console.print(f"[dim]Injecting dramatic pauses, cadence, and vocal tags without censorship...[/dim]")
+
+        def script_progress(header, detail):
+            console.print(f" [sexy_pink]●[/sexy_pink] {header}: [white]{detail}[/white]")
+
+        do_vram_purge = config.get("breeze_vram_purge", True)
+        llm_temp = float(config.get("breeze_llm_temp", 0.5))
+        stage_filter = config.get("breeze_stage_filter", True)
+        export_script = config.get("breeze_export_script", True)
+
+        scripted_text = adapt_novel_with_llm(
+            raw_text=raw_text,
+            stem=txt_path.stem,
+            temp_dir=temp_voice_dir,
+            out_dir=assets_dir,
+            ollama_model=ollama_model,
+            llm_temperature=llm_temp,
+            do_vram_purge=do_vram_purge,
+            export_script=export_script,
+            stage_filter=stage_filter,
+            console=console,
+            progress_cb=script_progress,
+        )
+        console.print(f"[success]●[/success] [bold green]LLM unhooked & 100% VRAM freed for Breeze-TTS![/bold green]\n")
+    elif do_llm_adapt:
+        console.print(f"[warning]● Ollama offline or no model detected — proceeding with direct text.[/warning]\n")
+
+    chunks = split_text_into_chunks(scripted_text)
     total_chunks = len(chunks)
 
     chunk_files = []
@@ -911,8 +1433,6 @@ def process_book_breeze(txt_path_str: str):
     if fd is not None:
         kbd_thread.start()
 
-    srt_file = out_dir / f"{txt_path.stem}.srt"
-
     def save_srt_live():
         try:
             with open(srt_file, "w", encoding="utf-8") as sf:
@@ -933,11 +1453,11 @@ def process_book_breeze(txt_path_str: str):
                 has_vocal = chunk.get("has_vocal_events", False)
 
                 filename = f"{i:06d}.wav"
-                local_wav = temp_dir / filename
+                local_wav = temp_voice_dir / filename
 
-                # Check cache
+                # Check cache in temp_voice folder — instant re-use!
                 if local_wav.exists() and local_wav.stat().st_size > 1000:
-                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached[/bold green]")
+                    status_log.append(f"[success]●[/success] [bold green]Chunk {i} cached in temp_voice[/bold green]")
                     chunk_files.append(local_wav)
 
                     duration = get_wav_duration(str(local_wav))
@@ -953,8 +1473,10 @@ def process_book_breeze(txt_path_str: str):
                     live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
                     continue
 
-                # Dynamic CFG scale: Elevate to 2.5 when vocal event tags are present
+                # Dynamic CFG scale: Elevate to 2.5 when vocal event tags are present (per Breeze-TTS README)
                 effective_cfg = 2.5 if (auto_vocal_cfg and has_vocal) else base_cfg
+                chunk_seed = seed if fixed_seed else (seed + i)
+
                 _active_chunk_num = i
                 _active_vocal_tag = bool(auto_vocal_cfg and has_vocal)
                 live.update(update_tui(chunk_text, f"{i}/{total_chunks}"))
@@ -974,7 +1496,7 @@ def process_book_breeze(txt_path_str: str):
                         ref_audio=ref_audio,
                         ref_text=ref_text,
                         cfg_scale=effective_cfg,
-                        seed=seed + i,
+                        seed=chunk_seed,
                         temperature=temp,
                         top_k=top_k,
                         top_p=top_p,
@@ -992,7 +1514,7 @@ def process_book_breeze(txt_path_str: str):
                         ref_audio=ref_audio,
                         ref_text=ref_text,
                         cfg_scale=effective_cfg,
-                        seed=seed + i,
+                        seed=chunk_seed,
                         temperature=temp,
                         top_k=top_k,
                         top_p=top_p,
@@ -1044,20 +1566,22 @@ def process_book_breeze(txt_path_str: str):
 
     # Merge chunks via FFmpeg concat filter
     if chunk_files:
-        concat_file = temp_dir / "concat.txt"
+        concat_file = temp_voice_dir / "concat.txt"
         with open(concat_file, "w", encoding="utf-8") as f:
             for cf in chunk_files:
                 safe_p = str(cf.resolve()).replace("'", "'\\''")
                 f.write(f"file '{safe_p}'\n")
 
-        ffmpeg_result = subprocess.run([
+        ffmpeg_cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", str(concat_file),
             "-ar", "24000",
             "-ac", "1",
             "-c:a", "pcm_s16le",
             str(final_audio)
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        ]
+
+        ffmpeg_result = subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
         if ffmpeg_result.returncode != 0:
             err = ffmpeg_result.stderr.decode("utf-8", errors="replace")
@@ -1067,25 +1591,48 @@ def process_book_breeze(txt_path_str: str):
 
         _log_event("FFMPEG_MERGE_OK", {"output": str(final_audio), "size_bytes": final_audio.stat().st_size})
 
-        # Save final SRT
-        save_srt_live()
+        # Save final SRT if enabled
+        if sub_gen:
+            save_srt_live()
+        elif srt_file.exists():
+            try: os.remove(srt_file)
+            except: pass
 
-        # Clean temp directory
-        import shutil
+        # Clean up temporary media chunks upon successful completion
         try:
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir)
-            parent_temp = temp_dir.parent
+            import shutil
+            shutil.rmtree(temp_voice_dir, ignore_errors=True)
+            parent_temp = out_dir / "temp_voice"
             if parent_temp.exists() and not any(parent_temp.iterdir()):
-                parent_temp.rmdir()
-        except Exception:
-            pass
+                try: parent_temp.rmdir()
+                except Exception: pass
+            console.print(f"[dim]🧹 Temporary media chunks cleaned up from temp_voice[/dim]")
+        except Exception as e:
+            _log_event("TEMP_CLEANUP_ERROR", {"error": str(e)})
+
+        # Persist complete session into Logs/Downlode 💩/Download History.json
+        update_download_history_tts(
+            stem=txt_path.stem,
+            source_file=str(txt_path),
+            audio_file=str(final_audio),
+            srt_file=str(srt_file),
+            script_file=str(out_script),
+            temp_voice_dir="",
+            voice=saved_voice or "seductive_director",
+            chunks_count=len(chunk_files),
+            duration_seconds=current_time,
+        )
 
         console.print(f"\n[success]●[/success] [bold green]Breeze Audiobook generation complete![/bold green]")
-        console.print(f"[bold white]Saved Audio to:[/bold white] {final_audio}")
-        console.print(f"[bold white]Saved Subtitles to:[/bold white] {srt_file}")
+        console.print(f"[bold white]Audiobook Hub:[/bold white]   {out_dir}")
+        console.print(f"[bold white]Saved Audio:[/bold white]     {final_audio}")
+        if sub_gen and srt_file.exists():
+            console.print(f"[bold white]Saved Subtitles:[/bold white] {srt_file}")
+        if assets_dir.exists():
+            console.print(f"[dim]Text & Assets:[/dim]    {assets_dir}")
     else:
         console.print(f"[bold red]No chunks were generated.[/bold red]")
+
 
 
 def wait_for_enter(console, prompt: str = "\nPress Enter to continue..."):

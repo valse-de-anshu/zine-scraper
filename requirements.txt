@@ -42,5 +42,7 @@ aiohttp
 deep-translator>=1.11.4
 psutil>=5.9.8
 faster-whisper>=1.0.0
+demucs>=4.1.0
+soundfile>=0.12.0
 nvidia-cublas-cu12; platform_system == "Linux"
 nvidia-cudnn-cu12; platform_system == "Linux"

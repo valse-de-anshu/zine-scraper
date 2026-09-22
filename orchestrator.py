@@ -44,6 +44,16 @@ if len(sys.argv) > 1:
         from core.cli_help import run_cli_clean
         run_cli_clean()
         sys.exit(0)
+    elif arg_first in ["--server", "-server", "server"]:
+        from core.server import start_server
+        port = 53318
+        if len(sys.argv) > 2:
+            try:
+                port = int(sys.argv[2])
+            except ValueError:
+                pass
+        start_server(port=port)
+        sys.exit(0)
     elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)
