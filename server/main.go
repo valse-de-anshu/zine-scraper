@@ -771,6 +771,27 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 	task.Message = fmt.Sprintf("Media ready for direct download (%.1f MB)", sizeMB)
 }
 
+// killExistingServerOnPort terminates any older instance of zine-server or processes holding the port.
+func killExistingServerOnPort(port int) {
+	currentPID := os.Getpid()
+	out, err := exec.Command("pgrep", "-f", "zine-server").Output()
+	if err == nil {
+		pids := strings.Fields(strings.TrimSpace(string(out)))
+		for _, pStr := range pids {
+			pid, err := strconv.Atoi(pStr)
+			if err == nil && pid != currentPID {
+				proc, err := os.FindProcess(pid)
+				if err == nil {
+					_ = proc.Signal(syscall.SIGTERM)
+				}
+			}
+		}
+	}
+	// Also free the port if occupied
+	_ = exec.Command("fuser", "-k", "-TERM", fmt.Sprintf("%d/tcp", port)).Run()
+	time.Sleep(300 * time.Millisecond)
+}
+
 func main() {
 	port := flag.Int("port", 53318, "Server listening port")
 	host := flag.String("host", "0.0.0.0", "Server bind host")
@@ -1023,8 +1044,21 @@ func main() {
 		http.ServeContent(w, r, fmt.Sprintf("zine_%s.zip", taskID), fi.ModTime(), zipFile)
 	})
 
+	killExistingServerOnPort(*port)
+
+	addr := fmt.Sprintf("%s:%d", *host, *port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		killExistingServerOnPort(*port)
+		time.Sleep(500 * time.Millisecond)
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			log.Fatalf("Server failed: listen tcp %s: %v", addr, err)
+		}
+	}
+
 	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", *host, *port),
+		Addr:         addr,
 		Handler:      corsMiddleware(mux),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 600 * time.Second, // Long write timeout for massive ZIP downloads
@@ -1068,7 +1102,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
