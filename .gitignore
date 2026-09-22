@@ -97,3 +97,7 @@ Breeze-TTS-2.cpp/*.gguf
 Breeze-TTS-2.cpp/*.so
 Breeze-TTS-2.cpp/*.dylib
 Breeze-TTS-2.cpp/*.dll
+
+# Compiled Go server binary
+server/zine-server
+zine-server
