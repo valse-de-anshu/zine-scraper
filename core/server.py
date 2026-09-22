@@ -21,7 +21,7 @@ from pathlib import Path
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Ensure scraper package is in sys.path
 _repo_dir = Path(__file__).parent.parent.resolve()
@@ -456,19 +456,6 @@ class ZineServerHandler(BaseHTTPRequestHandler):
         else:
             self._send_json(404, {"error": "Endpoint not found"})
 
-def run_udp_beacon(server_port: int, stop_event: threading.Event):
-    """
-    Broadcasts UDP announcements on LAN so Hwaran can automatically find the server.
-    """
-    import socket
-    beacon_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    beacon_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    beacon_data = json.dumps({
-        "service": "zine-scraper-server",
-        "port": server_port,
-        "version": "2.1"
-    }).encode("utf-8")
-
 def get_lan_ips() -> List[str]:
     ips = []
     try:
@@ -494,10 +481,13 @@ def get_lan_ips() -> List[str]:
 def run_udp_beacon(server_port: int, stop_event: threading.Event):
     """
     Broadcasts UDP announcements on LAN so Hwaran can automatically find the server.
+    Uses dedicated discovery port 53319 (separate from the HTTP server port 53318)
+    so Android clients cannot confuse HTTP traffic with beacon packets.
+    Includes socket error recovery so the beacon thread never crashes silently.
     """
     import socket
-    beacon_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    beacon_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    BEACON_PORT = 53319  # Dedicated discovery channel, never collides with HTTP
+
     beacon_data = json.dumps({
         "service": "zine-scraper-server",
         "port": server_port,
@@ -505,20 +495,41 @@ def run_udp_beacon(server_port: int, stop_event: threading.Event):
     }).encode("utf-8")
 
     lan_ips = get_lan_ips()
-    broadcast_targets = ["255.255.255.255", "<broadcast>"]
+    broadcast_targets = ["255.255.255.255"]
     for ip in lan_ips:
         parts = ip.split(".")
         if len(parts) == 4:
-            broadcast_targets.append(f"{parts[0]}.{parts[1]}.{parts[2]}.255")
+            subnet_bcast = f"{parts[0]}.{parts[1]}.{parts[2]}.255"
+            if subnet_bcast not in broadcast_targets:
+                broadcast_targets.append(subnet_bcast)
 
+    beacon_sock = None
     while not stop_event.is_set():
-        for target in broadcast_targets:
+        try:
+            if beacon_sock is None:
+                beacon_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                beacon_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                beacon_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            for target in broadcast_targets:
+                try:
+                    beacon_sock.sendto(beacon_data, (target, BEACON_PORT))
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"Beacon socket error, recreating: {e}")
             try:
-                beacon_sock.sendto(beacon_data, (target, 53318))
+                if beacon_sock:
+                    beacon_sock.close()
             except Exception:
                 pass
-        time.sleep(2.5)
-    beacon_sock.close()
+            beacon_sock = None
+        stop_event.wait(timeout=2.5)
+
+    if beacon_sock:
+        try:
+            beacon_sock.close()
+        except Exception:
+            pass
 
 def start_server(port: int = 53318, host: str = "0.0.0.0"):
     server = ThreadingHTTPServer((host, port), ZineServerHandler)
