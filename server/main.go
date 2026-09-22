@@ -398,14 +398,20 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 	args := []string{orchestratorPath}
 
 	if len(task.Flags) > 0 {
-		args = append(args, task.Flags...)
+		for _, f := range task.Flags {
+			if f == "-a" || f == "--all" {
+				args = append(args, "--a")
+			} else {
+				args = append(args, f)
+			}
+		}
 	} else if task.Mode == "quick_grab" {
 		args = append(args, "--0")
 	} else if task.Mode == "vacuum" {
 		if task.Limit != nil && *task.Limit > 0 {
 			args = append(args, fmt.Sprintf("--%d", *task.Limit))
 		} else {
-			args = append(args, "-a")
+			args = append(args, "--a")
 		}
 	}
 

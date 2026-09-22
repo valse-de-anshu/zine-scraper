@@ -63,7 +63,7 @@ if len(sys.argv) > 1:
         from core.server import start_server
         start_server(port=port)
         sys.exit(0)
-    elif raw_arg.startswith("-") and not re.match(r"^--(\d+|[aA])\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
+    elif raw_arg.startswith("-") and not re.match(r"^--?(\d+|[aA]|all)\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)
         if sys.stdin.isatty():
