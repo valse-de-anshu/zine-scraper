@@ -342,7 +342,7 @@ func createZipArchive(destZip string, baseDir string, files []string) error {
 			continue
 		}
 		header.Name = filepath.ToSlash(rel)
-		header.Method = zip.Store // ZIP_STORED: Zero CPU compression overhead, max network throughput
+		header.Method = zip.Deflate // Standard Deflate compression: 100% compatible with Java ZipFile and ZipInputStream
 
 		writer, err := zw.CreateHeader(header)
 		if err != nil {
@@ -353,8 +353,11 @@ func createZipArchive(destZip string, baseDir string, files []string) error {
 		if err != nil {
 			continue
 		}
-		_, _ = io.Copy(writer, srcFile)
+		_, err = io.Copy(writer, srcFile)
 		srcFile.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -501,44 +504,67 @@ func sendViaLocalSend(targetIP string, files []string, baseDir string, updatePro
 	return true
 }
 
-// isKDEConnectAvailable checks if kdeconnect-cli is present and has at least one paired, reachable device.
-func isKDEConnectAvailable() bool {
+// getKDEConnectDeviceID returns the ID and name of an available or paired KDE Connect device.
+func getKDEConnectDeviceID() (string, string) {
 	if _, err := exec.LookPath("kdeconnect-cli"); err != nil {
-		return false
+		return "", ""
 	}
-	out, err := exec.Command("kdeconnect-cli", "-a", "--id-only").Output()
-	if err != nil {
-		return false
+	// Try available devices (-a) first
+	out, err := exec.Command("kdeconnect-cli", "-a", "--id-name-only").Output()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		for _, l := range lines {
+			parts := strings.SplitN(strings.TrimSpace(l), " ", 2)
+			if len(parts) >= 1 && parts[0] != "" {
+				name := "Android Phone"
+				if len(parts) == 2 {
+					name = parts[1]
+				}
+				return parts[0], name
+			}
+		}
 	}
-	return len(strings.Fields(strings.TrimSpace(string(out)))) > 0
+	// Fallback to any paired device (-l)
+	out, err = exec.Command("kdeconnect-cli", "-l", "--id-name-only").Output()
+	if err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		for _, l := range lines {
+			parts := strings.SplitN(strings.TrimSpace(l), " ", 2)
+			if len(parts) >= 1 && parts[0] != "" {
+				name := "Android Phone"
+				if len(parts) == 2 {
+					name = parts[1]
+				}
+				return parts[0], name
+			}
+		}
+	}
+	return "", ""
+}
+
+func isKDEConnectAvailable() bool {
+	id, _ := getKDEConnectDeviceID()
+	return id != ""
 }
 
 // sendViaKDEConnect shares a file directly to the phone via KDE Connect daemon over TLS.
 func sendViaKDEConnect(filePath string, updateProgress func(msg string, pct float64)) bool {
-	updateProgress("Connecting via KDE Connect...", 0.72)
-
-	cmd := exec.Command("kdeconnect-cli", "-a", "--id-only")
-	out, err := cmd.Output()
-	if err != nil {
-		log.Printf("kdeconnect-cli list error: %v", err)
+	deviceID, devName := getKDEConnectDeviceID()
+	if deviceID == "" {
+		log.Println("[KDE Connect] No paired/available devices found.")
 		return false
 	}
 
-	devices := strings.Fields(strings.TrimSpace(string(out)))
-	if len(devices) == 0 {
-		log.Println("No reachable KDE Connect devices found.")
-		return false
-	}
-	deviceID := devices[0]
+	updateProgress(fmt.Sprintf("Connecting to %s...", devName), 0.80)
+	log.Printf("[KDE Connect] Sharing %s with device %s (%s)...", filepath.Base(filePath), devName, deviceID)
 
-	updateProgress("Sending media to phone via KDE Connect...", 0.85)
 	shareCmd := exec.Command("kdeconnect-cli", "-d", deviceID, "--share", filePath)
 	if err := shareCmd.Run(); err != nil {
-		log.Printf("kdeconnect-cli share error: %v", err)
+		log.Printf("[KDE Connect] Transfer failed: %v", err)
 		return false
 	}
 
-	updateProgress("Delivered to phone via KDE Connect!", 1.0)
+	updateProgress(fmt.Sprintf("Sent to %s via KDE Connect!", devName), 1.0)
 	return true
 }
 
@@ -620,18 +646,23 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 				continue
 			}
 
-			// Clean ANSI terminal escapes for readable messages
+			// Clean ANSI terminal escapes
 			cleanLine := line
 			if idx := strings.Index(cleanLine, "◆ "); idx != -1 {
-				task.MediaTitle = strings.TrimSpace(cleanLine[idx+len("◆ "):])
+				title := strings.TrimSpace(cleanLine[idx+len("◆ "):])
+				if title != "" && task.MediaTitle == "" {
+					task.MediaTitle = title
+					log.Printf("[SCRAPER] [%s] Media title: %s", task.TaskID, title)
+				}
 			}
-			if strings.Contains(cleanLine, "Chapter") || strings.Contains(cleanLine, "Episode") || strings.Contains(cleanLine, "Downloading") {
-				task.Message = cleanLine
+			if strings.Contains(cleanLine, "● Chapter") || strings.Contains(cleanLine, "● Episode") || strings.Contains(cleanLine, "✦ Done") {
+				msg := strings.TrimPrefix(strings.TrimPrefix(cleanLine, "● "), "✦ ")
+				task.Message = msg
+				log.Printf("[SCRAPER] [%s] %s", task.TaskID, msg)
 				if task.Progress < 0.65 {
 					task.Progress += 0.05
 				}
 			}
-			log.Printf("[Zine CLI %s] %s", task.TaskID, cleanLine)
 		}
 	}()
 
