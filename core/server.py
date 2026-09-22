@@ -15,6 +15,8 @@ import zipfile
 import logging
 import threading
 import io
+import shutil
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -143,21 +145,55 @@ def run_scrape_worker(task: ScrapeTask):
         task.message = f"Scraped {len(new_files)} file(s) ({size_mb:.1f} MB). Preparing delivery..."
 
         localsend_success = False
+        localsend_proc = None
         if use_localsend and task.target_ip:
             task.status = "transferring"
-            task.message = f"Payload ({size_mb:.1f} MB > 500MB) -> LocalSend transfer..."
+            task.message = f"Large payload ({size_mb:.1f} MB) -> LocalSend transfer..."
+
+            # Auto-launch LocalSend in background on PC if installed and not running
+            try:
+                out = subprocess.check_output(["pgrep", "-f", "localsend"], text=True)
+                is_running = bool(out.strip())
+            except Exception:
+                is_running = False
+
+            if not is_running and shutil.which("localsend"):
+                try:
+                    logger.info("Auto-opening LocalSend in background on PC...")
+                    localsend_proc = subprocess.Popen(
+                        ["localsend", "--hidden"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    time.sleep(1.0)
+                except Exception as e:
+                    logger.debug(f"Could not auto-start LocalSend on PC: {e}")
+
             client = LocalSendClient()
 
             def transfer_cb(msg: str, pct: float):
                 task.message = msg
                 task.progress = 0.70 + (0.30 * pct)
 
-            localsend_success = client.send_files(
-                target_ip=task.target_ip,
-                files=new_files,
-                base_dir=target_root,
-                progress_cb=transfer_cb
-            )
+            try:
+                localsend_success = client.send_files(
+                    target_ip=task.target_ip,
+                    files=new_files,
+                    base_dir=target_root,
+                    progress_cb=transfer_cb
+                )
+            finally:
+                # Automatically close LocalSend on PC once transfer completes
+                if localsend_proc is not None:
+                    try:
+                        logger.info("Transfer finished. Closing background LocalSend on PC...")
+                        localsend_proc.terminate()
+                        localsend_proc.wait(timeout=2.0)
+                    except Exception:
+                        try:
+                            localsend_proc.kill()
+                        except Exception:
+                            pass
 
         if localsend_success:
             task.status = "completed"
