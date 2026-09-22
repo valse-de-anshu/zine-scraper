@@ -315,8 +315,8 @@ func snapshotDirFiles(root string) map[string]time.Time {
 	return files
 }
 
-// createZipArchive creates an uncompressed/stored ZIP archive for high-throughput streaming.
-func createZipArchive(destZip string, baseDir string, files []string) error {
+// createZipArchive creates a Deflate ZIP archive with an optional series root directory.
+func createZipArchive(destZip string, baseDir string, files []string, seriesTitle string) error {
 	out, err := os.Create(destZip)
 	if err != nil {
 		return err
@@ -326,10 +326,23 @@ func createZipArchive(destZip string, baseDir string, files []string) error {
 	zw := zip.NewWriter(out)
 	defer zw.Close()
 
+	cleanSeries := strings.TrimSpace(seriesTitle)
+	if cleanSeries != "" {
+		re := regexp.MustCompile(`[^a-zA-Z0-9_\-\. ]+`)
+		cleanSeries = strings.TrimSpace(re.ReplaceAllString(cleanSeries, "_"))
+	}
+
 	for _, file := range files {
 		rel, err := filepath.Rel(baseDir, file)
 		if err != nil {
 			rel = filepath.Base(file)
+		}
+
+		slashRel := filepath.ToSlash(rel)
+		if cleanSeries != "" && !strings.EqualFold(cleanSeries, "zine_scraper") {
+			if !strings.HasPrefix(slashRel, cleanSeries+"/") && slashRel != cleanSeries {
+				rel = filepath.Join(cleanSeries, rel)
+			}
 		}
 
 		fi, err := os.Stat(file)
@@ -649,8 +662,9 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 			// Clean ANSI terminal escapes
 			cleanLine := line
 			if idx := strings.Index(cleanLine, "◆ "); idx != -1 {
-				title := strings.TrimSpace(cleanLine[idx+len("◆ "):])
-				if title != "" && task.MediaTitle == "" {
+				title := strings.Trim(strings.TrimSpace(cleanLine[idx+len("◆ "):]), "◆ ")
+				title = strings.TrimSpace(title)
+				if title != "" && !strings.Contains(strings.ToLower(title), "zine scraper") && !strings.Contains(strings.ToLower(title), "batch mode") {
 					task.MediaTitle = title
 					log.Printf("[SCRAPER] [%s] Media title: %s", task.TaskID, title)
 				}
@@ -695,6 +709,28 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 	task.BaseDir = targetRoot
 	task.FileCount = len(newFiles)
 
+	if task.MediaTitle == "" && len(newFiles) > 0 {
+		for _, f := range newFiles {
+			rel, err := filepath.Rel(targetRoot, f)
+			if err == nil {
+				parts := strings.Split(filepath.ToSlash(rel), "/")
+				if len(parts) > 1 && !strings.HasPrefix(parts[0], "Chapter") && !strings.HasPrefix(parts[0], "Episode") {
+					task.MediaTitle = parts[0]
+					break
+				}
+			}
+		}
+		if task.MediaTitle == "" && task.URL != "" {
+			parts := strings.Split(strings.TrimRight(task.URL, "/"), "/")
+			if len(parts) > 0 {
+				last := parts[len(parts)-1]
+				last = strings.ReplaceAll(last, "-", " ")
+				last = strings.ReplaceAll(last, "_", " ")
+				task.MediaTitle = strings.Title(last)
+			}
+		}
+	}
+
 	if cmdErr != nil && len(newFiles) == 0 {
 		task.Status = "failed"
 		task.Error = fmt.Sprintf("Scraper exited with code: %v", cmdErr)
@@ -724,7 +760,7 @@ func runScrapeWorker(task *ScrapeTask, repoDir string, pythonBin string) {
 		}
 	}
 	tmpZip := filepath.Join(os.TempDir(), zipFileName)
-	if err := createZipArchive(tmpZip, targetRoot, newFiles); err == nil {
+	if err := createZipArchive(tmpZip, targetRoot, newFiles, task.MediaTitle); err == nil {
 		task.ZipPath = tmpZip
 	} else {
 		log.Printf("Warning: Could not pre-package zip for task %s: %v", task.TaskID, err)
@@ -1013,7 +1049,7 @@ func main() {
 			}
 			// Fallback on-the-fly zip creation
 			tmpZip := filepath.Join(os.TempDir(), fmt.Sprintf("zine_%s.zip", task.TaskID))
-			if err := createZipArchive(tmpZip, task.BaseDir, task.DownloadedFiles); err == nil {
+			if err := createZipArchive(tmpZip, task.BaseDir, task.DownloadedFiles, task.MediaTitle); err == nil {
 				zipPath = tmpZip
 				task.ZipPath = tmpZip
 			} else {
