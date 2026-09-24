@@ -262,6 +262,34 @@ def handle_youtube_tui(
             if album_name and album_name != "Single" and album_name != metadata.get("Playlist") and not album_name.endswith(" - Single"):
                 console.print(f"[menu]{'Album':<12}:[/menu] [title]{html.unescape(album_name)}[/title]")
 
+    if is_batch or not sys.stdin.isatty():
+        mode = "video"
+        mode_label = "Video"
+        quality = "1080p"
+        audio_format = None
+        sub_choice = "yes"
+        custom_thumb_path = None
+        scraper.is_music = False
+        from core.paths import get_container_root
+        if batch_path is not None:
+            target_root = Path(batch_path)
+        else:
+            default_container = get_container_root(url, scraper, is_batch_mode)
+            target_root = get_save_path(url, scraper, is_batch_mode, batch_path, default_container, storage_layer)
+
+        draw_yt_header()
+        console.print(f"[menu]{'Type':<12}:[/menu] [site]{mode_label}[/site]")
+        console.print(f"[menu]{'Quality':<12}:[/menu] [site]{quality}[/site]")
+        console.print(f"[menu]{'Subtitle':<12}:[/menu] [site]Yes[/site]")
+
+        run_workflow(
+            url, tracker, target_root, metadata, videos, info, scraper,
+            mode, custom_thumb_path, quality=quality, audio_format=audio_format,
+            download_subs=True,
+            is_multi=is_multi, is_batch_mode=is_batch_mode
+        )
+        return
+
     while True:
         if state == 0:
             if is_multi:

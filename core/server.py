@@ -32,6 +32,7 @@ from core.paths import PathAuthority
 from core.storage import StorageLayer
 from core.history import HistoryLayer
 from core.localsend_client import LocalSendClient
+from core.link_resolver import resolve_link_info
 
 logger = logging.getLogger("core.server")
 
@@ -49,7 +50,12 @@ class ScrapeTask:
         device_name: str = "Android Device",
         device_brand: str = "Android",
         flags: Optional[List[str]] = None,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        site_name: str = "",
+        category: str = "",
+        link_type: str = "",
+        target_root: Optional[Path] = None,
+        keep_on_pc: bool = False
     ):
         self.task_id = task_id
         self.url = url
@@ -60,6 +66,13 @@ class ScrapeTask:
         self.transfer = transfer  # "hybrid", "localsend", "direct"
         self.device_name = device_name
         self.device_brand = device_brand
+        self.site_name = site_name
+        self.category = category
+        self.link_type = link_type
+        self.target_root = target_root
+        self.keep_on_pc = keep_on_pc
+        self.staging_dir: Optional[Path] = None
+        self.is_stopping: bool = False
         self.status = "queued"  # "queued", "scraping", "transferring", "completed", "failed"
         self.progress = 0.0
         self.message = "Queued on server"
@@ -83,8 +96,13 @@ class ScrapeTask:
             "file_count": len(self.downloaded_files),
             "media_title": self.media_title,
             "error": self.error,
+            "keep_on_pc": self.keep_on_pc,
+            "is_stopping": self.is_stopping,
             "device_name": self.device_name,
             "device_brand": self.device_brand,
+            "site_name": getattr(self, "site_name", ""),
+            "category": getattr(self, "category", ""),
+            "link_type": getattr(self, "link_type", ""),
             "created_at": self.created_at
         }
 
@@ -97,11 +115,19 @@ def run_scrape_worker(task: ScrapeTask):
     storage = StorageLayer()
     history = HistoryLayer(paths, storage)
 
-    # Determine base directory before scraping to detect new files
-    if task.mode == "quick_grab":
+    staging_dir = None
+    if not getattr(task, "keep_on_pc", False):
+        import tempfile
+        staging_dir = Path(tempfile.gettempdir()) / "zine_staging" / task.task_id
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        task.staging_dir = staging_dir
+        target_root = staging_dir
+    elif getattr(task, "target_root", None):
+        target_root = Path(task.target_root)
+    elif task.mode == "quick_grab":
         target_root = paths.get_quick_grab_root()
     else:
-        target_root = paths._downloads_root / "Vacuum"
+        target_root = paths.get_vacuum_root()
     target_root.mkdir(parents=True, exist_ok=True)
 
     files_before = set(target_root.rglob("*"))
@@ -118,7 +144,7 @@ def run_scrape_worker(task: ScrapeTask):
             task.url,
             history,
             storage,
-            batch_path=None,
+            batch_path=staging_dir,
             is_batch=True,
             batch_quick_grab=is_quick_grab,
             batch_all=(task.mode == "vacuum" and not task.limit),
@@ -358,6 +384,30 @@ class ZineServerHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"status": "cleared", "message": "All tasks cleared"})
             return
 
+        if path.startswith("/api/tasks/") and any(path.endswith(s) for s in ["/stop", "/revolt", "/truncate"]):
+            parts = [p for p in path.replace("/api/tasks/", "").split("/") if p]
+            task_id = parts[0] if parts else ""
+            with tasks_lock:
+                task = tasks.get(task_id)
+            if not task:
+                self._send_json(404, {"error": "Task not found", "task_id": task_id})
+                return
+            task.is_stopping = True
+            task.message = "Stop signal sent (Ctrl+T). Finishing current media and wrapping up..."
+            try:
+                sig_file = Path(f"/tmp/zine_stop_{task_id}")
+                sig_file.write_text("1")
+            except Exception:
+                pass
+            logger.info(f"[TASK {task_id}] Stop signal received from client (Ctrl+T / Revolt).")
+            self._send_json(200, {
+                "status": "stopping",
+                "action": "truncate",
+                "message": "Stop signal sent (Ctrl+T). Scraper will wrap up after current media.",
+                "task_id": task_id,
+            })
+            return
+
         if path == "/api/scrape":
             content_len = int(self.headers.get("Content-Length", 0))
             body_bytes = self.rfile.read(content_len)
@@ -372,7 +422,9 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "Missing 'url' parameter"})
                 return
 
-            mode = payload.get("mode", "quick_grab")
+            mode = str(payload.get("mode", "auto")).strip().lower()
+            if not mode:
+                mode = "auto"
             flags = payload.get("flags", [])
             limit = payload.get("limit", None)
             if limit is not None:
@@ -380,6 +432,23 @@ class ZineServerHandler(BaseHTTPRequestHandler):
                     limit = int(limit)
                 except Exception:
                     limit = None
+
+            # Resolve Link Architecture & Validate against Zine Scraper Engines
+            resolved = resolve_link_info(url, flags_input=flags, mode_input=mode if mode != "auto" else None, limit_input=limit)
+            if not resolved.get("valid"):
+                err_msg = resolved.get("error", "Unsupported or invalid media URL")
+                logger.warning(f"[REJECTED] URL rejected: {url} -> {err_msg}")
+                self._send_json(400, {"error": err_msg, "url": url})
+                return
+
+            effective_url = resolved["url"]
+            effective_mode = resolved["mode"]
+            effective_flags = resolved["flags"]
+            site_name = resolved["site_name"]
+            category = resolved["category"]
+            link_type = resolved["link_type"]
+            target_root = Path(resolved["target_root"])
+            media_title = resolved.get("title", "")
 
             target_ip = payload.get("target_ip", self.client_address[0])
             transfer = payload.get("transfer", "hybrid")
@@ -393,33 +462,46 @@ class ZineServerHandler(BaseHTTPRequestHandler):
             task_id = f"tsk_{str(uuid.uuid4())[:8]}"
             task = ScrapeTask(
                 task_id=task_id,
-                url=url,
-                mode=mode,
+                url=effective_url,
+                mode=effective_mode,
                 target_ip=target_ip,
                 transfer=transfer,
                 device_name=device_name,
                 device_brand=device_brand,
-                flags=flags,
-                limit=limit
+                flags=effective_flags,
+                limit=limit,
+                site_name=site_name,
+                category=category,
+                link_type=link_type,
+                target_root=target_root,
+                keep_on_pc=bool(payload.get("keep_on_pc", False))
             )
+            if media_title:
+                task.media_title = media_title
+
             with tasks_lock:
                 tasks[task_id] = task
 
-            flags_display = ", ".join(flags) if flags else ("-a (All)" if mode == "vacuum" else "--0 (Single Item)")
+            flags_display = ", ".join(effective_flags) if effective_flags else ("-a (All)" if effective_mode == "vacuum" else "--0 (Single Item)")
+            target_display = target_root if task.keep_on_pc else f"Ephemeral Staging (Task {task_id})"
+            keep_display = "YES (Archived to PC Library)" if task.keep_on_pc else "NO (Ephemeral Relay / Auto-Cleaned)"
             banner = (
                 f"\n{'='*64}\n"
                 f"📡 [HWARAN INGESTION SIGNAL RECEIVED]\n"
                 f"📱 Client Device : {device_brand} {device_name} ({client_ip})\n"
                 f"📦 Source App    : {app_name} v{app_version}\n"
-                f"🔗 Target URL    : {url}\n"
-                f"🎯 Scrape Scope  : {mode.upper()} (Flags: {flags_display})\n"
+                f"🔗 Target URL    : {effective_url}\n"
+                f"🏢 Site Engine   : {site_name} ({category}) [{link_type.upper()}]\n"
+                f"🎯 Scrape Scope  : {effective_mode.upper()} (Flags: {flags_display})\n"
+                f"📁 Target Root   : {target_display}\n"
                 f"🚚 Delivery Mode : {transfer.upper()} (Threshold: Direct <=500MB | LocalSend >500MB)\n"
+                f"💾 Keep on PC    : {keep_display}\n"
                 f"🆔 Task Assigned : {task_id}\n"
                 f"⏱️  Timestamp     : {timestamp_str}\n"
                 f"{'='*64}\n"
             )
             print(banner, flush=True)
-            logger.info(f"Signal received from {device_brand} {device_name} ({client_ip}): URL={url}, Mode={mode}, Flags={flags}, Task={task_id}")
+            logger.info(f"Signal received from {device_brand} {device_name} ({client_ip}): URL={effective_url}, Engine={site_name}, Mode={effective_mode}, Flags={effective_flags}, Task={task_id}")
 
             # Run in worker thread
             thread = threading.Thread(target=run_scrape_worker, args=(task,), daemon=True)

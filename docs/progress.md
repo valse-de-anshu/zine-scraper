@@ -1,3 +1,74 @@
+# Progress Report - September 24, 2026 (Visual Theme Overhaul, Immediate Process Cancellation, Mobile Extraction & Master Docs Sync)
+
+- **Minimal Dark Obsidian Theme & Visual Redesign (Hwaran Android App):**
+  - **Zero Rainbow / Loud Colors**: Replaced all vibrant cyan, yellow, pink, and multi-color gradients across `ZineScraperScreen.kt` and `ZineScraperDialog.kt` with a sleek, minimal dark palette:
+    - Background: Obsidian Onyx (`#08090C`) & Frosted Glass (`#101218`).
+    - Foreground: Titanium White (`#F1F3F9`) & Slate Muted (`#A1A1AA`).
+    - Subtle Status Accents: Emerald (`#34D399`), Soft Coral (`#F87171`), and Soft Amber (`#FBBF24`).
+  - **Modern Geometry & Typography**: Refined button radiuses (`16.dp` / `24.dp`), 1.dp subtle borders, reduced visual clutter, and updated active task list cards.
+
+- **Dual Cancellation Controls (Immediate Kill vs Graceful Truncate):**
+  - **Immediate Kill Endpoint (`POST /api/tasks/{taskID}/cancel`)**: Added dedicated cancel route in `server/main.go` and `core/server.py`. Runs `pkill -9 -P <pid>` to immediately terminate the scraper subprocess and any spawned worker processes without waiting for in-flight media chunks to complete.
+  - **Graceful Truncate (`POST /api/tasks/{taskID}/stop`)**: Preserved Revolt / `Ctrl+T` behavior to safely finish downloading the active chapter/video and transfer it cleanly before halting.
+  - **Dual Button UI Layout**: In `ZineScraperScreen.kt` and `ZineScraperDialog.kt`, active scraping tasks display both **"Cancel Now"** (immediate process kill) and **"Stop (Ctrl+T)"** (graceful wrap-up) side-by-side.
+
+- **Clean Mobile Folder Extraction under Media Title (`ZineServerClient.kt`):**
+  - Updated `downloadMediaZip` to take `mediaTitle` directly. Unpacks incoming transit ZIP files cleanly into `Download/Zine Scraper/<Mode>/<Media Title>/` without intermediate or cryptic task hash subdirectory nesting.
+
+- **Master Documentation & CLI Synchronization (`README.md`, `core/cli_help.py`, `docs/help.md`, `core/funnel.py`):**
+  - Synchronized `zine --help` output, interactive TUI quick guide tips (`core/funnel.py`), `docs/help.md`, and master `README.md` with the new companion server commands (`zine --server [PORT]`, `zine server`), link inspector (`zine --resolve-link <URL>`), and complete CLI flag options.
+
+---
+
+# Progress Report - September 24, 2026 (Companion Server & Hwaran Android App: Link Architecture, Full CLI Flags & Real-Time Telemetry)
+
+- **Centralized Link Architecture & URL Resolution (`core/link_resolver.py`):**
+  - **No More "Blind Acceptance"**: The server no longer blindly accepts arbitrary strings or unsupported links. Every incoming URL is validated against Zine Scraper's 48+ supported platforms before ingestion. Unsupported URLs or unrecognized domains are immediately rejected with HTTP `400 Bad Request` and descriptive error details.
+  - **Link Architecture Adherence**: Single-chapter and single-video links (`/c/`, `/chapter/`, `/watch?v=`) automatically route to `Quick grab` (`--0`). Series titles, channels, and playlists (`/title/`, `/manga/`, `/videos`) automatically route to `Vacuum` (`--a`), preventing accidental single-chapter truncations when Hwaran submits series links.
+  - **Precise Container Root Resolution**: Resolves the exact destination folder on disk via `core.paths.get_container_root()` (e.g. `Downloads/Zine/Vacuum/YouTube`, `Downloads/Zine/Quick grab/MangaDex`) instead of guessing static generic directories.
+  - **Inline Flag Extraction**: Accurately strips and parses inline CLI flags (`--0`, `--5`, `--a`, `--meta`) while protecting chapter UUIDs and hyphenated URL slugs.
+
+- **Real-Time Server Console Logging & Live Telemetry (`server/main.go`, `core/server.py`, `core/video_engine.py`):**
+  - **Unbuffered Concurrent Output Streaming**: Subprocesses are spawned with `-u` and `PYTHONUNBUFFERED=1`. Stdout and stderr are read concurrently via non-blocking goroutines feeding a unified channel, guaranteeing that error traces and progress lines flush immediately without pipe deadlock.
+  - **Live Unbuffered Video Progress Streaming (`core/video_engine.py`)**: Fixed missing `import sys` in `core/video_engine.py` which previously threw a `NameError` during headless post-processing. Replaced buffered `print()` with direct `sys.stdout.write()` + `sys.stdout.flush()` for `[download] XX.X%` and `[baking]` updates, bypassing Rich `Live(transient=True)` buffering so that both the Go server terminal and Hwaran's mobile UI receive continuous, live download percentages and transfer speeds.
+  - **Headless Banner Deduplication (`core/ui.py`, `scrapers/1_SFW/SOCIAL_MEDIA/youtube/tui.py`)**: Suppressed repeated `◆ ZINE SCRAPER ◆` banner renderings when executing via server pipes or headless batch mode (`not sys.stdin.isatty()`).
+  - **Strict Vacuum Container Precedence (`core/paths.py`)**: Fixed container folder resolution in `get_container_root()` where `_batch_quick_grab` previously overrode container links (channels, series, playlists). Container links now strictly resolve to `Vacuum/<Site>/...` regardless of single-item quantity flags like `--0`.
+  - **Live Console Feed**: Server stdout now streams every line from the scraper engine in real-time with timestamp and task ID (`[HH:MM:SS] [tsk_xxx] <log>`), providing full visibility into metadata parsing, page downloads, and status transitions.
+  - **Milestone Progress Extraction**: Live parser extracts video/page percentages (`(\d+)%`), fractions (`12/24 pages`), and chapter headers to drive accurate live progress bars (`task.Progress`) and status badges (`task.Message`) in the Hwaran Android app.
+  - **Failsafe Error & Zero-File Handling**: Tasks that fail or produce 0 files are never falsely marked as completed; they are set to `failed` with the exact exception message preserved in both `task.Message` and `task.Error`.
+  - **Ephemeral Relay Mode vs Permanent Archiving (`server/main.go`, `core/server.py`, `core/funnel.py`)**:
+    - Added support for `keep_on_pc` (boolean flag).
+    - When `keep_on_pc` is **false** (default for Hwaran phone transfers): The companion server isolates downloads in a temporary staging directory (`os.TempDir()/zine_staging/<taskID>`) via `--batch-path`. Uncompressed staging files are purged as soon as the transit ZIP is compressed, and the transit ZIP is auto-purged 30 seconds after phone download completes (or immediately on `DELETE /api/tasks/{id}`). **Zero bytes remain on the PC**.
+    - When `keep_on_pc` is **true**: Media is permanently organized into `~/Downloads/Zine/` on the PC while simultaneously sending a packaged copy to the phone.
+- **Revolt & Early Stop Integration (`Ctrl+T` Graceful Truncate) (`core/ui.py`, `server/main.go`, `core/server.py`, Hwaran `ZineScraperScreen.kt`):**
+  - **Dynamic Signal Button Transformation**: In Hwaran, while a download or scraping task is actively running (`scraping`, `analyzing`, `queued`), the main **"Send Signal"** button dynamically transforms into a **"Stop After Current (Ctrl+T)"** button (Coral Red).
+  - **Graceful Truncate Signal (`POST /api/tasks/{id}/stop`)**: Tapping the button dispatches an instant stop signal to the companion server. The server writes `/tmp/zine_stop_<taskID>` and sends `SIGUSR1` to the scraper subprocess, instructing the scraper engine to complete the media currently being downloaded, package it, and stop gracefully without proceeding to any further videos, episodes, or chapters.
+  - **Visual Acknowledgment & Status Feedback**:
+    - Upon receiving the signal, the button shifts to an amber "Stopping After Current Media (Ctrl+T)..." state with progress spinner.
+    - The task card in Hwaran's "Tasks & Transfers" list updates its status to `"Wrapping Up (Ctrl+T)..."`, and displays an individual `"Stop (Ctrl+T)"` action button.
+    - Python scraper outputs: `● Revolt / Stop signal received (Ctrl+T). Wrapping up after current media...` followed by `✦ All done! Requested files saved.` and exits cleanly with code 0.
+    - Completed media downloaded prior to truncate is fully compressed, validated, and transferred to the mobile device.
+
+- **Process Protection**: Fixed `killExistingServerOnPort` in `server/main.go` using `pgrep -x` instead of `pgrep -f`, preventing the daemon from terminating caller processes or terminal shells.
+
+- **Hwaran Android App Alignment (`com.ballade.hwaran` in `/home/valse-de-anshu/Desktop/hwaran`):**
+  - **Smart Link Routing as Default (`"auto"`)**: Replaced the hardcoded `"single"` (`--0`) default with `"auto"` (Smart Link Architecture) across both `ZineScraperScreen.kt` and `ZineScraperDialog.kt`. When pasting series or chapter links, Hwaran now lets Zine Scraper's link architecture automatically determine the optimal ingestion mode.
+  - **Full Zine Scraper CLI Flags**: Added native UI support for all 6 Zine Scraper scopes:
+    - `Auto (Smart Link)` -> `AUTO` (lets URL architecture route)
+    - `Single Item` -> `--0` (forces quick grab of single item / latest chapter)
+    - `Vacuum All` -> `--a` (deep harvest entire series/channel/playlist)
+    - `Next 5` -> `--5` (sequentially harvests next 5 items)
+    - `Next 10` -> `--10` (sequentially harvests next 10 items)
+    - `Custom Limit` -> `--N` (interactive sequential limit stepper/selector with presets 1, 2, 3, 5, 10, 20)
+  - **Metadata-Only Flag (`--meta`)**: Supported independently across all scopes to extract synopsis, covers, and tags without media chunk downloads.
+  - **"Keep copy on PC" Toggle**: Added an interactive switch in both `ZineScraperScreen.kt` and `ZineScraperDialog.kt`. When turned off (default), Hwaran instructs the server to run in ephemeral relay mode (0 bytes saved on PC). When turned on, a copy is permanently archived in the PC library.
+  - **Terminal Command Preview**: Dynamically previews the exact CLI command in real-time (`zine [--flags] <url>`).
+  - **Structured Error Surfacing**: `ZineServerClient.kt` now parses rejection payloads from the companion server (`errJson.optString("error")`), surfacing clear toast and inline error banners on unsupported domains or invalid URLs instead of generic HTTP 400 messages.
+  - **Wi-Fi Interface Prioritization**: Network interface discovery now sorts interfaces, prioritizing `wlan` (Wi-Fi), `eth`, and `rndis` over cellular (`rmnet`) or VPN (`tun`) interfaces, ensuring subnet sweep probes the correct LAN segment.
+  - **Download Destination Parity**: Downloads use `updated.mode` to unpack archives cleanly into either `Download/Zine Scraper/Vacuum` or `Download/Zine Scraper/Quick grab` matching Zine's filesystem layout.
+
+---
+
 # Progress Report - September 22, 2026 (Auto-Cleanup of Temp Media Chunks & Clean Assets/ Organization)
 
 - **Post-Merge Temp Media Elimination (`Models/TTS/Breeze tts/breeze_engine.py`):**

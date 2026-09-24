@@ -1055,6 +1055,11 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
+            tip_text.append("server", style="warning")
+            tip_text.append(" to start companion relay for Hwaran / Phone.\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
             tip_text.append("settings", style="warning")
             tip_text.append(" to configure.\n", style="info")
             
@@ -1232,6 +1237,12 @@ def main():
             batch_quick_grab = False
             chapter_limit = None
             batch_all = False
+            batch_path_override: Optional[Path] = None
+            m_bp = re.search(r"--batch-path(?:=|\s+)(\S+)", url)
+            if m_bp:
+                batch_path_override = Path(m_bp.group(1)).expanduser().resolve()
+                url = re.sub(r"--batch-path(?:=|\s+)\S+", " ", url)
+
             only_metadata = bool(re.search(r"--?(?:meta|metadata)\b", url, re.IGNORECASE))
             if only_metadata:
                 flags.append("--meta")
@@ -1373,7 +1384,7 @@ def main():
                     clean_candidate,
                     history,
                     storage,
-                    batch_path=None,
+                    batch_path=batch_path_override,
                     is_batch=is_headless,
                     batch_quick_grab=batch_quick_grab,
                     batch_all=batch_all,

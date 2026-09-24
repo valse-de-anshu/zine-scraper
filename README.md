@@ -144,6 +144,12 @@ zine "https://asurascans.com/comics/series-title" --5
 # Extract & save series metadata and cover art only (--meta)
 zine "https://chikari.moe/novels/endless-extraction-in-a-game-like-world" --meta
 
+# Start high-performance companion server for Hwaran (Android) phone ingestion
+zine --server
+
+# Headlessly inspect and resolve link architecture & metadata in JSON format
+zine --resolve-link "https://youtube.com/@how-people-make-money/videos"
+
 # Vacuum queue processing (defaults to vacuum.txt)
 zine --vacuum
 
@@ -239,6 +245,7 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 
 | Command | Category | Description |
 |---|---|---|
+| **`server`** | **Remote Relay** | High-performance Go companion server daemon for Hwaran (Android) and remote ingestion |
 | **`vacuum`** | **Automation** | Headless Queue Runner (processes all links in `vacuum.txt` or a custom text file) |
 | **`bake`** / **`metadata`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
 | **`lyrs`** | **Audio** | Synced `.lrc` Lyrics Search & Downloader (6-tier waterfall: LRCLIB, NetEase, Megalobiz) |
@@ -289,6 +296,20 @@ Displays a comprehensive, color-coded manual covering CLI syntax, download contr
 zine --help
 # or:
 python3 orchestrator.py -h
+```
+
+#### 🚀 Companion Relay Server (`zine --server [PORT]` or `zine server`)
+Launches the native Go background daemon with unbuffered real-time stdout streaming and automatic UDP LAN discovery on ports 53319 and 53318 for the Hwaran Android application:
+```bash
+zine --server
+# or on custom port:
+zine --server 53320
+```
+
+#### 🔍 Link Architecture Inspector (`zine --resolve-link <URL>`)
+Headlessly inspects and resolves any target link, validating domain compatibility, resolving target media title, and returning clean JSON telemetry:
+```bash
+zine --resolve-link "https://youtube.com/@how-people-make-money/videos"
 ```
 
 #### 🩺 System Diagnostic Health Check (`zine doctor`)
@@ -493,6 +514,17 @@ Zine features a local GPU subtitle generation pipeline achieving **100% accuracy
 ### 8. Butler Whistleblower & Network Auto-Recovery
 * Continuous background network connection monitor running alongside the download engine.
 * Automatically pauses active queues upon internet dropouts and seamlessly resumes downloading as soon as connectivity returns, preventing corrupted chunks or broken files.
+
+### 9. Remote Companion Server & Hwaran Mobile Ingestion (`server`)
+* **Zero-Config LAN Discovery**: Broadcasts UDP beacons on ports 53319 and 53318. The **Hwaran Android App** discovers your PC running Zine instantly on the local Wi-Fi network without manual IP entry.
+* **Full CLI Scope & Link Routing**: Supports `Auto` (smart link routing), `--0` (Single Quick Grab), `--a` (Vacuum All), `--5` / `--10` / `--N` (Sequential limits), and `--meta` (Metadata extraction).
+* **Dual Cancel & Truncate Controls**:
+  * **Immediate Cancel (`Cancel Now` / `✕`)**: Instantly kills active scraper processes (`pkill -9 -P <pid>`) via `POST /api/tasks/{id}/cancel`.
+  * **Stop After Current (`Stop (Ctrl+T)`)**: Gracefully finishes downloading the active chapter/video and transfers it cleanly via `POST /api/tasks/{id}/stop`.
+* **Ephemeral Relay vs Permanent Archiving**:
+  * **Ephemeral Relay (`keep_on_pc = false`)**: Downloads into a temporary staging buffer, streams compressed ZIP to your phone, unpacks directly under `<Media Title>/`, and auto-purges the PC staging buffer (0 bytes left on PC).
+  * **Permanent Archiving (`keep_on_pc = true`)**: Archives a permanent copy in `~/Downloads/Zine/` on your PC while simultaneously sending a copy to your phone.
+* **Minimal Dark Obsidian Theme**: Hwaran mobile UI styled with clean titanium monochrome and subtle status accents.
 
 ---
 

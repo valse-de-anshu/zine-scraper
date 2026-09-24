@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Dict, Any, Callable, Optional, Union
 import requests
@@ -234,8 +235,8 @@ class VideoEngine:
             with open(temp_batch, 'w', encoding='utf-8') as f:
                 f.write(target + '\n')
             
-            import shutil
-            ytdlp_bin = shutil.which("yt-dlp") or "yt-dlp"
+            venv_ytdlp = Path(sys.executable).parent / "yt-dlp"
+            ytdlp_bin = str(venv_ytdlp) if venv_ytdlp.exists() else (shutil.which("yt-dlp") or "yt-dlp")
             cmd = [
                 ytdlp_bin,
                 "--batch-file", str(temp_batch),
@@ -437,6 +438,8 @@ class VideoEngine:
                     else:
                         buf += char
 
+            last_headless_print = 0.0
+
             for line in iter_lines():
                 line = line.strip()
                 if not line:
@@ -446,6 +449,9 @@ class VideoEngine:
                     parts = line.split("Destination:")
                     if len(parts) > 1:
                         current_file = parts[1].strip()
+                        if not sys.stdout.isatty():
+                            sys.stdout.write(f"[download] Destination: {Path(current_file).name}\n")
+                            sys.stdout.flush()
                         
                 m_aria = aria_re.search(line)
                 if m_aria and progress_hook:
@@ -459,6 +465,13 @@ class VideoEngine:
                         "eta": parse_eta(eta_str) if eta_str else None
                     }
                     progress_hook(d)
+                    now = time.time()
+                    if not sys.stdout.isatty() and (now - last_headless_print >= 1.5 or float(pct) >= 100.0):
+                        last_headless_print = now
+                        spd_display = f" at {spd_val}{spd_unit}" if spd_val else ""
+                        eta_display = f" ETA {eta_str}" if eta_str else ""
+                        sys.stdout.write(f"[download] {float(pct):5.1f}% of {tot_val}{tot_unit}{spd_display}{eta_display}\n")
+                        sys.stdout.flush()
                     continue
                 
                 m_prog = progress_re.search(line)
@@ -473,7 +486,18 @@ class VideoEngine:
                         "eta": parse_eta(eta_str) if eta_str else None
                     }
                     progress_hook(d)
+                    now = time.time()
+                    if not sys.stdout.isatty() and (now - last_headless_print >= 1.5 or float(pct) >= 100.0):
+                        last_headless_print = now
+                        spd_display = f" at {spd_val}{spd_unit}" if spd_val else ""
+                        eta_display = f" ETA {eta_str}" if eta_str and eta_str != "Unknown" else ""
+                        sys.stdout.write(f"[download] {float(pct):5.1f}% of ~{tot_val}{tot_unit}{spd_display}{eta_display}\n")
+                        sys.stdout.flush()
                     continue
+
+                if ("[Merger]" in line or "Merging formats into" in line) and not sys.stdout.isatty():
+                    sys.stdout.write("[baking] Merging audio and video streams into final media...\n")
+                    sys.stdout.flush()
 
                 if "[download]" in line and progress_hook:
                     # Catch retry or generic messages so the UI doesn't freeze at "Starting..."

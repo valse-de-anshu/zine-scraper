@@ -370,14 +370,17 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
             pass
             
     is_vacuum = False
-    if getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
+    raw_lt = str(getattr(scraper, "get_link_type", lambda: "")()).lower()
+    is_container_type = (
+        getattr(scraper, "is_playlist", False)
+        or raw_lt in ["playlist", "channel", "board", "profile", "album", "artist", "model", "series"]
+    )
+    if is_container_type:
+        is_vacuum = True
+    elif getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
         is_vacuum = True
     elif getattr(scraper, "_batch_quick_grab", False):
         is_vacuum = False
-    elif getattr(scraper, "is_playlist", False):
-        is_vacuum = True
-    elif getattr(scraper, "get_link_type", lambda: "")() in ["playlist", "channel", "board", "profile", "album", "artist", "model"]:
-        is_vacuum = True
     else:
         site_folder = get_site_folder(url) or "generic"
         category = get_category_for_scraper(site_folder, scraper=scraper)
@@ -396,10 +399,12 @@ def get_container_root(url: str, scraper: Any, is_batch: bool, batch_path: Optio
         else:
             is_vacuum = False
             
-    if getattr(scraper, "_batch_quick_grab", False):
-        container_name = "Quick grab"
+    if is_container_type:
+        container_name = "Vacuum"
     elif getattr(scraper, "_force_vacuum", False) or getattr(scraper, "_batch_all", False):
         container_name = "Vacuum"
+    elif getattr(scraper, "_batch_quick_grab", False):
+        container_name = "Quick grab"
     else:
         container_name = "Vacuum" if is_vacuum else "Quick grab"
     container_root = library_root / container_name

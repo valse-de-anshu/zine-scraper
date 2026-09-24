@@ -63,6 +63,15 @@ if len(sys.argv) > 1:
         from core.server import start_server
         start_server(port=port)
         sys.exit(0)
+    elif arg_first in ["--resolve-link", "-resolve-link", "resolve-link"]:
+        import json
+        from core.link_resolver import resolve_link_info
+        target_url = sys.argv[2] if len(sys.argv) > 2 else ""
+        extra_flags = [a for a in sys.argv[3:] if a.startswith("-") and not a.startswith("--mode=")]
+        mode_arg = next((a.split("=")[1] for a in sys.argv[3:] if a.startswith("--mode=")), None)
+        res = resolve_link_info(target_url, flags_input=extra_flags, mode_input=mode_arg)
+        print(json.dumps(res, indent=2))
+        sys.exit(0 if res.get("valid") else 1)
     elif raw_arg.startswith("-") and not re.match(r"^--?(\d+|[aA]|all)\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)

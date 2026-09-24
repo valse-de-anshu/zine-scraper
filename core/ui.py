@@ -260,7 +260,15 @@ def get_banner_renderable():
         banner_text.append(newline)
     return banner_text
 
+_BANNER_PRINTED_HEADLESS = False
+
 def print_banner():
+    global _BANNER_PRINTED_HEADLESS
+    import sys
+    if not sys.stdin.isatty():
+        if _BANNER_PRINTED_HEADLESS:
+            return
+        _BANNER_PRINTED_HEADLESS = True
     console.print(get_banner_renderable())
     console.print("")
 
@@ -628,24 +636,82 @@ def trigger_truncate_stop(title: Optional[str] = None):
 
     raise TruncateStopException(f"Scrape truncated early via Ctrl+T for {title or 'current item'}")
 
+def _check_external_stop_signal():
+    """Check for external stop / truncate trigger files or signals dispatched by server API."""
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE, _TRUNCATE_TRIGGERED_DURING_ITEM
+    if _TRUNCATE_ACTIVE:
+        return
+    import os
+    pid = os.getpid()
+    task_id = os.environ.get("ZINE_TASK_ID", "")
+    sig_files = [f"/tmp/zine_stop_{pid}"]
+    if task_id:
+        sig_files.append(f"/tmp/zine_stop_{task_id}")
+    for sf in sig_files:
+        if os.path.exists(sf):
+            try:
+                os.remove(sf)
+            except Exception:
+                pass
+            activate_truncate_mode(limit=0)
+            break
+
+def activate_truncate_mode(limit: int = 0):
+    """Activates Ctrl+T early stop programmatically (via API, signal, or hotkey)."""
+    global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE, _TRUNCATE_TRIGGERED_DURING_ITEM
+    _TRUNCATE_ACTIVE = True
+    _TRUNCATE_LIMIT = limit
+    _TRUNCATE_TRIGGERED_DURING_ITEM = True
+    _TRUNCATE_CURRENT_DONE = False
+    console.print("\n[warning]● Revolt / Stop signal received (Ctrl+T). Wrapping up after current media...[/warning]\n")
+    sys.stdout.flush()
+
+def _handle_sigusr1(sig, frame):
+    logging.info("SIGUSR1 received: Activating Ctrl+T early stop mode.")
+    activate_truncate_mode(limit=0)
+
+try:
+    import signal
+    if hasattr(signal, 'SIGUSR1'):
+        signal.signal(signal.SIGUSR1, _handle_sigusr1)
+except Exception:
+    pass
+
 def check_revolt(title: Optional[str] = None) -> bool:
     """Check if Revolt or Truncate mode is active and limit reached."""
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_CURRENT_DONE
     global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE
-    if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:
-        trigger_revolt_exit(title=title)
-        return True
-    if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
-        trigger_truncate_stop(title=title)
-        return True
+    _check_external_stop_signal()
+    if _REVOLT_ACTIVE:
+        if _REVOLT_CURRENT_DONE or title is not None:
+            if _REVOLT_LIMIT <= 0:
+                trigger_revolt_exit(title=title)
+                return True
+            else:
+                _REVOLT_LIMIT -= 1
+                _REVOLT_CURRENT_DONE = False
+    if _TRUNCATE_ACTIVE:
+        if _TRUNCATE_CURRENT_DONE or title is not None:
+            if _TRUNCATE_LIMIT <= 0:
+                trigger_truncate_stop(title=title)
+                return True
+            else:
+                _TRUNCATE_LIMIT -= 1
+                _TRUNCATE_CURRENT_DONE = False
     return False
 
 def check_truncate(title: Optional[str] = None) -> bool:
     """Explicit check for Ctrl+T early stop."""
     global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_CURRENT_DONE
-    if _TRUNCATE_ACTIVE and _TRUNCATE_CURRENT_DONE and _TRUNCATE_LIMIT <= 0:
-        trigger_truncate_stop(title=title)
-        return True
+    _check_external_stop_signal()
+    if _TRUNCATE_ACTIVE:
+        if _TRUNCATE_CURRENT_DONE or title is not None:
+            if _TRUNCATE_LIMIT <= 0:
+                trigger_truncate_stop(title=title)
+                return True
+            else:
+                _TRUNCATE_LIMIT -= 1
+                _TRUNCATE_CURRENT_DONE = False
     return False
 
 def global_revolt_listener():
@@ -656,6 +722,7 @@ def global_revolt_listener():
     global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERING, _TRUNCATE_INPUT_BUFFER, _TRUNCATE_TRIGGERED_DURING_ITEM, _TRUNCATE_CURRENT_DONE
 
     while True:
+        _check_external_stop_signal()
         if _LIVE_INSTANCE is None or _MENU_ACTIVE:
             time.sleep(0.04)
             continue
@@ -786,6 +853,7 @@ def set_active_live(live):
     global _REVOLT_ACTIVE, _REVOLT_LIMIT, _REVOLT_TRIGGERED_DURING_ITEM, _REVOLT_CURRENT_DONE
     global _TRUNCATE_ACTIVE, _TRUNCATE_LIMIT, _TRUNCATE_TRIGGERED_DURING_ITEM, _TRUNCATE_CURRENT_DONE
 
+    _check_external_stop_signal()
     if live is not None:
         # Check if either Revolt or Truncate reached 0
         if _REVOLT_ACTIVE and _REVOLT_CURRENT_DONE and _REVOLT_LIMIT <= 0:

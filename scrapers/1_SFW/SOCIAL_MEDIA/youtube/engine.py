@@ -1,3 +1,4 @@
+import sys
 import yt_dlp
 import json
 import logging
@@ -411,9 +412,10 @@ class YoutubeEngine(VideoEngine):
             ytdlp_bin,
             "--no-warnings", "--quiet", "--no-playlist",
             "--write-auto-sub", "--write-sub",
-            "--sub-format", "vtt/lrc/best",
-            "--sub-langs", "en,en.*,en-orig,en-US,en-GB,hi,hi.*,hin,hi-orig,all",
+            "--sub-format", "vtt/best",
+            "--sub-langs", "en.*,en,en-orig,hi,hi-orig",
             "--skip-download",
+            "--ignore-errors",
             "-o", out_tmpl,
             url
         ]
@@ -516,49 +518,71 @@ class YoutubeEngine(VideoEngine):
         
         entries = info.get('entries') or []
 
-        # Concurrently enrich top candidates with real like counts from watch HTML
+        # ── Batch-fetch accurate view_count + like_count for ALL videos ──
+        # yt-dlp flat extraction only gives approximate view counts and NO like counts.
+        # We scrape each video's watch page HTML in parallel using a pooled session
+        # to get the real numbers from YouTube's embedded JSON (viewCount + like label).
         from concurrent.futures import ThreadPoolExecutor
 
         valid_entries = [e for e in entries if isinstance(e, dict)]
-        top_candidates = sorted(
-            valid_entries,
-            key=lambda x: int(x.get("view_count") or 0),
-            reverse=True
-        )[:15]
 
-        def _fetch_yt_like(e: Dict[str, Any]):
-            if e.get("like_count"):
-                return
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
+
+        def _fetch_accurate_stats(e: Dict[str, Any]):
+            """Fetch real view_count and like_count from YouTube watch page HTML."""
             vid_url = e.get("webpage_url") or e.get("url")
             if not vid_url and e.get("id"):
                 vid_url = f"https://www.youtube.com/watch?v={e['id']}"
             if not vid_url:
                 return
             try:
-                r = requests.get(vid_url, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }, timeout=5)
-                if r.status_code == 200:
-                    m = re.search(r'"accessibilityText":\s*"([\d,.]+[KMBkmb]?)\s+likes?"', r.text, re.I)
-                    if not m:
-                        m = re.search(r'"(?:defaultText|simpleText|content)":\s*"([\d,.]+[KMBkmb]?)\s+likes?"', r.text, re.I)
-                    if m:
-                        raw = m.group(1).replace(',', '')
-                        mult = 1
-                        if raw.upper().endswith('K'):
-                            mult = 1000
-                            raw = raw[:-1]
-                        elif raw.upper().endswith('M'):
-                            mult = 1000000
-                            raw = raw[:-1]
-                        e["like_count"] = int(float(raw) * mult)
+                r = session.get(vid_url, timeout=10)
+                if r.status_code != 200:
+                    return
+
+                # Accurate view count from embedded JSON: "viewCount":"1515866"
+                view_m = re.search(r'"viewCount":\s*"(\d+)"', r.text)
+                if view_m:
+                    e["view_count"] = int(view_m.group(1))
+
+                # Accurate like count from accessibility label
+                like_m = re.search(
+                    r'"accessibilityText":\s*"like this video along with ([\d,]+) other people"',
+                    r.text, re.I
+                )
+                if not like_m:
+                    like_m = re.search(r'"label":\s*"([\d,]+)\s+likes?"', r.text, re.I)
+                if not like_m:
+                    like_m = re.search(
+                        r'"accessibilityText":\s*"([\d,.]+[KMBkmb]?)\s+likes?"',
+                        r.text, re.I
+                    )
+                if like_m:
+                    raw = like_m.group(1).replace(',', '')
+                    mult = 1
+                    if raw.upper().endswith('K'):
+                        mult = 1000
+                        raw = raw[:-1]
+                    elif raw.upper().endswith('M'):
+                        mult = 1000000
+                        raw = raw[:-1]
+                    elif raw.upper().endswith('B'):
+                        mult = 1000000000
+                        raw = raw[:-1]
+                    e["like_count"] = int(float(raw) * mult)
             except Exception:
                 pass
 
-        if top_candidates:
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                list(pool.map(_fetch_yt_like, top_candidates))
+        if valid_entries:
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                list(pool.map(_fetch_accurate_stats, valid_entries))
 
+        session.close()
+
+        # ── Build the complete video catalog ──
         formatted_entries = []
         for e in entries:
             if not isinstance(e, dict):
@@ -568,11 +592,9 @@ class YoutubeEngine(VideoEngine):
             formatted_entries.append({
                 "id": str(e.get("id") or ""),
                 "title": str(e.get("title") or ""),
+                "url": str(e.get("webpage_url") or e.get("url") or (f"https://www.youtube.com/watch?v={e.get('id')}" if e.get('id') else "")),
                 "views": v_cnt,
-                "like": l_cnt,
                 "likes": l_cnt,
-                "rated": l_cnt,
-                "url": str(e.get("webpage_url") or e.get("url") or (f"https://www.youtube.com/watch?v={e.get('id')}" if e.get('id') else ""))
             })
 
         most_viewed = sorted(
@@ -580,15 +602,12 @@ class YoutubeEngine(VideoEngine):
             key=lambda x: x["views"], reverse=True
         )[:10] or formatted_entries[:10]
 
-        top_rated = sorted(
-            [e for e in formatted_entries if e["like"] > 0],
-            key=lambda x: x["like"], reverse=True
-        )[:10] or formatted_entries[:10]
-
-        total_v = info.get('view_count') or sum(e["views"] for e in formatted_entries)
-        total_l = info.get('channel_follower_count') or info.get('like_count') or sum(e["like"] for e in formatted_entries)
+        total_v = sum(e["views"] for e in formatted_entries)
+        total_l = sum(e["likes"] for e in formatted_entries)
+        subs = info.get('channel_follower_count')
         views_str = f"{int(total_v):,}" if total_v else ""
         likes_str = f"{int(total_l):,}" if total_l else ""
+        subs_str = f"{int(subs):,}" if subs else ""
 
         channel_title = info.get('uploader') or info.get('channel') or info.get('title') or "Unknown"
         channel_id = info.get('uploader_id') or info.get('channel_id') or ""
@@ -604,12 +623,12 @@ class YoutubeEngine(VideoEngine):
             "author": channel_title,
             "description": clean_desc,
             "url": info.get('webpage_url') or info.get('original_url') or "",
+            "total_videos": len(formatted_entries),
             "views": views_str,
-            "like": likes_str,
             "likes": likes_str,
-            "rated": likes_str,
+            "subscribers": subs_str,
             "most_viewed": most_viewed,
-            "top_rated": top_rated,
+            "videos": formatted_entries,
         }
         meta_path.write_text(json.dumps(meta_dict, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -764,7 +783,8 @@ class YoutubeEngine(VideoEngine):
             temp_batch.close()
             
             import shutil
-            ytdlp_bin = shutil.which("yt-dlp") or "yt-dlp"
+            venv_ytdlp = Path(sys.executable).parent / "yt-dlp"
+            ytdlp_bin = str(venv_ytdlp) if venv_ytdlp.exists() else (shutil.which("yt-dlp") or "yt-dlp")
             cmd = [
                 ytdlp_bin,
                 "--batch-file", temp_batch.name,
@@ -775,8 +795,8 @@ class YoutubeEngine(VideoEngine):
                 "--concurrent-fragments", "5",
                 "--no-check-certificate",
                 "--no-warnings",
-                "--socket-timeout", "5",
-                "--extractor-args", "youtube:player-client=android,web,default"
+                "--socket-timeout", "10",
+                "--extractor-args", "youtube:player_client=android,web,default"
             ]
             
             for k, v in self.headers.items():
