@@ -187,12 +187,17 @@ Zine Scraper includes a built-in, secure credentials manager so personal API key
       "mangadex": {
           "client_id": "personal-client-your-uuid",
           "client_secret": "your-client-secret"
+      },
+      "civitai": {
+          "api_key": "your-civitai-api-key"
       }
   }
   ```
+* **In-App Secrets Manager**: Access `settings` $\rightarrow$ `🔑 API Keys & Secrets` to view (with safe masking `48d7...edd3`), edit, add, or delete API keys and custom site credentials directly inside the interactive terminal.
+* **Auto-Sync from Model Queues**: Adding an API key header (`## api key - <token>`) inside `~/Downloads/Zine/cavitai.txt` automatically syncs the token into `secrets.json`.
 * **Git Safe**: `secrets.json`, `core/secrets.json`, and `.env` are permanently excluded in `.gitignore`. You can safely push, pull, or share your repository without exposing credentials.
-* **Environment Variables**: You can also optionally provide keys as system environment variables (e.g. `MANGADEX_CLIENT_ID` and `MANGADEX_CLIENT_SECRET`).
-* **Complete Guide**: See [`docs/ManaDex.md`](docs/ManaDex.md) for a comprehensive step-by-step walkthrough on generating API keys, language selection, and library management.
+* **Environment Variables**: You can also optionally provide keys as system environment variables (e.g. `CIVITAI_API_KEY`, `MANGADEX_CLIENT_ID`, and `MANGADEX_CLIENT_SECRET`).
+* **Complete Guide**: See [`docs/ManaDex.md`](docs/ManaDex.md) for MangaDex credentials walkthrough.
 
 ---
 
@@ -246,6 +251,7 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 | Command | Category | Description |
 |---|---|---|
 | **`server`** | **Remote Relay** | High-performance Go companion server daemon for Hwaran (Android) and remote ingestion |
+| **`anima model`** / **`civitai`** | **AI Models** | Accelerated Civitai / Anima multi-stream model downloader (auto-routes into ComfyUI / Vacuum) |
 | **`vacuum`** | **Automation** | Headless Queue Runner (processes all links in `vacuum.txt` or a custom text file) |
 | **`bake`** / **`metadata`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
 | **`lyrs`** | **Audio** | Synced `.lrc` Lyrics Search & Downloader (6-tier waterfall: LRCLIB, NetEase, Megalobiz) |
@@ -525,6 +531,17 @@ Zine features a local GPU subtitle generation pipeline achieving **100% accuracy
   * **Ephemeral Relay (`keep_on_pc = false`)**: Downloads into a temporary staging buffer, streams compressed ZIP to your phone, unpacks directly under `<Media Title>/`, and auto-purges the PC staging buffer (0 bytes left on PC).
   * **Permanent Archiving (`keep_on_pc = true`)**: Archives a permanent copy in `~/Downloads/Zine/` on your PC while simultaneously sending a copy to your phone.
 * **Minimal Dark Obsidian Theme**: Hwaran mobile UI styled with clean titanium monochrome and subtle status accents.
+
+### 10. Multi-Stream Accelerated Civitai & Anima Downloader (`anima model`, `civitai`)
+* **Multi-Stream Parallel Acceleration**: Breaks large neural models (LoRA, Checkpoints, VAE) into concurrent byte ranges with parallel thread pools, saturating available bandwidth while bypassing single-stream CDN throttling.
+* **Cloudflare R2 Presigned Authorization Sanitizer**: Neutralizes HTTP 400 Bad Request errors on Cloudflare R2 storage by dynamically omitting `Authorization: Bearer` headers on chunk range requests while preserving presigned query authentication.
+* **Smart ComfyUI Auto-Routing**: Automatically inspects model metadata and routes downloaded weights directly into local ComfyUI model directories (`models/loras/anima/<category>`, `models/checkpoints/`, `models/vae/`), with automatic fallback to `~/Downloads/Zine/Vacuum/Models/` if ComfyUI is uninstalled.
+* **Dynamic Inline Destination Flags**: Supports explicit per-line destination paths inside queue files:
+  ```text
+  https://civitai.com/models/12345/my-model?modelVersionId=67890 -- /mnt/maiden/comfyui-portable/ComfyUI/models/loras/anima/pose
+  ```
+* **Queue File Automation (`cavitai.txt`)**: Auto-scaffolded at `~/Downloads/Zine/cavitai.txt`. Supports inline API key headers (`## api key - <token>`), auto-syncing credentials directly into `secrets.json`.
+* **Full Revolt (`Ctrl+R`) & Truncate (`Ctrl+T`)**: Live keyboard listener with in-flight chunk cancellation immediately aborts downloads on stop limits without leaving corrupted partial files on disk.
 
 ---
 

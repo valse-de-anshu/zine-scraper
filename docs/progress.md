@@ -1,3 +1,21 @@
+# Progress Report - October 2, 2026 (Civitai / Anima Model Downloader Aesthetic Overhaul & Revolt/Truncate Integration)
+
+- **Civitai / Anima Model Downloader Tool (`anima model`, `civitai`):**
+  - **Cloudflare R2 Presigned Authorization Fix**: Fixed HTTP 400 Bad Request on models hosted on Cloudflare R2 storage (e.g. `swordSwallowing_v1.safetensors`). Stripped `Authorization: Bearer` headers from CDN chunk Range requests, preserving presigned query string authorization.
+  - **Streamlined Single-Line Console Log**: Removed repetitive static metadata trees printed before downloads. Only the transient live progress tree renders during active downloading, collapsing into a single clean line upon completion (`● [model] ([size]) ⬩➤ [folder]`).
+  - **Persistent Live Progress Bar**: Ensured `MinimalPulseBar` with live percentage, byte counters, download speed, and ETA is always visible in `○ Result` throughout the entire download.
+  - **Full Revolt (`Ctrl+R`) & Truncate (`Ctrl+T`) Integration**:
+    - Wrapped download sessions with `set_active_live(live)` to register raw TTY keyboard listeners.
+    - Integrated `inject_revolt_into_renderable` so users can dynamically input stop limits (`Ctrl+R` for immediate/item shutdown, `Ctrl+T` to finish N models and return).
+    - Added in-flight chunk cancellation in [`scrapers/3_SYSTEM/civitai/engine.py`](file:///home/valse-de-anshu/.config/zine%20scraper/scrapers/3_SYSTEM/civitai/engine.py) to immediately abort long active downloads upon `Ctrl+R`.
+  - **Summary Report & Mandatory Pause**: Ends with a clean `Ingestion Summary` (`Total`, `Downloaded`, `Already on Disk`, `Failed`) and halts with `prompt_return("Press Enter to return to main menu...")` before returning.
+- **API Keys & Secrets Manager (`secrets.json`, `core/secrets.py`, `core/settings_tui.py`):**
+  - **Centralized Secrets Storage**: Uses [`secrets.json`](file:///home/valse-de-anshu/.config/zine%20scraper/secrets.json) (permanently gitignored) to store all API credentials (Civitai, MangaDex, custom site keys).
+  - **Dynamic Settings UI (`🔑 API Keys & Secrets`)**: Added interactive settings selector and submenu (`secrets_settings_tui()`) allowing users to view (masked `48d7...edd3`), add, edit, or delete API keys and credentials for supported and custom sites.
+  - **Civitai Engine & Downloader Sync**: Civitai model downloader automatically reads from `secrets.json`, environment variables, or inline file header, syncing any new key directly into `secrets.json`.
+
+---
+
 # Progress Report - September 24, 2026 (Visual Theme Overhaul, Immediate Process Cancellation, Mobile Extraction & Master Docs Sync)
 
 - **Minimal Dark Obsidian Theme & Visual Redesign (Hwaran Android App):**

@@ -11,6 +11,9 @@ You can type any of the following commands directly at the main prompt:
 - **`server`** or **`/server`**
   Launch the high-performance Go companion relay daemon for Hwaran (Android) and remote ingestion. Features zero-configuration LAN UDP discovery on ports 53319 and 53318, real-time unbuffered progress streaming, direct ZIP extraction, and ephemeral relay mode.
 
+- **`anima model`** or **`civitai`** or **`/anima`**
+  Launch the Accelerated Civitai / Anima Model Downloader. Features multi-stream concurrent chunk downloading, Cloudflare R2 presigned Range header bypass, smart auto-routing directly into ComfyUI model directories (`loras/anima`, `checkpoints`, `vae`) or Vacuum fallback, and live progress reporting. Reads from `~/Downloads/Zine/cavitai.txt` or custom queue files.
+
 - **`bake`** or **`/bake`**
   Launch the Audio Metadata & Cover Art Baking Engine. Edit tags, inject hi-res covers, and embed standard metadata into audio files via FFmpeg / Mutagen.
 
@@ -30,7 +33,7 @@ You can type any of the following commands directly at the main prompt:
   Batch scanner for your music library. Automatically finds missing `.lrc` lyrics files and fetches synced lyrics across all tracks.
 
 - **`settings`** or **`/settings`**
-  Open the interactive Settings Configurator to adjust Library Root Path, Music Quick-Grab Path, Chapter Download Delay, Connection Check Delay, AI Subtitles (Whisper), Breeze TTS 2, Qwen TTS logic, and Visual Color Themes.
+  Open the interactive Settings Configurator to adjust Library Root Path, Music Quick-Grab Path, Chapter Download Delay, Connection Check Delay, AI Subtitles (Whisper), Breeze TTS 2, Qwen TTS logic, API Keys & Secrets Manager (`secrets.json` for Civitai, MangaDex, etc.), and Visual Color Themes.
 
 - **`site`** or **`/site`** or **`sites`**
   Open the interactive Supported Site Database TUI to view all 48+ supported platforms, domain aliases, categories, and direct extraction capability.

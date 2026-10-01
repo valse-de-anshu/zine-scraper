@@ -66,6 +66,7 @@ scrapers/
 │       ├── omegascans/
 │       └── oppai_stream_toon/
 └── 3_SYSTEM/               # Core headless bridges, stream decryptors & downloaders
+    ├── civitai/            # Accelerated Civitai & Anima model ingestion & auto-routing
     ├── hls_extractor.py
     ├── playwright_extractor.py
     └── ytdlp/
@@ -234,6 +235,14 @@ An automated headless Chromium bridge designed to defeat Cloudflare Turnstile, J
 
 ### 3. `ytdlp/`
 Encapsulated CLI extraction engine for universal video platforms, handling rate-limiting and format selection.
+
+### 4. `civitai/`
+Accelerated Multi-Stream Civitai & Anima Model Downloader:
+- **Multi-Stream Acceleration**: Downloads large neural models concurrently via chunked HTTP range requests across configurable worker threads.
+- **Cloudflare R2 Compatibility**: Automatic header sanitization for Cloudflare R2 presigned chunk queries, preventing 400 Bad Request errors.
+- **Smart Model Routing**: Auto-detects ComfyUI installation paths and routes models into appropriate subdirectories (`models/loras/anima/`, `models/checkpoints/`, `models/vae/`, etc.) based on base model and category flags, with fallback to `Vacuum/Models/`.
+- **Secrets & Auth Integration**: Transparently resolves API keys from `secrets.json`, environment variables, or inline queue file headers (`cavitai.txt`).
+- **Full Revolt & Truncate Support**: Seamlessly responds to `Ctrl+R` (graceful stop / item limit) and `Ctrl+T` (early truncate) with immediate in-flight chunk cancellation.
 
 ---
 
