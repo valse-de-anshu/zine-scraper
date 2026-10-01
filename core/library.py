@@ -59,6 +59,14 @@ def scaffold_library(root: Path, storage) -> None:
     if not vacuum_file.exists():
         storage.write_file(vacuum_file, "# Add URLs here to download sequentially in vacuum mode.\n# Example: https://site.com/series-url --5\n")
 
+    # Civitai / Anima models queue file
+    cavitai_file = root / "cavitai.txt"
+    if not cavitai_file.exists():
+        storage.write_file(
+            cavitai_file,
+            "## api key - \n# Add Civitai / Anima model URLs here to download with multi-stream acceleration.\n# Format: <URL> [-- <DESTINATION_PATH>]\n# If destination is omitted, models automatically route to ComfyUI or Vacuum/Models/.\n# Example: https://civitai.com/models/12345/my-model?modelVersionId=67890 -- /mnt/maiden/comfyui-portable/ComfyUI/models/loras/anima/pose\n"
+        )
+
     # temp (centralized in 💩)
     from core.paths import PathAuthority
     temp_dir = PathAuthority().get_temp_root()

@@ -83,6 +83,7 @@ def print_cli_help():
     cmd_table.add_row("slice", "Comic Tools", "Webtoon & Manhua vertical strip page slicer (uniform 2000px height pages).")
     cmd_table.add_row("breeze", "Neural TTS", "Breeze-TTS-2 C++/GGUF speech synthesizer with Voice Design & Cloning.")
     cmd_table.add_row("tts", "Audiobook", "Universal audiobook synthesis hub (Breeze-TTS-2 or Qwen-TTS).")
+    cmd_table.add_row("anima model", "Model Tools", "Accelerated Civitai model & LoRA downloader with multi-stream chunking.")
     cmd_table.add_row("settings", "Configuration", "Interactive settings configurator (download directories, 80+ themes, network).")
 
     console.print(Panel(cmd_table, title="[bold white]BUILT-IN POWER TOOLS & SUBCOMMANDS[/bold white]", title_align="left", box=ROUNDED, border_style="magenta"))

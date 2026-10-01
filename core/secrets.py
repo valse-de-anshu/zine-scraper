@@ -19,6 +19,9 @@ from typing import Any, Optional, Dict
 logger = logging.getLogger(__name__)
 
 DEFAULT_SECRETS_TEMPLATE: Dict[str, Any] = {
+    "civitai": {
+        "api_key": ""
+    },
     "mangadex": {
         "client_id": "",
         "client_secret": ""
@@ -63,6 +66,46 @@ def ensure_secrets_file() -> Path:
         except Exception:
             pass
     return p
+
+def set_secret(key_path: str, value: Any) -> bool:
+    """
+    Sets a secret value in secrets.json using dotted path (e.g. 'civitai.api_key').
+    Preserves all existing keys and structure in secrets.json.
+    """
+    secrets = load_secrets()
+    if not secrets and DEFAULT_SECRETS_TEMPLATE:
+        secrets = json.loads(json.dumps(DEFAULT_SECRETS_TEMPLATE))
+    parts = key_path.split(".")
+    curr = secrets
+    for part in parts[:-1]:
+        if part not in curr or not isinstance(curr[part], dict):
+            curr[part] = {}
+        curr = curr[part]
+    curr[parts[-1]] = value
+    return save_secrets(secrets)
+
+def delete_secret(key_path: str) -> bool:
+    """Removes a secret key from secrets.json."""
+    secrets = load_secrets()
+    parts = key_path.split(".")
+    curr = secrets
+    for part in parts[:-1]:
+        if part not in curr or not isinstance(curr[part], dict):
+            return False
+        curr = curr[part]
+    if parts[-1] in curr:
+        del curr[parts[-1]]
+        return save_secrets(secrets)
+    return False
+
+def mask_secret(val: Optional[str]) -> str:
+    """Masks secret value for safe display in TUIs."""
+    if not val:
+        return "None"
+    s = str(val).strip()
+    if len(s) <= 8:
+        return "●" * len(s)
+    return f"{s[:4]}...{s[-4:]}"
 
 def get_secret(key_path: str, default: Any = None) -> Any:
     """

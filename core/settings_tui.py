@@ -1348,6 +1348,105 @@ def breeze_tts_settings_tui():
                 time.sleep(1.5)
 
 
+def secrets_settings_tui():
+    """Interactive secrets manager for configuring API keys and credentials in secrets.json."""
+    from core.secrets import load_secrets, set_secret, delete_secret, mask_secret, get_secrets_file_path
+
+    while True:
+        startup_clear()
+        print_banner()
+
+        secrets_file = get_secrets_file_path()
+        secrets_data = load_secrets()
+
+        civitai_key = secrets_data.get("civitai", {}).get("api_key", "")
+        md_id = secrets_data.get("mangadex", {}).get("client_id", "")
+        md_secret = secrets_data.get("mangadex", {}).get("client_secret", "")
+
+        civitai_disp = mask_secret(civitai_key) if civitai_key else "None (Public Only)"
+        md_id_disp = mask_secret(md_id) if md_id else "None"
+        md_secret_disp = mask_secret(md_secret) if md_secret else "None"
+
+        custom_items = []
+        known_sections = {"civitai", "mangadex"}
+        for site_name, site_data in secrets_data.items():
+            if site_name not in known_sections and isinstance(site_data, dict):
+                for k, v in site_data.items():
+                    custom_items.append((f"{site_name.capitalize()} {k.replace('_', ' ').title()}", mask_secret(str(v)), f"custom_{site_name}_{k}"))
+
+        sections = [
+            ("Civitai / Anima Models", [
+                ("Civitai API Key / Token", civitai_disp, "sec_civitai_key"),
+            ]),
+            ("MangaDex API Credentials", [
+                ("Personal Client ID",     md_id_disp, "sec_md_id"),
+                ("Client Secret",          md_secret_disp, "sec_md_secret"),
+            ]),
+        ]
+
+        if custom_items:
+            sections.append(("Other Stored Services", custom_items))
+
+        sections.append(("Options", [
+            ("Add Custom Site Key", "▶ New Key", "sec_add_custom"),
+            ("Stored Secrets File", _short_path(str(secrets_file)), "sec_view_path"),
+        ]))
+
+        choice = SettingsSelector(sections, title="◆ API KEYS & SECRETS CONFIGURATOR ◆").select()
+        if not choice or choice in ("ESC", "CTRL_C"):
+            break
+
+        if choice == "sec_civitai_key":
+            new_val = prompt_field_value("Civitai API Key", civitai_key, "(Paste your Civitai API key from Account Settings -> API Keys)")
+            if new_val is not None:
+                set_secret("civitai.api_key", new_val.strip())
+
+        elif choice == "sec_md_id":
+            new_val = prompt_field_value("MangaDex Client ID", md_id, "(Enter MangaDex Personal Client ID)")
+            if new_val is not None:
+                set_secret("mangadex.client_id", new_val.strip())
+
+        elif choice == "sec_md_secret":
+            new_val = prompt_field_value("MangaDex Client Secret", md_secret, "(Enter MangaDex Client Secret)")
+            if new_val is not None:
+                set_secret("mangadex.client_secret", new_val.strip())
+
+        elif choice == "sec_add_custom":
+            site_name = prompt_field_value("Service / Site Name", "", "(e.g. huggingface, openai, novelupdates)")
+            if site_name and site_name.strip():
+                clean_site = site_name.strip().lower().replace(" ", "_")
+                key_name = prompt_field_value(f"{clean_site} Key Name", "api_key", "(e.g. api_key, token, secret)")
+                if key_name and key_name.strip():
+                    clean_key = key_name.strip().lower().replace(" ", "_")
+                    key_val = prompt_field_value(f"{clean_site}.{clean_key} Value", "", "(Paste secret token/key)")
+                    if key_val is not None:
+                        set_secret(f"{clean_site}.{clean_key}", key_val.strip())
+
+        elif choice == "sec_view_path":
+            console.print(f"\n[info]Secrets File:[/info] [site]{secrets_file}[/site]")
+            console.print(f"[dim white]This file is gitignored and stores all API keys safely on your machine.[/dim white]\n")
+            from core.ui import prompt_return
+            prompt_return("Press Enter to continue...")
+
+        elif choice.startswith("custom_"):
+            parts = choice.split("_", 2)
+            if len(parts) >= 3:
+                c_site = parts[1]
+                c_key = parts[2]
+                curr_val = secrets_data.get(c_site, {}).get(c_key, "")
+                action_opts = [
+                    ("Edit Key Value", "edit"),
+                    ("Delete Key", "delete"),
+                ]
+                act = BoxSelector(action_opts, f"Manage {c_site}.{c_key}").select()
+                if act == "edit":
+                    new_val = prompt_field_value(f"{c_site}.{c_key}", str(curr_val))
+                    if new_val is not None:
+                        set_secret(f"{c_site}.{c_key}", new_val.strip())
+                elif act == "delete":
+                    delete_secret(f"{c_site}.{c_key}")
+
+
 def launch_settings_tui():
     """Interactive settings menu to configure Zine preferences cleanly in a single panel box."""
     last_key = None
@@ -1393,6 +1492,10 @@ def launch_settings_tui():
         curr_tts_instruct_display = _short_path(curr_tts_instruct) if curr_tts_instruct else "None"
         curr_tts_ref_audio = config.get("tts_clone_ref_audio", "")
         curr_tts_ref_audio_display = _short_path(curr_tts_ref_audio) if curr_tts_ref_audio else "None"
+
+        from core.secrets import get_secret, mask_secret
+        curr_civitai_key = get_secret("civitai.api_key", "")
+        curr_civitai_disp = mask_secret(curr_civitai_key) if curr_civitai_key else "None (Public Only)"
         
         sections = [
             ("📁 Storage & Directories", [
@@ -1414,6 +1517,10 @@ def launch_settings_tui():
                 ("Whisper AI Subtitles",     "▶ Configure Options", "submenu_whisper"),
                 ("Breeze TTS 2 (Audiobooks)","▶ Configure Options", "submenu_breeze"),
                 ("Qwen Audiobooks TTS",      "▶ Configure Options", "submenu_qwen"),
+            ]),
+            ("🔑 API Keys & Secrets", [
+                ("Civitai / Anima API Key",   curr_civitai_disp, "civitai_api_key"),
+                ("Manage All Secrets",       "▶ Configure Credentials", "submenu_secrets"),
             ]),
             ("🖥️ Interface & System", [
                 ("Color Theme",              curr_theme, "theme"),
@@ -1489,6 +1596,18 @@ def launch_settings_tui():
             
         elif choice == "submenu_qwen":
             qwen_tts_settings_tui()
+
+        elif choice == "civitai_api_key":
+            from core.secrets import get_secret, set_secret
+            curr_civitai_key = get_secret("civitai.api_key", "")
+            new_key = prompt_field_value("Civitai API Key", curr_civitai_key, "(Paste Civitai API key from Civitai Account Settings -> API Keys)")
+            if new_key is not None:
+                set_secret("civitai.api_key", new_key.strip())
+                console.print("\n[success]● Civitai API Key updated in secrets.json![/success]")
+                time.sleep(1.2)
+
+        elif choice == "submenu_secrets":
+            secrets_settings_tui()
 
         elif choice == "download_base":
             new_path = prompt_field_value("Library Root Path", curr_download, "(Press ESC to cancel without saving)")

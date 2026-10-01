@@ -956,7 +956,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["bake", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
+        commands = ["anima model", "bake", "civitai", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -1013,6 +1013,11 @@ class MainPrompt:
         
         if show_tips:
             tip_text = Text()
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("anima model", style="warning")
+            tip_text.append(" to download Civitai models & checkpoints.\n", style="info")
+            
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
             tip_text.append("bake", style="warning")
@@ -1374,6 +1379,23 @@ def main():
             elif clean_lower in ["sc-lyrics", "/sc-lyrics", "sc_lyrics", "sclyrs"]:
                 from core.lyrics_engine import run_batch_lyrics_tui
                 run_batch_lyrics_tui()
+            elif clean_lower in ["anima model", "/anima model", "anima", "/anima", "civitai", "/civitai", "models", "/models", "anima-model", "/anima-model"] or any(clean_lower.startswith(pfx) for pfx in ("anima model ", "/anima model ", "civitai ", "/civitai ", "anima-model ", "/anima-model ", "anima ")):
+                target_file = None
+                for prefix in ["anima model ", "/anima model ", "anima-model ", "/anima-model ", "civitai ", "/civitai "]:
+                    if clean_candidate.lower().startswith(prefix):
+                        cand = clean_candidate[len(prefix):].strip()
+                        if cand and cand.lower() not in ("model", "models"):
+                            target_file = cand
+                        break
+                else:
+                    if clean_candidate.lower().startswith("anima "):
+                        cand = clean_candidate[len("anima "):].strip()
+                        if cand and cand.lower() not in ("model", "models"):
+                            target_file = cand
+                from core.civitai_engine import run_civitai_tui
+                run_civitai_tui(input_file=target_file)
+                if cli_args:
+                    break
 
             # 5. Media URL Execution
             else:

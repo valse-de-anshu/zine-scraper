@@ -38,6 +38,9 @@ def sanitize_user_path(raw_path: str) -> str:
         else:
             clean = unescaped
 
+    if "comfy ui-portable" in clean and not os.path.exists(os.path.expanduser(clean)):
+        clean = clean.replace("comfy ui-portable", "comfyui-portable")
+
     return clean
 
 class PathAuthority:
@@ -163,6 +166,15 @@ class PathAuthority:
 
     def get_vacuum_urls_file(self) -> Path:
         return self.get_urls_file()
+
+    def get_cavitai_file(self) -> Path:
+        """Returns the primary civitai / anima model queue file (cavitai.txt) in the downloads root."""
+        cavitai_file = self._downloads_root / "cavitai.txt"
+        if not cavitai_file.exists():
+            legacy_file = self._downloads_root / "civitai.txt"
+            if legacy_file.exists():
+                return legacy_file
+        return cavitai_file
 
     def get_url_history_file(self) -> Path:
         return self._url_history_file

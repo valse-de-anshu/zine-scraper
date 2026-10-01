@@ -72,6 +72,17 @@ if len(sys.argv) > 1:
         res = resolve_link_info(target_url, flags_input=extra_flags, mode_input=mode_arg)
         print(json.dumps(res, indent=2))
         sys.exit(0 if res.get("valid") else 1)
+    elif arg_first in ["--anima-model", "-anima-model", "--civitai", "civitai", "anima", "anima model"] or (arg_first == "anima" and len(sys.argv) > 2 and sys.argv[2].lower() in ["model", "models"]):
+        from core.civitai_engine import run_civitai_tui
+        custom_file = None
+        if arg_first == "anima model" and len(sys.argv) > 2:
+            custom_file = sys.argv[2]
+        elif arg_first == "anima" and len(sys.argv) > 3:
+            custom_file = sys.argv[3]
+        elif len(sys.argv) > 2 and not sys.argv[2].startswith("-") and sys.argv[2].lower() not in ["model", "models"]:
+            custom_file = sys.argv[2]
+        run_civitai_tui(input_file=custom_file)
+        sys.exit(0)
     elif raw_arg.startswith("-") and not re.match(r"^--?(\d+|[aA]|all)\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)
