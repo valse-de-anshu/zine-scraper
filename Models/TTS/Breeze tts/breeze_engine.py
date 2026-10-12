@@ -1156,6 +1156,8 @@ def process_book_breeze(txt_path_str: str):
     if is_recap_narration and chapter_folder:
         out_dir = chapter_folder / "audio"
         out_dir.mkdir(parents=True, exist_ok=True)
+        segments_dir = out_dir / "segments"
+        segments_dir.mkdir(parents=True, exist_ok=True)
         assets_dir = chapter_folder
         temp_voice_dir = out_dir / "temp_voice"
         temp_voice_dir.mkdir(parents=True, exist_ok=True)
@@ -1164,6 +1166,7 @@ def process_book_breeze(txt_path_str: str):
         out_script = txt_path
         story_source = txt_path
     else:
+        segments_dir = None
         # Master Output Architecture: Single unified hub in Vacuum/zine tts/
         custom_out = config.get("breeze_output_dir", "").strip()
         if custom_out:
@@ -1556,8 +1559,8 @@ def process_book_breeze(txt_path_str: str):
 
                 if success and local_wav.exists() and local_wav.stat().st_size > 1000:
                     normalize_chunk_loudness(local_wav, local_wav)
-                    if is_recap_narration:
-                        seg_dest = out_dir / f"segment_{i:03d}.wav"
+                    if is_recap_narration and segments_dir:
+                        seg_dest = segments_dir / f"segment_{i:03d}.wav"
                         try:
                             import shutil
                             shutil.copy2(local_wav, seg_dest)
@@ -1654,11 +1657,11 @@ def process_book_breeze(txt_path_str: str):
                         sdata = json.load(sjf)
                     segs = sdata.get("segments", [])
                     for idx, seg in enumerate(segs, 1):
-                        seg_w = out_dir / f"segment_{idx:03d}.wav"
+                        seg_w = (segments_dir / f"segment_{idx:03d}.wav") if segments_dir else (out_dir / f"segment_{idx:03d}.wav")
                         if seg_w.exists():
                             dur = get_wav_duration(str(seg_w))
                             seg["estimated_duration_seconds"] = round(dur, 2)
-                            seg["audio_file"] = f"chapters/{chapter_folder.name}/audio/segment_{idx:03d}.wav"
+                            seg["audio_file"] = f"chapters/{chapter_folder.name}/audio/segments/segment_{idx:03d}.wav"
                     tmp_sj = script_json_path.with_suffix(".tmp")
                     with open(tmp_sj, "w", encoding="utf-8") as tsjf:
                         json.dump(sdata, tsjf, indent=2, ensure_ascii=False)
@@ -1912,12 +1915,14 @@ def render_recap_script(
     else:
         audio_dir = script_file.parent / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
+    segments_dir = audio_dir / "segments"
+    segments_dir.mkdir(parents=True, exist_ok=True)
 
     # Determine relative path prefix for video editor alignment
     if script_file.parent.name.startswith("chapter_"):
-        rel_prefix = f"chapters/{script_file.parent.name}/audio"
+        rel_prefix = f"chapters/{script_file.parent.name}/audio/segments"
     else:
-        rel_prefix = "audio"
+        rel_prefix = "audio/segments"
 
     # Resolve settings and voice profile
     active_voice = voice_name or config.get("breeze_saved_voice", "narrator") or "narrator"
@@ -1938,14 +1943,14 @@ def render_recap_script(
     accumulated_time = 0.0
 
     console.print(f"\n[bold sexy_pink]🌬️ Rendering Recap Script:[/bold sexy_pink] [bold white]{series} — Chapter {chapter}[/bold white]")
-    console.print(f"[dim]Segments: {total_segments} | Voice: {active_voice} | Base CFG: {base_cfg} | Audio Dir: {audio_dir}[/dim]\n")
+    console.print(f"[dim]Segments: {total_segments} | Voice: {active_voice} | Base CFG: {base_cfg} | Audio Dir: {audio_dir} | Segments: {segments_dir}[/dim]\n")
 
     for idx, seg in enumerate(segments, 1):
         seg_id = seg.get("segment_id", idx)
         narration = seg.get("narration_text", "").strip()
         instruction = seg.get("tts_instruction") or "Speak clearly and naturally as a dramatic story narrator."
         seg_filename = f"segment_{int(seg_id):03d}.wav"
-        seg_wav = audio_dir / seg_filename
+        seg_wav = segments_dir / seg_filename
         rel_wav_path = f"{rel_prefix}/{seg_filename}"
 
         if not narration:
