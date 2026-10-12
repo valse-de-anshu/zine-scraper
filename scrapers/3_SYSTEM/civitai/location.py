@@ -19,6 +19,7 @@ Rules:
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -65,9 +66,26 @@ def resolve_model_destination(
     """
     # 1. Explicit user-provided flag
     if explicit_dest and explicit_dest.strip():
-        sanitized = sanitize_user_path(explicit_dest)
-        target = Path(sanitized).expanduser().resolve()
-        return target, "Explicit flag (--)"
+        raw_dest = explicit_dest.strip()
+        # Auto-recover if an accidental URL was embedded inside the destination path
+        if "http://" in raw_dest or "https://" in raw_dest:
+            cleaned = re.sub(r'https?://[^\s/]+(/models/\d+/[^\s/]+)?', '', raw_dest).strip()
+            if not cleaned.startswith('/') and not cleaned.startswith('~'):
+                cleaned = re.sub(r'https?://[^\s]+', '', raw_dest).strip()
+            if cleaned.startswith('/') or cleaned.startswith('~'):
+                raw_dest = cleaned
+            else:
+                raw_dest = ""
+
+        if raw_dest:
+            sanitized = sanitize_user_path(raw_dest)
+            try:
+                target = Path(sanitized).expanduser().resolve()
+                target.mkdir(parents=True, exist_ok=True)
+                return target, "Explicit flag (--)"
+            except (PermissionError, OSError):
+                # Cannot create or write to explicit path, fall through to auto-route
+                pass
 
     # 2. Inspect ComfyUI structure
     comfy_root = get_comfyui_models_root()

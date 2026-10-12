@@ -46,8 +46,9 @@ from core.ui import (
 from core.paths import PathAuthority, sanitize_user_path
 
 try:
-    from .location import resolve_model_destination
+    from .location import resolve_model_destination, get_vacuum_fallback_dir
     from .engine import (
+        CivitaiDownloadError,
         create_browser_session,
         get_browser_headers,
         extract_api_key_from_lines,
@@ -71,6 +72,8 @@ except (ImportError, ValueError):
     _eng = _load("civitai_engine", _cur / "engine.py")
 
     resolve_model_destination = _loc.resolve_model_destination
+    get_vacuum_fallback_dir = _loc.get_vacuum_fallback_dir
+    CivitaiDownloadError = _eng.CivitaiDownloadError
     create_browser_session = _eng.create_browser_session
     get_browser_headers = _eng.get_browser_headers
     extract_api_key_from_lines = _eng.extract_api_key_from_lines
@@ -127,6 +130,54 @@ def get_completed_log_path() -> Path:
     log_dir = paths.get_suite_root() / "Logs" / "Downlode 💩"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / "civitai_completed.txt"
+
+
+def get_central_failed_log_path() -> Path:
+    """Returns the central failed history file in Logs/Downlode 💩/civitai_failed.txt."""
+    paths = PathAuthority()
+    log_dir = paths.get_suite_root() / "Logs" / "Downlode 💩"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "civitai_failed.txt"
+
+
+def record_failure_and_shift(
+    queue_path: Path,
+    failed_file: Path,
+    central_failed_path: Path,
+    orig_line: str,
+    reason: str
+) -> None:
+    """
+    Safely shifts a failed link from the active queue into the failed files,
+    annotating it with the exact failure reason so links are never lost.
+    """
+    clean_orig = orig_line.rstrip('\r\n')
+    # Strip any pre-existing failure comment if this was a re-run
+    if "  # [FAILED:" in clean_orig:
+        clean_orig = clean_orig.split("  # [FAILED:")[0].strip()
+
+    annotated = f"{clean_orig}  # [FAILED: {reason}]\n"
+
+    # 1. Append to local failed file beside the queue
+    try:
+        with open(failed_file, 'a', encoding='utf-8') as f:
+            f.write(annotated)
+    except Exception:
+        pass
+
+    # 2. Append to central failed log
+    try:
+        with open(central_failed_path, 'a', encoding='utf-8') as f:
+            f.write(annotated)
+    except Exception:
+        pass
+
+    # 3. Atomically remove from active queue file so it doesn't fail again
+    try:
+        remove_line_from_file(queue_path, orig_line)
+    except Exception:
+        pass
+
 
 
 def format_bytes(num_bytes: int) -> str:
@@ -186,6 +237,9 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
     session = create_browser_session(pool_size=threads * 2)
     headers = get_browser_headers(api_key=api_key)
 
+    failed_path = target_path.with_name(f"{target_path.stem}_failed.txt")
+    central_failed_path = get_central_failed_log_path()
+
     delim_regex = re.compile(r'\s+--\s*|\s*--\s+|--(?=/)')
     tasks: List[Tuple[str, str, Optional[str]]] = []
     for line in raw_lines:
@@ -200,30 +254,54 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
             url = stripped
             explicit_dest = None
 
+        # Clean inline comments from explicit destination or standalone URL
+        if explicit_dest and '#' in explicit_dest:
+            explicit_dest = explicit_dest.split('#', 1)[0].strip()
+        if not explicit_dest and '#' in url:
+            url = url.split('#', 1)[0].strip()
+
+        # Sanitize accidental URLs embedded in explicit destination
+        if explicit_dest and ("http://" in explicit_dest or "https://" in explicit_dest):
+            cleaned_dest = re.sub(r'https?://[^\s/]+(/models/\d+/[^\s/]+)?', '', explicit_dest).strip()
+            if not cleaned_dest.startswith('/') and not cleaned_dest.startswith('~'):
+                cleaned_dest = re.sub(r'https?://[^\s]+', '', explicit_dest).strip()
+            if cleaned_dest.startswith('/') or cleaned_dest.startswith('~'):
+                explicit_dest = cleaned_dest
+            else:
+                explicit_dest = None
+
         if url.count("://") > 1:
             extracted = re.findall(r'https?://[^\s]+', url)
             url = extracted[-1] if extracted else url
 
         tasks.append((line, url, explicit_dest if explicit_dest else None))
 
+    # Detect duplicate lines count in queue
+    raw_non_empty = [l.strip() for l in raw_lines if l.strip() and not l.strip().startswith("#")]
+    duplicate_count_initial = len(raw_non_empty) - len(set(raw_non_empty))
+
     # Clean minimalist header matching asurascans
     console.print(f"[menu]Menu[/menu]         : [site]Anima / Civitai Downloader[/site]")
     console.print(f"[menu]Queue[/menu]        : [sexy_pink]{target_path.resolve()}[/sexy_pink]")
+    console.print(f"[menu]Completed[/menu]    : [dim white]{completed_path.name}[/dim white]")
+    console.print(f"[menu]Failed Queue[/menu] : [warning]{failed_path.name}[/warning] [dim white](All failures safely shifted here)[/dim white]")
     console.print(f"[menu]Destination[/menu]  : [info]Smart ComfyUI Auto-Route (Vacuum Fallback)[/info]")
     if api_key:
         masked_key = f"{api_key[:6]}...{api_key[-4:]}"
         console.print(f"[menu]API Key[/menu]      : [success]● Active ({masked_key})[/success]")
     else:
         console.print(f"[menu]API Key[/menu]      : [dim white]None detected (public models only)[/dim white]")
-    console.print(f"[menu]Pending[/menu]      : [info]{len(tasks)} model(s)[/info]")
+    dup_str = f" [dim yellow]({duplicate_count_initial} duplicates in file)[/dim yellow]" if duplicate_count_initial > 0 else ""
+    console.print(f"[menu]Pending[/menu]      : [info]{len(tasks)} model(s)[/info]{dup_str}")
     console.print("")
 
     if not tasks:
-        console.print("[success]All models are already downloaded.[/success]\n")
+        console.print("[success]All models are already downloaded or queue is empty.[/success]\n")
         prompt_return("Press Enter to return to main menu...")
         return True
 
     results: List[Dict[str, Any]] = []
+    seen_urls_in_session: Dict[str, str] = {}
     console.show_cursor(False)
 
     try:
@@ -233,6 +311,28 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
                 break
             if check_truncate(title="Civitai Model Ingestion"):
                 break
+
+            # Deduplication: check if this URL was already handled in this session
+            if url in seen_urls_in_session:
+                prev_status = seen_urls_in_session[url]
+                console.print(f"  [warning]●[/warning] [unselected]{escape(url[:50])}[/unselected] [dim yellow]Duplicate in queue ({prev_status}) (Skipped)[/dim yellow]")
+                try:
+                    with open(completed_path, 'a', encoding='utf-8') as cf:
+                        cf.write(orig_line.rstrip('\n') + f"  # [DUPLICATE: {prev_status}]\n")
+                except Exception:
+                    pass
+                try:
+                    remove_line_from_file(target_path, orig_line)
+                except Exception:
+                    pass
+                results.append({
+                    "url": url,
+                    "filename": "Duplicate",
+                    "size": 0,
+                    "dest": explicit_dest or "N/A",
+                    "status": f"Duplicate ({prev_status})"
+                })
+                continue
 
             # 1. Parse URL & resolve download link + model metadata
             try:
@@ -277,14 +377,24 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
                         raise e_domain
 
             except Exception as e:
-                console.print(f"  [error]✘[/error] [unselected]{escape(url[:50])}[/unselected] [error]Failed to resolve ({escape(str(e))})[/error]\n")
+                err_msg = getattr(e, "message", str(e))
+                category = getattr(e, "category", "Failed")
+                console.print(f"  [error]✘[/error] [unselected]{escape(url[:50])}[/unselected] [error]Shifted to {failed_path.name} ({escape(err_msg)})[/error]\n")
+                record_failure_and_shift(
+                    queue_path=target_path,
+                    failed_file=failed_path,
+                    central_failed_path=central_failed_path,
+                    orig_line=orig_line,
+                    reason=err_msg
+                )
+                seen_urls_in_session[url] = f"Failed ({err_msg})"
                 results.append({
                     "url": url,
                     "filename": "Unknown",
                     "size": 0,
                     "dest": explicit_dest or "Unknown",
-                    "status": "Failed",
-                    "error": str(e)
+                    "status": f"Failed ({category})",
+                    "error": err_msg
                 })
                 continue
 
@@ -293,14 +403,41 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
             final_download_url = meta["final_url"]
 
             # 2. Destination Resolution
-            dest_dir_path, dest_reason = resolve_model_destination(
-                explicit_dest=explicit_dest,
-                model_type=meta.get("model_type"),
-                base_model=meta.get("base_model"),
-                model_name=meta.get("model_name"),
-                tags=meta.get("tags")
-            )
-            dest_dir_path.mkdir(parents=True, exist_ok=True)
+            try:
+                dest_dir_path, dest_reason = resolve_model_destination(
+                    explicit_dest=explicit_dest,
+                    model_type=meta.get("model_type"),
+                    base_model=meta.get("base_model"),
+                    model_name=meta.get("model_name"),
+                    tags=meta.get("tags")
+                )
+                dest_dir_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e_dest:
+                try:
+                    dest_dir_path = get_vacuum_fallback_dir(meta.get("model_type"))
+                    dest_dir_path.mkdir(parents=True, exist_ok=True)
+                    dest_reason = f"Vacuum Fallback ({e_dest})"
+                except Exception as e_fb:
+                    err_msg = f"Destination Error: {e_dest}"
+                    console.print(f"  [error]✘[/error] [unselected]{escape(url[:50])}[/unselected] [error]Shifted to {failed_path.name} ({escape(err_msg)})[/error]\n")
+                    record_failure_and_shift(
+                        queue_path=target_path,
+                        failed_file=failed_path,
+                        central_failed_path=central_failed_path,
+                        orig_line=orig_line,
+                        reason=err_msg
+                    )
+                    seen_urls_in_session[url] = f"Failed ({err_msg})"
+                    results.append({
+                        "url": url,
+                        "filename": filename or "Unknown",
+                        "size": 0,
+                        "dest": explicit_dest or "Unknown",
+                        "status": "Failed (Destination)",
+                        "error": err_msg
+                    })
+                    continue
+
             target_file = dest_dir_path / filename
 
             # 3. Strict No-Overwrite Protection
@@ -310,9 +447,13 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
                     try:
                         with open(completed_path, 'a', encoding='utf-8') as cf:
                             cf.write(orig_line.rstrip('\n') + f"  # [EXISTED ON DISK: {filename}]\n")
+                    except Exception:
+                        pass
+                    try:
                         remove_line_from_file(target_path, orig_line)
                     except Exception:
                         pass
+                    seen_urls_in_session[url] = f"Existed on disk ({filename})"
                     results.append({
                         "url": url,
                         "filename": filename,
@@ -398,9 +539,13 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
                 try:
                     with open(completed_path, 'a', encoding='utf-8') as cf:
                         cf.write(orig_line.rstrip('\n') + f"  # [SAVED: {filename}]\n")
+                except Exception:
+                    pass
+                try:
                     remove_line_from_file(target_path, orig_line)
                 except Exception:
                     pass
+                seen_urls_in_session[url] = f"Downloaded ({filename})"
                 results.append({
                     "url": url,
                     "filename": filename,
@@ -410,13 +555,22 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
                 })
             else:
                 err_text = dl_data.get("status") or "Interrupted"
-                console.print(f"  [error]✘[/error] [unselected]{filename}[/unselected] [error]Failed ({err_text})[/error]")
+                console.print(f"  [error]✘[/error] [unselected]{filename}[/unselected] [error]Download failed ({err_text}) -> Shifted to {failed_path.name}[/error]")
+                record_failure_and_shift(
+                    queue_path=target_path,
+                    failed_file=failed_path,
+                    central_failed_path=central_failed_path,
+                    orig_line=orig_line,
+                    reason=f"Download Error: {err_text}"
+                )
+                seen_urls_in_session[url] = f"Failed ({err_text})"
                 results.append({
                     "url": url,
                     "filename": filename,
                     "size": total_size,
                     "dest": str(dest_dir_path),
-                    "status": "Failed"
+                    "status": "Failed (Download)",
+                    "error": err_text
                 })
 
             console.print(" ")
@@ -433,15 +587,37 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
     # 5. Final Results Summary Report (clean minimalist)
     downloaded_count = sum(1 for r in results if r["status"] == "Downloaded")
     existed_count = sum(1 for r in results if "Existed" in r["status"])
-    failed_count = sum(1 for r in results if r["status"] == "Failed")
+    duplicate_count = sum(1 for r in results if "Duplicate" in r["status"])
+    failed_count = sum(1 for r in results if r["status"].startswith("Failed"))
 
     console.print("")
     console.print(f"[success]✦[/success] [bold white]Done: Ingestion Summary[/bold white]")
     console.print(f"  {'Total Processed':<18} : [info]{len(results)}[/info]")
     console.print(f"  {'Downloaded':<18} : [success]{downloaded_count}[/success]")
     console.print(f"  {'Already on Disk':<18} : [warning]{existed_count}[/warning]")
+    if duplicate_count > 0:
+        console.print(f"  {'Duplicates Skipped':<18} : [dim yellow]{duplicate_count}[/dim yellow]")
     if failed_count > 0:
-        console.print(f"  {'Failed':<18} : [error]{failed_count}[/error]")
+        console.print(f"  {'Shifted to Failed':<18} : [error]{failed_count}[/error] [dim white](Preserved in {failed_path.name})[/dim white]")
+        failure_categories: Dict[str, int] = {}
+        for r in results:
+            if r["status"].startswith("Failed"):
+                cat = r.get("error", "Unknown")
+                if "Early Access" in cat:
+                    c_name = "Early Access (Countdown active)"
+                elif "Buzz" in cat:
+                    c_name = "Buzz Locked / Paid Access"
+                elif "404" in cat or "not found" in cat.lower():
+                    c_name = "Model Not Found (404)"
+                elif "401" in cat or "Unauthorized" in cat:
+                    c_name = "Auth Required (401)"
+                elif "Download Error" in cat:
+                    c_name = "Download Stream Error"
+                else:
+                    c_name = "General Error"
+                failure_categories[c_name] = failure_categories.get(c_name, 0) + 1
+        for cat_name, cnt in failure_categories.items():
+            console.print(f"     ⬩ [dim white]{cat_name:<32}[/dim white] : [error]{cnt}[/error]")
     console.print("")
 
     prompt_return("Press Enter to return to main menu...")

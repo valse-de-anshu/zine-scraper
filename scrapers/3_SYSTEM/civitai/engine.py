@@ -19,6 +19,19 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
+class CivitaiDownloadError(Exception):
+    """Structured exception carrying failure reason, category, and optional HTTP status/deadline."""
+    def __init__(self, message: str, category: str = "General", status_code: Optional[int] = None, deadline: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
+        self.category = category
+        self.status_code = status_code
+        self.deadline = deadline
+
+    def __str__(self) -> str:
+        return self.message
+
+
 def create_browser_session(pool_size: int = 16) -> requests.Session:
     """
     Creates a requests session configured with browser emulation,
@@ -117,22 +130,33 @@ def resolve_model_id_to_download_url(
         domains.append("civitai.red")
 
     last_err = None
-    for dom in domains:
-        try:
-            api_url = f"https://{dom}/api/v1/models/{model_id}{token_param}"
-            resp = session.get(api_url, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                model_versions = data.get('modelVersions', [])
-                if not model_versions:
-                    raise ValueError(f"No model versions found for model ID {model_id}")
-                latest_version = model_versions[0]
-                mvid = str(latest_version['id'])
-                return f"https://{dom}/api/download/models/{mvid}", mvid, data
-        except Exception as e:
-            last_err = e
-
-    raise last_err or ValueError(f"Failed to resolve model ID {model_id}")
+    for attempt in range(1, 4):
+        for dom in domains:
+            try:
+                api_url = f"https://{dom}/api/v1/models/{model_id}{token_param}"
+                resp = session.get(api_url, headers=headers, timeout=25)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    model_versions = data.get('modelVersions', [])
+                    if not model_versions:
+                        raise CivitaiDownloadError(f"No model versions found for model ID {model_id}", category="Not Found", status_code=404)
+                    latest_version = model_versions[0]
+                    mvid = str(latest_version['id'])
+                    return f"https://{dom}/api/download/models/{mvid}", mvid, data
+                elif resp.status_code == 404:
+                    raise CivitaiDownloadError(f"Model ID {model_id} not found (404)", category="Not Found", status_code=404)
+                elif resp.status_code == 401:
+                    raise CivitaiDownloadError("Unauthorized / API key required (401)", category="Unauthorized", status_code=401)
+                elif resp.status_code == 403:
+                    raise CivitaiDownloadError("Access restricted (403)", category="Forbidden", status_code=403)
+                elif resp.status_code in (500, 502, 503, 504):
+                    last_err = CivitaiDownloadError(f"Civitai Server Error ({resp.status_code})", category="Server Error", status_code=resp.status_code)
+            except CivitaiDownloadError:
+                raise
+            except Exception as e:
+                last_err = e
+        if attempt < 3:
+            time.sleep(2 * attempt)
 
 
 def get_filename_from_cd(content_disposition: Optional[str]) -> Optional[str]:
@@ -163,8 +187,120 @@ def resolve_download_metadata(
     Follows redirects to obtain the resolved direct CDN URL, final filename, total size,
     and queries Civitai API for model type, baseModel, tags, and model name.
     """
-    resp = session.get(download_url, headers=headers, stream=True, allow_redirects=True, timeout=20)
-    resp.raise_for_status()
+    probe_headers = headers.copy()
+    probe_headers['Accept'] = 'application/octet-stream, application/json, */*'
+
+    resp = session.get(download_url, headers=probe_headers, stream=True, allow_redirects=False, timeout=20)
+
+    # 1. Handle HTTP redirects (Detect gated models redirecting back to website)
+    if resp.status_code in (301, 302, 303, 307, 308):
+        loc = resp.headers.get('Location', '')
+        resp.close()
+
+        # If redirected back to website UI instead of CDN storage
+        if any(loc.startswith(p) for p in (
+            '/models/', '/model-versions/',
+            f"https://{domain}/models/", f"https://{domain}/model-versions/",
+            "https://civitai.com/models/", "https://civitai.com/model-versions/",
+            "https://civitai.red/models/", "https://civitai.red/model-versions/"
+        )):
+            # Download is restricted (Early access / Buzz locked / Login required)
+            meta_info = None
+            if mvid:
+                try:
+                    token_p = f"?token={api_key}" if api_key else ""
+                    r_m = session.get(f"https://{domain}/api/v1/model-versions/{mvid}{token_p}", headers=headers, timeout=10)
+                    if r_m.status_code == 200:
+                        meta_info = r_m.json()
+                except Exception:
+                    pass
+
+            paid = meta_info.get('paidAccess') if meta_info else None
+            if paid:
+                ends_at = paid.get('endsAt')
+                if ends_at:
+                    from datetime import datetime, timezone
+                    try:
+                        dt = datetime.fromisoformat(ends_at.replace('Z', '+00:00'))
+                        now = datetime.now(timezone.utc)
+                        diff = dt - now
+                        if diff.total_seconds() > 0:
+                            days = diff.days
+                            hours = diff.seconds // 3600
+                            reason = f"Early Access ({days}d {hours}h left until {dt.strftime('%Y-%m-%d')})"
+                        else:
+                            reason = "Early Access expired (Pending public release)"
+                    except Exception:
+                        reason = f"Early Access (Until {ends_at})"
+                    raise CivitaiDownloadError(reason, category="Early Access", status_code=403, deadline=ends_at)
+                elif paid.get('permanent'):
+                    raise CivitaiDownloadError("Buzz required to unlock / Paid Access", category="Buzz Locked", status_code=403)
+
+            raise CivitaiDownloadError("Access restricted / Early access or Buzz required", category="Restricted", status_code=403)
+
+        # Valid CDN redirect (e.g. b2.civitai.com, delivery.civitai.com, etc.)
+        cdn_url = loc if loc.startswith('http') else f"https://{domain}{loc}"
+        resp = session.get(cdn_url, headers=headers, stream=True, allow_redirects=True, timeout=20)
+
+    # 2. Check for HTTP errors
+    if resp.status_code not in (200, 206):
+        detail_msg = f"HTTP {resp.status_code}"
+        category = "General"
+        deadline_str = None
+        try:
+            err_json = resp.json()
+            err_msg = err_json.get('message') or err_json.get('error') or ""
+            deadline_str = err_json.get('deadline')
+            if resp.status_code == 403:
+                if deadline_str:
+                    from datetime import datetime, timezone
+                    try:
+                        dt = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
+                        now = datetime.now(timezone.utc)
+                        diff = dt - now
+                        if diff.total_seconds() > 0:
+                            days = diff.days
+                            hours = diff.seconds // 3600
+                            detail_msg = f"Early Access ({days}d {hours}h left until {dt.strftime('%Y-%m-%d')})"
+                        else:
+                            detail_msg = "Early Access expired (Pending public release)"
+                    except Exception:
+                        detail_msg = f"Early Access (Until {deadline_str})"
+                    category = "Early Access"
+                elif "early access" in str(err_msg).lower() or "buzz" in str(err_msg).lower() or "buzz" in str(err_json).lower():
+                    detail_msg = "Buzz required to unlock / Paid Access"
+                    category = "Buzz Locked"
+                else:
+                    detail_msg = f"Access Forbidden (403: {err_msg or 'Access Restricted'})"
+                    category = "Forbidden"
+            elif resp.status_code == 404:
+                detail_msg = f"Model or file not found (404: {err_msg or 'Not Found'})"
+                category = "Not Found"
+            elif resp.status_code == 401:
+                detail_msg = "Unauthorized / Invalid API Key (401)"
+                category = "Unauthorized"
+            else:
+                detail_msg = f"HTTP {resp.status_code}: {err_msg or resp.text[:60]}"
+        except Exception:
+            if resp.status_code == 403:
+                detail_msg = "Forbidden (403: Likely Buzz or Early Access)"
+                category = "Forbidden"
+            elif resp.status_code == 404:
+                detail_msg = "Not Found (404)"
+                category = "Not Found"
+            elif resp.status_code == 401:
+                detail_msg = "Unauthorized (401)"
+                category = "Unauthorized"
+        resp.close()
+        raise CivitaiDownloadError(message=detail_msg, category=category, status_code=resp.status_code, deadline=deadline_str)
+
+    # 3. Guard against HTML webpage responses (should never save HTML as safetensors)
+    ctype = resp.headers.get('content-type', '').lower()
+    if 'text/html' in ctype:
+        resp.close()
+        raise CivitaiDownloadError("Received HTML page instead of model weights (Early Access / Access Restricted)", category="Restricted", status_code=403)
+
+
 
     cd = resp.headers.get('content-disposition', '')
     filename = get_filename_from_cd(cd)
@@ -444,13 +580,27 @@ def single_stream_download(
     return False
 
 
-def remove_line_from_file(filepath: Path, line_to_remove: str) -> None:
-    """Atomically removes a specific line from the input file."""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+def remove_line_from_file(filepath: Path, line_to_remove: str) -> bool:
+    """Atomically removes a specific line from the input queue file."""
+    if not filepath.exists():
+        return False
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
 
-    updated = [l for l in lines if l.strip() != line_to_remove.strip()]
-    temp_file = filepath.with_suffix('.tmp')
-    with open(temp_file, 'w', encoding='utf-8') as f:
-        f.writelines(updated)
-    os.replace(temp_file, filepath)
+        target_clean = line_to_remove.strip()
+        updated = [l for l in lines if l.strip() != target_clean]
+
+        # If line was not removed (e.g. whitespace edited while running), fallback to matching URL
+        if len(updated) == len(lines):
+            target_url = target_clean.split(' -- ')[0].strip() if ' -- ' in target_clean else (target_clean.split()[0] if target_clean else "")
+            if target_url and target_url.startswith("http"):
+                updated = [l for l in lines if not l.strip().startswith(target_url)]
+
+        temp_file = filepath.with_name(f"{filepath.name}.tmp.{os.getpid()}")
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            f.writelines(updated)
+        os.replace(temp_file, filepath)
+        return True
+    except Exception:
+        return False
