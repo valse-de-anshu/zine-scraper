@@ -1349,27 +1349,67 @@ def main():
                         break
                 from core.subtitle_engine import run_subtitle_tui
                 run_subtitle_tui(initial_path=target_media if target_media else None)
-            elif clean_lower in ["tts", "/tts", "audiobook", "audiobooks"]:
-                startup_clear()
-                print_banner()
-                tts_opts = [
-                    ("🌬️ Breeze TTS 2 (GGUF / Vulkan C++ — Voice Design & Cloning)", "breeze"),
-                    ("🎙️ Qwen3 TTS (ComfyUI Workflow Server)", "qwen")
-                ]
-                from core.ui import BoxSelector
-                selected_engine = BoxSelector(tts_opts, title="Audiobook TTS Engine", width=84).select()
-                if selected_engine == "breeze":
+            elif clean_lower in ["breeze", "/breeze"] or any(clean_lower.startswith(pfx) for pfx in ("breeze ", "/breeze ")):
+                breeze_path = str(paths.get_breeze_tts_dir())
+                if breeze_path not in sys.path:
+                    sys.path.insert(0, breeze_path)
+                import breeze_engine
+                trailing = ""
+                for pfx in ["/breeze ", "breeze "]:
+                    if clean_candidate.lower().startswith(pfx):
+                        trailing = clean_candidate[len(pfx):].strip()
+                        break
+                if trailing:
+                    import shlex
+                    try:
+                        t_args = shlex.split(trailing)
+                    except Exception:
+                        t_args = [trailing]
+                    breeze_engine.cli_entrypoint(t_args)
+                else:
+                    breeze_engine.run_breeze_tui()
+                if cli_args:
+                    break
+            elif clean_lower in ["tts", "/tts", "audiobook", "audiobooks"] or any(clean_lower.startswith(pfx) for pfx in ("tts ", "/tts ", "audiobook ", "audiobooks ")):
+                trailing = ""
+                for pfx in ["/tts ", "tts ", "/audiobook ", "audiobook ", "/audiobooks ", "audiobooks "]:
+                    if clean_candidate.lower().startswith(pfx):
+                        trailing = clean_candidate[len(pfx):].strip()
+                        break
+                if trailing:
                     breeze_path = str(paths.get_breeze_tts_dir())
                     if breeze_path not in sys.path:
                         sys.path.insert(0, breeze_path)
                     import breeze_engine
-                    breeze_engine.run_breeze_tui()
-                elif selected_engine == "qwen":
-                    qwen_path = str(paths.get_qwen_tts_dir())
-                    if qwen_path not in sys.path:
-                        sys.path.insert(0, qwen_path)
-                    import book_tts
-                    book_tts.run_tts_tui()
+                    import shlex
+                    try:
+                        t_args = shlex.split(trailing)
+                    except Exception:
+                        t_args = [trailing]
+                    breeze_engine.cli_entrypoint(t_args)
+                else:
+                    startup_clear()
+                    print_banner()
+                    tts_opts = [
+                        ("🌬️ Breeze TTS 2 (GGUF / Vulkan C++ — Voice Design & Cloning)", "breeze"),
+                        ("🎙️ Qwen3 TTS (ComfyUI Workflow Server)", "qwen")
+                    ]
+                    from core.ui import BoxSelector
+                    selected_engine = BoxSelector(tts_opts, title="Audiobook TTS Engine", width=84).select()
+                    if selected_engine == "breeze":
+                        breeze_path = str(paths.get_breeze_tts_dir())
+                        if breeze_path not in sys.path:
+                            sys.path.insert(0, breeze_path)
+                        import breeze_engine
+                        breeze_engine.run_breeze_tui()
+                    elif selected_engine == "qwen":
+                        qwen_path = str(paths.get_qwen_tts_dir())
+                        if qwen_path not in sys.path:
+                            sys.path.insert(0, qwen_path)
+                        import book_tts
+                        book_tts.run_tts_tui()
+                if cli_args:
+                    break
             elif clean_lower in ["lyrs", "/lyrs", "lyrics", "/lyrics"]:
                 from core.lyrics_engine import run_lyrics_tui
                 run_lyrics_tui()

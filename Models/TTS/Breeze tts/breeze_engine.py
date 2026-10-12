@@ -1793,8 +1793,452 @@ def run_breeze_tui():
             breeze_tts_settings_tui()
 
 
+
+# ---------------------------------------------------------------------------
+# Structured Recap & Chapter Script Rendering (AI & Automation Harness)
+# ---------------------------------------------------------------------------
+
+def render_recap_script(
+    script_json_path: str | Path,
+    voice_name: Optional[str] = None,
+    output_dir: Optional[str | Path] = None,
+    cfg_scale: Optional[float] = None,
+    seed: Optional[int] = None,
+    console=None,
+    headless: bool = True,
+) -> dict:
+    """
+    Renders an AI recap script.json through Breeze-TTS-2:
+    1. Renders every narration segment to WAV using the saved voice profile.
+    2. Auto-boosts CFG to 2.5 on detected vocal events (sigh, chuckle, gasp, etc.).
+    3. Normalizes loudness to ACX audiobook standard (-16 LUFS via EBU R128).
+    4. Measures real duration via ffprobe and patches script.json with actual paths & duration.
+    5. Stitches all segments into chapter_full.wav.
+    6. Generates synchronized chapter_full.srt subtitles.
+    7. Atomically saves patched script.json and records session in Download History.
+    """
+    from rich.console import Console
+    from core.ui import custom_theme
+    from core.settings_tui import config
+
+    if console is None:
+        console = Console(theme=custom_theme)
+
+    script_file = Path(script_json_path).expanduser().resolve()
+    if not script_file.exists():
+        msg = f"script.json not found: {script_file}"
+        if not headless:
+            console.print(f"[bold red]● {msg}[/bold red]")
+        return {"status": "error", "message": msg}
+
+    try:
+        with open(script_file, "r", encoding="utf-8") as f:
+            script_data = json.load(f)
+    except Exception as e:
+        msg = f"Failed to parse script.json: {e}"
+        if not headless:
+            console.print(f"[bold red]● {msg}[/bold red]")
+        return {"status": "error", "message": msg}
+
+    series = script_data.get("series", "Unknown Series")
+    chapter = str(script_data.get("chapter", "0"))
+    segments = script_data.get("segments", [])
+
+    if not segments:
+        msg = f"No segments found in {script_file}"
+        if not headless:
+            console.print(f"[bold yellow]● {msg}[/bold yellow]")
+        return {"status": "error", "message": msg}
+
+    if output_dir:
+        audio_dir = Path(output_dir).expanduser().resolve()
+    else:
+        audio_dir = script_file.parent / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine relative path prefix for video editor alignment
+    if script_file.parent.name.startswith("chapter_"):
+        rel_prefix = f"chapters/{script_file.parent.name}/audio"
+    else:
+        rel_prefix = "audio"
+
+    # Resolve settings and voice profile
+    active_voice = voice_name or config.get("breeze_saved_voice", "narrator") or "narrator"
+    base_cfg = cfg_scale if cfg_scale is not None else float(config.get("breeze_cfg_scale", 1.5))
+    active_seed = seed if seed is not None else int(config.get("breeze_seed", 42))
+    split_chars = int(config.get("breeze_split_chars", 600))
+    backend = config.get("breeze_backend", "Direct CLI (breeze-cli)")
+    server_url = config.get("breeze_server_url", "http://127.0.0.1:8080")
+    hardware = config.get("breeze_hardware", "Vulkan (GPU)")
+    use_cpu = "CPU" in hardware
+
+    total_segments = len(segments)
+    rendered_count = 0
+    skipped_count = 0
+    failed_count = 0
+    segment_wavs = []
+    srt_entries = []
+    accumulated_time = 0.0
+
+    console.print(f"\n[bold sexy_pink]🌬️ Rendering Recap Script:[/bold sexy_pink] [bold white]{series} — Chapter {chapter}[/bold white]")
+    console.print(f"[dim]Segments: {total_segments} | Voice: {active_voice} | Base CFG: {base_cfg} | Audio Dir: {audio_dir}[/dim]\n")
+
+    for idx, seg in enumerate(segments, 1):
+        seg_id = seg.get("segment_id", idx)
+        narration = seg.get("narration_text", "").strip()
+        instruction = seg.get("tts_instruction") or "Speak clearly and naturally as a dramatic story narrator."
+        seg_filename = f"segment_{int(seg_id):03d}.wav"
+        seg_wav = audio_dir / seg_filename
+        rel_wav_path = f"{rel_prefix}/{seg_filename}"
+
+        if not narration:
+            continue
+
+        # Skip if already exists and non-empty (fast restart/resume)
+        if seg_wav.exists() and seg_wav.stat().st_size > 500:
+            skipped_count += 1
+            real_dur = get_wav_duration(str(seg_wav))
+            seg["audio_file"] = rel_wav_path
+            seg["estimated_duration_seconds"] = round(real_dur, 2)
+            segment_wavs.append(seg_wav)
+            console.print(f"  [dim]Segment {seg_id:03d}/{total_segments:03d}: cached ({real_dur:.2f}s)[/dim]")
+        else:
+            has_vocal = contains_vocal_events(narration)
+            seg_cfg = max(base_cfg, 2.5) if has_vocal else base_cfg
+            console.print(f"  [bold cyan]● Segment {seg_id:03d}/{total_segments:03d}:[/bold cyan] rendering...{' [yellow](vocal event boost 2.5x)[/yellow]' if has_vocal else ''}")
+
+            success = False
+            # Method 1: Try direct CLI (Vulkan GPU)
+            try:
+                success = BreezeTTS.generate_chunk_cli(
+                    text=narration,
+                    output_wav=str(seg_wav),
+                    instruction=instruction,
+                    mode="Saved Voice",
+                    saved_voice=active_voice,
+                    cfg_scale=seg_cfg,
+                    seed=active_seed,
+                    split_chars=split_chars,
+                    use_cpu=use_cpu,
+                )
+            except Exception as e:
+                _log_event("RECAP_CLI_FAIL", {"seg": seg_id, "error": str(e)})
+
+            # Method 2: Fallback to HTTP streaming if CLI fails and server is online
+            if not success and check_breeze_server_online(server_url):
+                try:
+                    success = BreezeTTS.generate_chunk_http(
+                        text=narration,
+                        output_wav=str(seg_wav),
+                        server_url=server_url,
+                        instruction=instruction,
+                        mode="Saved Voice",
+                        saved_voice=active_voice,
+                        cfg_scale=seg_cfg,
+                        seed=active_seed,
+                        split_chars=split_chars,
+                    )
+                except Exception as e:
+                    _log_event("RECAP_HTTP_FAIL", {"seg": seg_id, "error": str(e)})
+
+            if success and seg_wav.exists() and seg_wav.stat().st_size > 100:
+                # ACX standard loudness normalization
+                normalize_chunk_loudness(seg_wav, seg_wav)
+                real_dur = get_wav_duration(str(seg_wav))
+                seg["audio_file"] = rel_wav_path
+                seg["estimated_duration_seconds"] = round(real_dur, 2)
+                segment_wavs.append(seg_wav)
+                rendered_count += 1
+                console.print(f"    [bold green]✓[/bold green] {real_dur:.2f}s → [dim]{seg_filename}[/dim]")
+            else:
+                failed_count += 1
+                console.print(f"    [bold red]✗ Failed to render segment {seg_id}[/bold red]")
+
+        if seg_wav.exists() and seg_wav.stat().st_size > 100:
+            dur = get_wav_duration(str(seg_wav))
+            start_fmt = format_srt_time(accumulated_time)
+            end_fmt = format_srt_time(accumulated_time + dur)
+            accumulated_time += dur
+            srt_entries.append((len(srt_entries) + 1, start_fmt, end_fmt, narration))
+
+    # Stitch full chapter audio & subtitles
+    full_wav = audio_dir / "chapter_full.wav"
+    full_srt = audio_dir / "chapter_full.srt"
+
+    if segment_wavs:
+        console.print(f"\n[bold cyan]● Stitching {len(segment_wavs)} segments → chapter_full.wav...[/bold cyan]")
+        concat_list = audio_dir / ".concat_list.txt"
+        try:
+            with open(concat_list, "w", encoding="utf-8") as cf:
+                for w in segment_wavs:
+                    cf.write(f"file '{w.resolve()}'\n")
+
+            cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-acodec", "pcm_s16le", str(full_wav)]
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            if concat_list.exists():
+                concat_list.unlink()
+
+            if res.returncode == 0 and full_wav.exists():
+                full_dur = get_wav_duration(str(full_wav))
+                console.print(f"[bold green]✓ Chapter full audio generated:[/bold green] {full_wav} ({full_dur:.1f}s)")
+            else:
+                console.print(f"[bold yellow]⚠ Full audio concatenation failed: {res.stderr.decode('utf-8', errors='replace')[:200]}[/bold yellow]")
+        except Exception as e:
+            console.print(f"[bold yellow]⚠ Stitch exception: {e}[/bold yellow]")
+            if concat_list.exists():
+                try: concat_list.unlink()
+                except: pass
+
+        # Generate synchronized SRT subtitles
+        try:
+            with open(full_srt, "w", encoding="utf-8") as sf:
+                for srt_idx, start_s, end_s, text in srt_entries:
+                    sf.write(f"{srt_idx}\n{start_s} --> {end_s}\n{text}\n\n")
+            console.print(f"[bold green]✓ Synced subtitles generated:[/bold green] {full_srt}")
+        except Exception as e:
+            _log_event("SRT_SAVE_ERROR", {"error": str(e)})
+
+    # Atomically patch script.json with real audio paths & measured durations
+    try:
+        tmp_script = script_file.with_suffix(".tmp")
+        with open(tmp_script, "w", encoding="utf-8") as f:
+            json.dump(script_data, f, indent=2, ensure_ascii=False)
+        tmp_script.replace(script_file)
+        console.print(f"[bold green]✓ script.json updated with real audio paths and measured durations[/bold green]")
+    except Exception as e:
+        console.print(f"[bold red]● Failed to update script.json: {e}[/bold red]")
+
+    # Update central Download History
+    try:
+        update_download_history_tts(
+            stem=f"{series}_Chapter_{chapter}",
+            source_file=str(script_file),
+            audio_file=str(full_wav if full_wav.exists() else audio_dir),
+            srt_file=str(full_srt if full_srt.exists() else ""),
+            script_file=str(script_file),
+            temp_voice_dir=str(audio_dir),
+            voice=active_voice,
+            chunks_count=rendered_count + skipped_count,
+            duration_seconds=accumulated_time,
+        )
+    except Exception:
+        pass
+
+    result = {
+        "status": "ok" if failed_count == 0 else "partial",
+        "series": series,
+        "chapter": chapter,
+        "total_segments": total_segments,
+        "rendered": rendered_count,
+        "cached": skipped_count,
+        "failed": failed_count,
+        "duration_seconds": round(accumulated_time, 2),
+        "audio_dir": str(audio_dir),
+        "full_audio": str(full_wav) if full_wav.exists() else None,
+        "full_srt": str(full_srt) if full_srt.exists() else None,
+        "script_json": str(script_file),
+    }
+
+    console.print(f"\n[bold green]● Chapter {chapter} Render Complete![/bold green] Total Duration: {accumulated_time:.1f}s ({rendered_count} rendered, {skipped_count} cached, {failed_count} failed)")
+    return result
+
+
+def render_recap_chapters(
+    series_root: str | Path,
+    chapter_ids: list[str | int],
+    voice_name: Optional[str] = None,
+    cfg_scale: Optional[float] = None,
+    seed: Optional[int] = None,
+    console=None,
+    headless: bool = True,
+) -> list[dict]:
+    """Renders multiple recap chapters sequentially from a series root folder."""
+    from rich.console import Console
+    from core.ui import custom_theme
+
+    if console is None:
+        console = Console(theme=custom_theme)
+
+    root_p = Path(series_root).expanduser().resolve()
+    # Locate recap chapters folder
+    cands = [
+        root_p / ".zine" / "recap" / "chapters",
+        root_p / "recap" / "chapters",
+        root_p / "chapters",
+    ]
+    chapters_dir = None
+    for c in cands:
+        if c.exists() and c.is_dir():
+            chapters_dir = c
+            break
+
+    if not chapters_dir:
+        console.print(f"[bold red]● Could not find recap chapters directory under {root_p}[/bold red]")
+        return []
+
+    results = []
+    total = len(chapter_ids)
+    console.print(f"\n[bold sexy_pink]════════════════════════════════════════════════════════════════════[/bold sexy_pink]")
+    console.print(f"[bold sexy_pink]🌬️ Zine Scraper Breeze TTS — Batch Recap Pipeline ({total} Chapter{'s' if total != 1 else ''})[/bold sexy_pink]")
+    console.print(f"[bold sexy_pink]════════════════════════════════════════════════════════════════════[/bold sexy_pink]")
+
+    for idx, ch_id in enumerate(chapter_ids, 1):
+        clean_id = str(ch_id).strip()
+        ch_folder = chapters_dir / f"chapter_{clean_id}"
+        script_json = ch_folder / "script.json"
+
+        if not script_json.exists():
+            console.print(f"[bold yellow]⚠ Skipping chapter {clean_id}: script.json not found at {script_json}[/bold yellow]")
+            results.append({"status": "skipped", "chapter": clean_id, "reason": "script.json not found"})
+            continue
+
+        res = render_recap_script(
+            script_json_path=script_json,
+            voice_name=voice_name,
+            cfg_scale=cfg_scale,
+            seed=seed,
+            console=console,
+            headless=headless,
+        )
+        results.append(res)
+
+    console.print(f"\n[bold green]● All {total} chapter render requests finished![/bold green]\n")
+    return results
+
+
+def cli_entrypoint(argv: list[str]) -> None:
+    """Universal CLI dispatcher for external scripts, agents, and automation harnesses."""
+    import argparse
+    from rich.console import Console
+    from core.ui import custom_theme
+
+    console = Console(theme=custom_theme)
+
+    parser = argparse.ArgumentParser(description="Zine Scraper Breeze-TTS Engine")
+    parser.add_argument("target", nargs="?", default=None, help="Target file (.txt novel, script.json, or series directory)")
+    parser.add_argument("--recap", nargs="+", help="Render recap chapters: --recap <series_root> <chapter_id> [chapter_id ...]")
+    parser.add_argument("--script", help="Path to script.json to render")
+    parser.add_argument("--voice", "-v", help="Saved voice profile name (e.g. narrator)")
+    parser.add_argument("--cfg", type=float, help="CFG scale (guidance)")
+    parser.add_argument("--output", "-o", help="Output file path (.wav)")
+    parser.add_argument("--output-dir", help="Output directory")
+    parser.add_argument("--text", "-t", help="Raw text to synthesize directly")
+    parser.add_argument("--instruction", "-i", help="Voice direction instruction")
+    parser.add_argument("--seed", type=int, default=42, help="RNG seed")
+    parser.add_argument("--headless", action="store_true", help="Run without interactive prompts")
+
+    args, unknown = parser.parse_known_args(argv)
+
+    # Mode 1: --recap <series_root> <chapter_ids...>
+    if args.recap:
+        series_root = args.recap[0]
+        chapter_ids = args.recap[1:] if len(args.recap) > 1 else ["1"]
+        render_recap_chapters(
+            series_root=series_root,
+            chapter_ids=chapter_ids,
+            voice_name=args.voice,
+            cfg_scale=args.cfg,
+            seed=args.seed,
+            console=console,
+            headless=True,
+        )
+        return
+
+    # Mode 2: --script <path_to_script.json>
+    if args.script:
+        render_recap_script(
+            script_json_path=args.script,
+            voice_name=args.voice,
+            output_dir=args.output_dir,
+            cfg_scale=args.cfg,
+            seed=args.seed,
+            console=console,
+            headless=True,
+        )
+        return
+
+    # Mode 3: Direct text synthesis: --text "..." -o out.wav
+    if args.text:
+        out_wav = args.output or "output.wav"
+        mode = "Saved Voice" if args.voice else "Voice Design"
+        inst = args.instruction or ""
+        console.print(f"[bold sexy_pink]🌬️ Synthesizing text directly...[/bold sexy_pink]")
+        ok = BreezeTTS.generate_chunk_cli(
+            text=args.text,
+            output_wav=out_wav,
+            instruction=inst,
+            mode=mode,
+            saved_voice=args.voice or "",
+            cfg_scale=args.cfg or 1.5,
+            seed=args.seed,
+        )
+        if ok and os.path.exists(out_wav):
+            normalize_chunk_loudness(Path(out_wav), Path(out_wav))
+            console.print(f"[bold green]✓ Audio generated successfully:[/bold green] {out_wav}")
+        else:
+            console.print(f"[bold red]✗ Direct synthesis failed.[/bold red]")
+        return
+
+    # Mode 4: Positional target argument
+    if args.target:
+        target_path = Path(args.target).expanduser().resolve()
+        if target_path.is_file():
+            if target_path.name.lower() == "script.json" or target_path.suffix.lower() == ".json":
+                render_recap_script(
+                    script_json_path=target_path,
+                    voice_name=args.voice,
+                    output_dir=args.output_dir,
+                    cfg_scale=args.cfg,
+                    seed=args.seed,
+                    console=console,
+                    headless=True,
+                )
+                return
+            elif target_path.suffix.lower() in [".txt", ".novel"]:
+                process_book_breeze(str(target_path))
+                return
+        elif target_path.is_dir():
+            # Check if directory contains a script.json directly
+            direct_script = target_path / "script.json"
+            if direct_script.exists():
+                render_recap_script(
+                    script_json_path=direct_script,
+                    voice_name=args.voice,
+                    output_dir=args.output_dir,
+                    cfg_scale=args.cfg,
+                    seed=args.seed,
+                    console=console,
+                    headless=True,
+                )
+                return
+            # Check if it is a series root containing .zine/recap/chapters
+            chapters_cands = [
+                target_path / ".zine" / "recap" / "chapters",
+                target_path / "recap" / "chapters",
+                target_path / "chapters",
+            ]
+            for cd in chapters_cands:
+                if cd.exists():
+                    found_chapters = sorted([p.name.replace("chapter_", "") for p in cd.glob("chapter_*") if p.is_dir()])
+                    if found_chapters:
+                        render_recap_chapters(
+                            series_root=target_path,
+                            chapter_ids=found_chapters,
+                            voice_name=args.voice,
+                            cfg_scale=args.cfg,
+                            seed=args.seed,
+                            console=console,
+                            headless=True,
+                        )
+                        return
+
+    # Default fallback: interactive TUI
+    run_breeze_tui()
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        process_book_breeze(sys.argv[1])
+        cli_entrypoint(sys.argv[1:])
     else:
         run_breeze_tui()
+

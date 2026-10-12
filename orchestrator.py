@@ -83,6 +83,15 @@ if len(sys.argv) > 1:
             custom_file = sys.argv[2]
         run_civitai_tui(input_file=custom_file)
         sys.exit(0)
+    elif arg_first in ["breeze", "tts", "--breeze", "--tts", "breeze-tts", "--breeze-tts"]:
+        from core.paths import PathAuthority
+        pa = PathAuthority()
+        breeze_dir = str(pa.get_breeze_tts_dir())
+        if breeze_dir not in sys.path:
+            sys.path.insert(0, breeze_dir)
+        import breeze_engine
+        breeze_engine.cli_entrypoint(sys.argv[2:])
+        sys.exit(0)
     elif raw_arg.startswith("-") and not re.match(r"^--?(\d+|[aA]|all)\b", raw_arg) and not arg_first.startswith(("--batch", "--vacuum", "--meta", "--metadata")):
         from core.cli_help import handle_unknown_flag
         handle_unknown_flag(raw_arg)
