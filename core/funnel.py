@@ -956,7 +956,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["anima model", "bake", "civitai", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
+        commands = ["anima model", "bake", "breeze", "civitai", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -1085,8 +1085,10 @@ class MainPrompt:
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
+            tip_text.append("breeze", style="warning")
+            tip_text.append(" or ", style="info")
             tip_text.append("tts", style="warning")
-            tip_text.append(" to generate Audiobooks.\n", style="info")
+            tip_text.append(" for voice & audiobooks (or pass file/chapter directly).\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")

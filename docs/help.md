@@ -44,8 +44,15 @@ You can type any of the following commands directly at the main prompt:
 - **`subs`** or **`/subs`** or **`subtitles`**
   Launch the built-in AI Subtitle Generator. Uses `faster-whisper` and `deep-translator` to run fully offline on your GPU (or CPU) to generate and translate `.srt` subtitles (e.g. from JP to EN) for any downloaded video.
 
+- **`breeze`** or **`/breeze`**
+  Launch Breeze-TTS-2 C++ / GGUF neural speech engine with Vulkan GPU acceleration.
+  * **Interactive TUI**: Run `breeze` without arguments to launch the voice studio, design voices, clone from reference audio, or read novels.
+  * **Headless AI Harness**: Run `breeze path/to/narration.txt` (or pass a series directory) to automatically generate master `chapter_full.wav` (-16 LUFS normalized), synchronized `chapter_full.srt` subtitles, and neatly organized beat clips in `audio/segments/`.
+
 - **`tts`** or **`/tts`** or **`audiobook`**
-  Launch the Universal Audiobook TTS Hub. Interactively select between Breeze-TTS-2 (GGUF / Vulkan C++ with Voice Design, Cloning & Vocal Events) or Qwen3-TTS (ComfyUI Workflow Server). Converts any `.txt` novel into an audiobook with synced `.srt` subtitles and auto-resume tracking.
+  Launch the Universal Audiobook & Speech Synthesis Hub.
+  * **Interactive Hub**: Run `tts` without arguments to choose between Breeze-TTS-2 (GGUF / Vulkan C++) and Qwen3-TTS (ComfyUI Workflow Server).
+  * **Headless Mode**: Pass any `.txt` novel, chapter `narration.txt`, or directory (`tts path/to/narration.txt`) to run headless harness synthesis with zero prompts.
 
 - **`doctor`** or **`/doctor`**
   Run complete system diagnostic health check across Python, FFmpeg, Aria2, Deno, Playwright, GPU acceleration, and storage permissions.
