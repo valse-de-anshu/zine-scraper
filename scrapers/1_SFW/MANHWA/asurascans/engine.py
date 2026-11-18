@@ -6,8 +6,10 @@ import logging
 import json
 import shutil
 import sys
+import difflib
+import urllib.parse
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin
 
@@ -82,6 +84,66 @@ class BaseScraper:
         self.session.headers["Referer"] = f"https://{self.domain}/"
         self.consecutive_failures = 0
 
+    def resolve_canonical_url(self, url: str) -> Optional[str]:
+        """
+        Intelligently resolves mistyped slugs or stale deployment hashes on AsuraScans
+        by searching the site and matching the closest series slug.
+        Example:
+          surviving-the-game-as-barbarian-7ba78ec7 -> surviving-the-game-as-a-barbarian-7ba78ec7
+          surviving-the-game-as-a-barbarian-ab39de10 -> surviving-the-game-as-a-barbarian-7ba78ec7
+        """
+        if not HAS_CURL_CFFI:
+            return None
+        try:
+            m = re.search(r'(/comics/([^/?#]+))', url)
+            if not m:
+                return None
+            raw_slug = m.group(2)
+            # Remove trailing 8-character hex hash if present (e.g. -7ba78ec7, -ab39de10)
+            clean_slug = re.sub(r'-[0-9a-fA-F]{8}$', '', raw_slug)
+            query = clean_slug.replace('-', ' ').strip()
+            if not query:
+                return None
+
+            search_url = f"https://{self.domain}/?s={urllib.parse.quote_plus(query)}"
+            r = cffi_requests.get(search_url, impersonate="chrome124", timeout=15)
+            if r.status_code != 200:
+                return None
+
+            soup = BeautifulSoup(r.text, 'lxml')
+            candidates = []
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if '/comics/' in href and '/chapter/' not in href:
+                    cand_slug = href.split('/comics/')[-1].strip('/')
+                    cand_clean = re.sub(r'-[0-9a-fA-F]{8}$', '', cand_slug)
+                    candidates.append((cand_clean, href))
+
+            if not candidates:
+                return None
+
+            best_match = None
+            best_score = 0.0
+            clean_words = set(clean_slug.lower().split('-'))
+            for cand_clean, href in candidates:
+                cand_words = set(cand_clean.lower().split('-'))
+                seq_ratio = difflib.SequenceMatcher(None, clean_slug.lower(), cand_clean.lower()).ratio()
+                overlap_ratio = len(clean_words & cand_words) / max(len(clean_words), 1)
+                score = (seq_ratio * 0.5) + (overlap_ratio * 0.5)
+                if score > best_score:
+                    best_score = score
+                    best_match = href
+
+            if best_match and best_score >= 0.65:
+                resolved = urllib.parse.urljoin(f"https://{self.domain}", best_match)
+                if '/chapter/' in url:
+                    ch_part = url.split('/chapter/')[-1]
+                    resolved = f"{resolved.rstrip('/')}/chapter/{ch_part}"
+                return resolved
+        except Exception as e:
+            logging.debug(f"[AsuraScans] resolve_canonical_url failed for {url}: {e}")
+        return None
+
     def get_soup(self, url: str) -> BeautifulSoup:
         # Fast-path: curl_cffi with Chrome 124 TLS impersonation (bypasses Cloudflare Turnstile instantly)
         if HAS_CURL_CFFI:
@@ -89,8 +151,20 @@ class BaseScraper:
                 r = cffi_requests.get(url, impersonate="chrome124", timeout=20)
                 if r.status_code == 200 and "challenges.cloudflare.com" not in r.text:
                     return BeautifulSoup(r.text, "lxml")
+                elif r.status_code == 404:
+                    # Attempt intelligent auto-resolution for mistyped or stale hash slugs
+                    resolved_url = self.resolve_canonical_url(url)
+                    if resolved_url and resolved_url != url:
+                        logging.info(f"[AsuraScans] Auto-resolved stale or mistyped slug: {url} -> {resolved_url}")
+                        self.url = resolved_url
+                        r_res = cffi_requests.get(resolved_url, impersonate="chrome124", timeout=20)
+                        if r_res.status_code == 200 and "challenges.cloudflare.com" not in r_res.text:
+                            return BeautifulSoup(r_res.text, "lxml")
+                    raise RuntimeError(f"404 Not Found: '{url}' does not exist on AsuraScans. Please verify the comic title/slug.")
                 elif r.status_code == 200:
                     logging.debug(f"[AsuraScans] Cloudflare challenge detected on {url}")
+            except RuntimeError:
+                raise
             except Exception as e:
                 logging.debug(f"[AsuraScans] curl_cffi request failed for {url}: {e}")
 
@@ -101,7 +175,7 @@ class BaseScraper:
             if script_path and Path(script_path).exists():
                 cmd = [sys.executable, str(script_path), url]
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                if res.returncode == 0 and "JSON_RESULT:" in res.stdout:
+                if "JSON_RESULT:" in res.stdout:
                     out_json = res.stdout.split("JSON_RESULT:")[-1].strip()
                     data = json.loads(out_json)
                     html_content = data.get("html", "")

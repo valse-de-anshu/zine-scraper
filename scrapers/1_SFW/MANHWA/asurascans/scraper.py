@@ -196,7 +196,8 @@ class AsuraScansScraper(BaseScraper):
         if is_chapter:
             m = re.search(r"/chapter/([\d.]+)", original_url.lower())
             num = m.group(1) if m else "1"
-            return clean_title, [(num, original_url)]
+            target_url = f"{self.url.rstrip('/')}/chapter/{num}" if (self.url and self.url != original_url) else original_url
+            return clean_title, [(num, target_url)]
 
         chapters = []
         links = soup.find_all("a", href=True)
