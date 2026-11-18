@@ -1,3 +1,76 @@
+# Progress Report - October 14, 2026 (Harness TTS Multi-Chapter Queue System & Acoustic Tone/Cutoff Smoothing)
+
+- **Multi-Chapter Queue Engine (`Models/TTS/Breeze tts/harness_engine.py`, `orchestrator.py`):**
+  - **Sequential Batch Queue Execution (`render_harness_queue`)**: Added full queueing capabilities to Harness TTS. Instead of handling only one `script.json` at a time, users and agents can now queue an arbitrary number of chapter scripts. The harness processes them sequentially, rendering segments, generating master transcripts (`narration.txt`), stitching full audio (`chapter_full.wav`), building synchronized subtitles (`chapter_full.srt`), and automatically advancing to the next chapter without stopping or getting stuck.
+  - **Natural Numerical Chapter Sorting (`natural_chapter_sort_key`)**: Integrated regex-based natural sorting so chapters process in true chronological sequence (`chapter_1`, `chapter_2`, ... `chapter_9`, `chapter_10`) rather than naive lexicographical order (`chapter_1`, `chapter_10`, `chapter_2`).
+  - **Multiple CLI Queue Formats**:
+    * Direct file arguments: `zine harness-tts chapter_1/script.json chapter_2/script.json`
+    * Queue text files: `zine harness-tts --queue queue.txt` or `zine harness-tts queue.txt` (supports comments `#` and blank lines).
+    * Series directory auto-discovery: `zine harness-tts "Downloads/Zine/Vacuum/AsuraScans/The World After The End"` automatically locates and queues all `script.json` chapters in order.
+  - **Interactive TUI Queue Options (`run_harness_tui`)**: Added interactive menus for "📋 Queue Entire Series", "☑️ Multi-Select Chapters to Queue", and "📄 Load Queue from File (queue.txt)".
+
+- **Acoustic Smoothing, Anti-Clipping & Seamless Merging (`Models/TTS/Breeze tts/breeze_engine.py`):**
+  - **Autoregressive Terminal Headroom Cushioning (`prepare_chunk_narration_text`)**: Fixed the issue where ~1% of segment chunk endings had their final syllables or words cut off prematurely before finishing. In autoregressive Kyutai Mimi/EnCodec vocoders, bare final words trigger instantaneous EOS generation before trailing consonant decay completes. The engine now enforces terminal punctuation (`.`, `!`, `?`, `...`) and appends an acoustic cadence cushion (`" ."`) to the synthesis prompt, ensuring full voice decay and complete pronunciation while preserving clean, untouched text in `.srt` subtitles and `narration.txt`.
+  - **CFG Guidance Stabilization**: Fixed high-pitch onset jumps caused by excessive guidance spikes. Capped vocal event CFG boost at `1.7` (down from erratic `2.5` spikes), eliminating pitch screeches and harsh attacks on chunk onsets while retaining natural emotional delivery.
+  - **250ms Natural Breathing Pause Splicing**: Fixed jarring tonal clashes where the low, falling pitch of a sentence end collided directly with the high pitch onset of the following sentence at 0ms. Spliced segment chunks with a dynamically generated 24kHz mono 250ms silence block (`.silence_250ms.wav`) instead of hard 0ms concatenation. This gives the narration a natural human breathing cadence and eliminates acoustic discordance.
+  - **Chunk Boundary Micro-Fading (15ms)**: Upgraded loudness normalization in `normalize_chunk_loudness` with `afade=t=in:ss=0:d=0.015`, preventing DC offset pops and clicks at chunk boundaries.
+  - **Full Subtitle Microsecond Synchronization**: Updated `accumulated_time += dur + 0.25` in `build_srt_cues_for_segment`, keeping all `.srt` subtitle timestamps perfectly aligned with the audio track and inter-chunk breathing pauses.
+
+---
+
+# Progress Report - October 13, 2026 (Zero-Editor-Bloat Recap Schema & Script Sanitization)
+
+- **Zero-Editor-Bloat Recap Schema (`manhua-recap` Skill, `harness_engine.py`, `breeze_engine.py`):**
+  - **Eliminated Screenplay & Moodboard Metadata**: Stripped useless editor database fields (`mood`, `pacing`, `sound_effect_cue`, `visual_description`, `character_presence`, `dialogue_notes`, `action_summary`) from `script.json`. The deliverable is streamlined strictly to what matters: `segment_id` (sequential integer `1`, `2`, `3`... never strings like `"seg_01"`), `panels` (array of panel filenames e.g. `["001.webp", "002.webp"]`), `narration_text` (spoken voiceover prose), and optional `tts_instruction`.
+  - **Sanitized Chapter 1 Recap Deliverable**: Cleaned `/home/valse-de-anshu/Downloads/Zine/Vacuum/AsuraScans/The World After The End/.zine/recap/chapters/chapter_1/script.json`, converting all 45 segments from `"seg_01"` string IDs to clean integers, stripping all 5 bloat fields, and reducing file size from 26 KB to 15 KB while perfectly preserving all spoken narration, panel mappings, and voice instructions.
+  - **Updated Skill Directives (`~/.gemini/config/skills/manhua-recap`)**: Updated `SKILL.md`, `references/schemas_and_deliverables.md`, and `references/validation_and_troubleshooting.md` with explicit zero-bloat prohibitions, ensuring future recap generations never generate editor moodboards or database metadata.
+  - **Resilient Engine Compatibility**: Enhanced both `harness_engine.py` and `breeze_engine.py` to seamlessly handle `series`/`series_title`, `chapter`/`chapter_id`, `panels`/`panel_files`, and patch `duration_seconds` alongside `audio_file` upon synthesis.
+
+---
+
+# Progress Report - October 13, 2026 (Civitai Multi-Stream CDN Encoding Fix & POSIX Atomic Chunking)
+
+- **Civitai Multi-Stream Acceleration & Progress Accounting (`scrapers/3_SYSTEM/civitai/engine.py`, `scrapers/3_SYSTEM/civitai/tui.py`):**
+  - **Cloudflare/B2 `Accept-Encoding: identity` Fix**: Fixed an issue where Cloudflare and Backblaze B2 CDN servers dropped `HTTP 206 Partial Content` and returned full-file `HTTP 200 OK` on sliced `Range:` requests when `Accept-Encoding: gzip` was present in client headers. Forced `Accept-Encoding: identity` on all chunk requests, ensuring CDNs strictly honor byte-range slicing.
+  - **Strict HTTP 200 Guard**: Added immediate abort in `download_chunk` if a server ever returns 200 on a sub-range request, preventing worker threads from downloading duplicate copies of the entire file.
+  - **POSIX Atomic File Writing (`os.pwrite`)**: Replaced repeated file handle open/close and thread mutex locks with atomic `os.pwrite(fd, chunk, curr_pos)` using a single pre-allocated file descriptor. Eliminates lock thrashing and disk contention across multi-gigabyte models.
+  - **Progress Reset on Single-Stream Fallback**: Added `reset_callback` to `parallel_download_file`. If a multi-stream download ever aborts and falls back to `single_stream_download`, the progress bar is automatically reset to 0, preventing progress overshoot (e.g. `1,601.6 / 912.6 MB`).
+  - **Stale Buffer Purge**: Automatically cleans any existing or oversized `.part` file before beginning parallel ingestion.
+
+---
+
+# Progress Report - October 12, 2026 (Part 2: Dedicated Harness TTS Engine & JSON Voice Direction Pipeline)
+
+- **Dedicated Harness TTS Engine (`Models/TTS/Breeze tts/harness_engine.py`, `orchestrator.py`, `core/funnel.py`):**
+  - **Separate Subcommand & CLI/TUI Dispatch**: Added `python3 orchestrator.py harness-tts` (aliases: `harness`, `harness tts`, `--harness-tts`), cleanly decoupling JSON-driven narration from general audiobook/novel synthesis (`breeze`/`tts`).
+  - **Streamlined Interactive TUI**: Removed legacy series scanning options from `run_harness_tui()`; users and agents can now directly drag-and-drop or specify any `script.json` or custom harness JSON file cleanly.
+  - **Minimalist Schema Support**: Optimized `parse_harness_json` and `render_harness_json` to support clean, bloat-free segment JSONs containing only `segment_id`, `panel_ids`/`panel_files`, `narration_text`, and optional `tts_instruction`. Deprecated and eliminated unnecessary `action_summary`, `dialogue_notes`, and pre-calculated `estimated_duration_seconds`.
+  - **Universal JSON Normalizer**: Seamlessly parses:
+    * Streamlined chapter recap scripts (`script.json`) with `narration_text` and `tts_instruction`.
+    * Lightweight 2-field list format: `[{"text": "...", "direction": "..."}, {"text": "..."}]`.
+    * Parallel 2-array format: `{"narration": [...], "direction": [...]}`.
+  - **Selective Voice Direction vs. Normal Narration**: Segments with explicit direction instructions are steered dynamically via Breeze TTS; segments with `null` or omitted direction automatically fall back to the steady, natural narrator voice, completely eliminating erratic pitch/volume jumps ("anti-rollercoaster voice").
+  - **Master Transcript Auto-Generation**: Automatically extracts all narration text from the JSON and creates or updates a clean master transcript file (`narration.txt`), formatted as double-newline separated paragraphs for external transcription and editorial use.
+  - **Intelligent Word/Phrase-Level Subtitle Splitting (`build_srt_cues_for_segment`)**: Completely overhauled the subtitle pipeline. Instead of generating a single massive 15-second subtitle block per segment that editors had to manually split or recreate, the engine now automatically breaks spoken narration into natural, bite-sized subtitle cues (≤ 7 words / ≤ 40 characters per line) proportioned to character weight across the segment's measured audio timeline:
+    * Strips internal acoustic vocal tags (`(pause)`, `(scoffs)`, `(sighs)`) so only clean spoken dialogue appears on screen.
+    * Breaks at natural clause and punctuation pauses (`.`, `!`, `?`, `,`, `;`, `—`).
+    * Inserts precise 0.04s inter-cue breathing gaps for sharp, ready-to-use captions in CapCut, Premiere Pro, and DaVinci Resolve.
+  - **Smart Content-Hash Segment Caching (`.cache_index.json`)**: Upgraded segment caching from naive file-size checks (`size > 500`) to SHA-256 content signatures (`sha256(narration|direction|voice)`). If a user or agent modifies a segment's narration text or voice instruction in `script.json`, only the affected segment is automatically re-rendered while all unchanged segments are skipped instantly. Cache signatures persist cleanly in `audio/segments/.cache_index.json`.
+  - **Breeze WebUI Random Seed & Reference Tag Bank (`/mnt/maiden/tts/Breeze-TTS-2.cpp`)**:
+    * Added interactive random seed generation (`🎲` Randomize button and `Randomize each run` checkbox) to the Breeze TTS 2 web interface.
+    * Recompiled `/mnt/maiden/tts/Breeze-TTS-2.cpp/build/breeze-server`.
+    * Added comprehensive canonical reference text testing all 34 vocal tags at `Models/TTS/Breeze tts/breeze_all_tags_reference.txt`.
+  - **Voice Directory Cleanup**: Cleaned duplicate symlinks from `/mnt/maiden/tts/Breeze-TTS-2.cpp/voices/` to maintain a single canonical `seductive_director.*` voice profile.
+- **Skill Instructions & Deliverables Synchronization (`~/.gemini/config/skills/manhua-recap`):**
+  - Updated `SKILL.md`, `references/schemas_and_deliverables.md`, `references/narration_style.md`, and `references/validation_and_troubleshooting.md`.
+  - **Direct Panel Range Ingestion**: Instructs the agent to ingest panels directly when a range is specified in the prompt (e.g. `001.webp - 062.webp`), avoiding redundant `ls` and discovery tool steps.
+  - **Eliminated `story_tracker.json` Entirely**: Removed the monolithic, growing tracking database. Replaced it with a zero-bloat, direct chapter-to-chapter bridge where the agent simply reads the previous chapter's `summary` and last spoken narration beat to connect transitions naturally.
+  - **Eliminated `excluded_panels` & `quality_checks`**: Stripped artificial JSON auditing blocks that bloated context. Non-story/promotional panels are simply ignored during reading.
+  - **High-Efficiency Parallel Batch Reading (1–5 Panels/Turn)**: Added explicit reading directives to `SKILL.md` and `references/validation_and_troubleshooting.md`. Prohibited artificial image stitching (which compresses vertical aspect ratios and blurs dialogue text); models are now instructed to inspect images in parallel batches of 3–5 panels per tool turn for maximum text sharpness, native aspect-ratio retention, and rapid chapter digestion.
+  - Stripped `action_summary`, `dialogue_notes`, and `estimated_duration_seconds` completely from the segment contract, minimizing context bloat and focusing the agent strictly on narrative delivery.
+
+---
+
 # Progress Report - October 12, 2026 (Breeze TTS 2 Engine Integration, AI Storyteller Harness & Subtitle Automation)
 
 - **Breeze TTS 2 Built-in Engine & AI Agent Automation (`Models/TTS/Breeze tts/breeze_engine.py`, `orchestrator.py`, `core/funnel.py`):**

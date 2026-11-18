@@ -200,11 +200,86 @@ def format_srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def split_text_into_subtitles(text: str, max_words: int = 7, max_chars: int = 40) -> list[str]:
+    """
+    Splits narration text into clean, short subtitle cues optimal for video editing.
+    Strips internal vocal tags (e.g. (pause), (scoffs), (sighs)) so only clean spoken dialogue
+    appears on-screen, and breaks at natural punctuation and clause boundaries.
+    """
+    import re
+    # Strip vocal tags like (sighs), (pause), (scoffs)
+    clean_text = re.sub(r"\([^)]*\)", "", text).strip()
+    clean_text = re.sub(r"\s+", " ", clean_text)
+    if not clean_text:
+        return []
+
+    # First split at natural clause / sentence punctuation
+    clauses = re.split(r"(?<=[.!?,;:—])\s+", clean_text)
+    chunks: list[str] = []
+
+    for clause in clauses:
+        clause = clause.strip()
+        if not clause:
+            continue
+        words = clause.split()
+        if len(words) <= max_words and len(clause) <= max_chars:
+            chunks.append(clause)
+        else:
+            # Sub-split long clauses into bite-sized phrases
+            cur: list[str] = []
+            cur_len = 0
+            for w in words:
+                if cur and (len(cur) >= max_words or cur_len + len(w) + 1 > max_chars):
+                    chunks.append(" ".join(cur))
+                    cur = [w]
+                    cur_len = len(w)
+                else:
+                    cur.append(w)
+                    cur_len += len(w) + 1
+            if cur:
+                chunks.append(" ".join(cur))
+    return chunks
+
+
+def build_srt_cues_for_segment(
+    narration: str,
+    seg_start: float,
+    seg_dur: float,
+    start_idx: int,
+) -> list[tuple[int, str, str, str]]:
+    """
+    Calculates accurately proportioned, synchronized SRT cues for an audio segment.
+    Weights each subtitle phrase based on length for natural speech cadence alignment.
+    """
+    chunks = split_text_into_subtitles(narration)
+    if not chunks or seg_dur <= 0:
+        return []
+
+    weights = [max(len(c.strip()), 4) for c in chunks]
+    total_weight = sum(weights)
+
+    cues: list[tuple[int, str, str, str]] = []
+    curr_time = seg_start
+
+    for idx, (chunk, w) in enumerate(zip(chunks, weights), start_idx):
+        portion = (w / total_weight) * seg_dur
+        c_start = curr_time
+        c_end = curr_time + portion
+        # Subtle 0.04s tail breath before the next subtitle block for crisp NLE readability
+        display_end = max(c_start + 0.15, c_end - 0.04) if idx < start_idx + len(chunks) - 1 else c_end
+        cues.append((idx, format_srt_time(c_start), format_srt_time(display_end), chunk))
+        curr_time = c_end
+
+    return cues
+
+
+
 def normalize_chunk_loudness(
     input_wav: Path,
     output_wav: Path,
     target_lufs: float = -16.0,
     true_peak_db: float = -1.5,
+    micro_fade: bool = True,
 ) -> bool:
     """
     Normalizes a WAV chunk to a target integrated loudness using ffmpeg loudnorm (EBU R128).
@@ -214,22 +289,25 @@ def normalize_chunk_loudness(
         True peak:           -1.5 dBTP
         Noise floor:         -60 dBFS
 
-    Uses a fast single-pass linear mode: measures the file with the 'loudnorm' filter
-    in linear mode which computes integrated loudness and applies linear gain correction
-    instantly — no dual-pass needed for mono speech with consistent spectral content.
-
+    Includes an optional 15ms micro-fade-in to prevent harsh onset transients or clicks.
     Returns True on success, False if ffmpeg fails (caller keeps original file).
     """
     try:
+        filter_str = (
+            "afade=t=in:ss=0:d=0.015,"
+            f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA=7:"
+            "measured_I=-70:measured_LRA=0:measured_TP=-70:"
+            "measured_thresh=-80:offset=0:linear=true:print_format=none"
+        ) if micro_fade else (
+            f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA=7:"
+            "measured_I=-70:measured_LRA=0:measured_TP=-70:"
+            "measured_thresh=-80:offset=0:linear=true:print_format=none"
+        )
         norm_result = subprocess.run(
             [
                 "ffmpeg", "-y",
                 "-i", str(input_wav),
-                "-af", (
-                    f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA=7:"
-                    "measured_I=-70:measured_LRA=0:measured_TP=-70:"
-                    "measured_thresh=-80:offset=0:linear=true:print_format=none"
-                ),
+                "-af", filter_str,
                 "-ar", "24000",
                 "-ac", "1",
                 "-c:a", "pcm_s16le",
@@ -309,6 +387,23 @@ VOCAL_EVENT_REGEX = re.compile(
 def contains_vocal_events(text: str) -> bool:
     """Detects whether text includes inline vocal event tags."""
     return bool(VOCAL_EVENT_REGEX.search(text))
+
+
+def prepare_chunk_narration_text(raw_text: str) -> str:
+    """
+    Prepares segment narration text for neural TTS generation.
+    1. Trims extraneous whitespace.
+    2. Ensures terminal cadence punctuation (., !, ?, …) so the model
+       doesn't truncate final consonants before predicting EOS.
+    3. Adds a subtle trailing cadence cushion (' .') so the vocoder completes
+       the final syllable decay before token generation terminates.
+    """
+    text = raw_text.strip()
+    if not text:
+        return ""
+    if not re.search(r'[.!?…]$', text):
+        text += "."
+    return text + " ."
 
 
 def _is_narratively_special(para: str) -> bool:
@@ -1660,6 +1755,7 @@ def process_book_breeze(txt_path_str: str):
                         seg_w = (segments_dir / f"segment_{idx:03d}.wav") if segments_dir else (out_dir / f"segment_{idx:03d}.wav")
                         if seg_w.exists():
                             dur = get_wav_duration(str(seg_w))
+                            seg["duration_seconds"] = round(dur, 2)
                             seg["estimated_duration_seconds"] = round(dur, 2)
                             seg["audio_file"] = f"chapters/{chapter_folder.name}/audio/segments/segment_{idx:03d}.wav"
                     tmp_sj = script_json_path.with_suffix(".tmp")
@@ -1900,8 +1996,8 @@ def render_recap_script(
             console.print(f"[bold red]● {msg}[/bold red]")
         return {"status": "error", "message": msg}
 
-    series = script_data.get("series", "Unknown Series")
-    chapter = str(script_data.get("chapter", "0"))
+    series = script_data.get("series") or script_data.get("series_title") or "Unknown Series"
+    chapter = str(script_data.get("chapter") or script_data.get("chapter_id") or "0")
     segments = script_data.get("segments", [])
 
     if not segments:
@@ -1961,19 +2057,21 @@ def render_recap_script(
             skipped_count += 1
             real_dur = get_wav_duration(str(seg_wav))
             seg["audio_file"] = rel_wav_path
+            seg["duration_seconds"] = round(real_dur, 2)
             seg["estimated_duration_seconds"] = round(real_dur, 2)
             segment_wavs.append(seg_wav)
             console.print(f"  [dim]Segment {seg_id:03d}/{total_segments:03d}: cached ({real_dur:.2f}s)[/dim]")
         else:
             has_vocal = contains_vocal_events(narration)
-            seg_cfg = max(base_cfg, 2.5) if has_vocal else base_cfg
-            console.print(f"  [bold cyan]● Segment {seg_id:03d}/{total_segments:03d}:[/bold cyan] rendering...{' [yellow](vocal event boost 2.5x)[/yellow]' if has_vocal else ''}")
+            seg_cfg = min(max(base_cfg, 1.5), 1.7) if has_vocal else base_cfg
+            speech_text = prepare_chunk_narration_text(narration)
+            console.print(f"  [bold cyan]● Segment {seg_id:03d}/{total_segments:03d}:[/bold cyan] rendering...{' [yellow](vocal event tuned)[/yellow]' if has_vocal else ''}")
 
             success = False
             # Method 1: Try direct CLI (Vulkan GPU)
             try:
                 success = BreezeTTS.generate_chunk_cli(
-                    text=narration,
+                    text=speech_text,
                     output_wav=str(seg_wav),
                     instruction=instruction,
                     mode="Saved Voice",
@@ -1990,7 +2088,7 @@ def render_recap_script(
             if not success and check_breeze_server_online(server_url):
                 try:
                     success = BreezeTTS.generate_chunk_http(
-                        text=narration,
+                        text=speech_text,
                         output_wav=str(seg_wav),
                         server_url=server_url,
                         instruction=instruction,
@@ -2004,10 +2102,11 @@ def render_recap_script(
                     _log_event("RECAP_HTTP_FAIL", {"seg": seg_id, "error": str(e)})
 
             if success and seg_wav.exists() and seg_wav.stat().st_size > 100:
-                # ACX standard loudness normalization
+                # ACX standard loudness normalization (-16 LUFS) with 15ms micro-fade
                 normalize_chunk_loudness(seg_wav, seg_wav)
                 real_dur = get_wav_duration(str(seg_wav))
                 seg["audio_file"] = rel_wav_path
+                seg["duration_seconds"] = round(real_dur, 2)
                 seg["estimated_duration_seconds"] = round(real_dur, 2)
                 segment_wavs.append(seg_wav)
                 rendered_count += 1
@@ -2018,29 +2117,46 @@ def render_recap_script(
 
         if seg_wav.exists() and seg_wav.stat().st_size > 100:
             dur = get_wav_duration(str(seg_wav))
-            start_fmt = format_srt_time(accumulated_time)
-            end_fmt = format_srt_time(accumulated_time + dur)
-            accumulated_time += dur
-            srt_entries.append((len(srt_entries) + 1, start_fmt, end_fmt, narration))
+            # Split segment narration into natural, short subtitle cues synchronized to the audio
+            seg_cues = build_srt_cues_for_segment(
+                narration=narration,
+                seg_start=accumulated_time,
+                seg_dur=dur,
+                start_idx=len(srt_entries) + 1,
+            )
+            accumulated_time += dur + 0.25 # 250ms natural breathing gap
+            srt_entries.extend(seg_cues)
 
     # Stitch full chapter audio & subtitles
     full_wav = audio_dir / "chapter_full.wav"
     full_srt = audio_dir / "chapter_full.srt"
 
     if segment_wavs:
-        console.print(f"\n[bold cyan]● Stitching {len(segment_wavs)} segments → chapter_full.wav...[/bold cyan]")
+        console.print(f"\n[bold cyan]● Stitching {len(segment_wavs)} segments with natural breathing pauses → chapter_full.wav...[/bold cyan]")
         concat_list = audio_dir / ".concat_list.txt"
+        silence_wav = audio_dir / ".silence_250ms.wav"
         try:
+            # Generate 250ms natural breathing silence block
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                "-t", "0.25", "-acodec", "pcm_s16le", str(silence_wav)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
             with open(concat_list, "w", encoding="utf-8") as cf:
-                for w in segment_wavs:
+                for idx_w, w in enumerate(segment_wavs):
                     cf.write(f"file '{w.resolve()}'\n")
+                    if idx_w < len(segment_wavs) - 1 and silence_wav.exists():
+                        cf.write(f"file '{silence_wav.resolve()}'\n")
 
             cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-acodec", "pcm_s16le", str(full_wav)]
             res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             if concat_list.exists():
                 concat_list.unlink()
+            if silence_wav.exists():
+                silence_wav.unlink()
 
             if res.returncode == 0 and full_wav.exists():
+                normalize_chunk_loudness(full_wav, full_wav, micro_fade=False)
                 full_dur = get_wav_duration(str(full_wav))
                 console.print(f"[bold green]✓ Chapter full audio generated:[/bold green] {full_wav} ({full_dur:.1f}s)")
             else:

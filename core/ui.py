@@ -1206,6 +1206,10 @@ class Selector:
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)
             try:
+                try:
+                    termios.tcflush(fd, termios.TCIFLUSH)
+                except Exception:
+                    pass
                 tty.setcbreak(fd, termios.TCSADRAIN)
                 with Live(self._render(), console=console, auto_refresh=False, transient=True) as live:
                     _LIVE_INSTANCE = live

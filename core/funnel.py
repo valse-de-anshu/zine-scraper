@@ -956,7 +956,7 @@ class MainPrompt:
             self.suggestion = ""
             return
             
-        commands = ["anima model", "bake", "breeze", "civitai", "clean", "doctor", "exit", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
+        commands = ["anima model", "bake", "breeze", "civitai", "clean", "doctor", "exit", "harness", "harness-tts", "harness tts", "help", "lyrs", "sc-lyrics", "settings", "site", "slice", "subs", "tts", "vacuum", "version"]
         for cmd in commands:
             if cmd.startswith(val) and len(val) < len(cmd):
                 self.suggestion = cmd
@@ -1089,6 +1089,13 @@ class MainPrompt:
             tip_text.append(" or ", style="info")
             tip_text.append("tts", style="warning")
             tip_text.append(" for voice & audiobooks (or pass file/chapter directly).\n", style="info")
+            
+            tip_text.append("● ", style="success")
+            tip_text.append("Type ", style="info")
+            tip_text.append("harness-tts", style="warning")
+            tip_text.append(" (or ", style="info")
+            tip_text.append("harness tts", style="warning")
+            tip_text.append(") for structured JSON voice direction.\n", style="info")
             
             tip_text.append("● ", style="success")
             tip_text.append("Type ", style="info")
@@ -1351,6 +1358,27 @@ def main():
                         break
                 from core.subtitle_engine import run_subtitle_tui
                 run_subtitle_tui(initial_path=target_media if target_media else None)
+            elif clean_lower in ["harness-tts", "/harness-tts", "harness_tts", "harness", "/harness", "harness tts", "/harness tts"] or any(clean_lower.startswith(pfx) for pfx in ("harness-tts ", "/harness-tts ", "harness tts ", "/harness tts ", "harness ", "/harness ")):
+                breeze_path = str(paths.get_breeze_tts_dir())
+                if breeze_path not in sys.path:
+                    sys.path.insert(0, breeze_path)
+                import harness_engine
+                trailing = ""
+                for pfx in ["/harness-tts ", "harness-tts ", "/harness tts ", "harness tts ", "/harness ", "harness "]:
+                    if clean_candidate.lower().startswith(pfx):
+                        trailing = clean_candidate[len(pfx):].strip()
+                        break
+                if trailing:
+                    import shlex
+                    try:
+                        t_args = shlex.split(trailing)
+                    except Exception:
+                        t_args = [trailing]
+                    harness_engine.run_harness_cli(t_args)
+                else:
+                    harness_engine.run_harness_tui()
+                if cli_args:
+                    break
             elif clean_lower in ["breeze", "/breeze"] or any(clean_lower.startswith(pfx) for pfx in ("breeze ", "/breeze ")):
                 breeze_path = str(paths.get_breeze_tts_dir())
                 if breeze_path not in sys.path:

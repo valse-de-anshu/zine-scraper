@@ -507,6 +507,9 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
             def progress_cb(chunk_len: int):
                 progress_bar.update(task_id, advance=chunk_len)
 
+            def reset_cb():
+                progress_bar.reset(task_id, completed=0)
+
             success = False
             with Live(get_renderable=render_model_tree, console=console, refresh_per_second=12, transient=True) as live:
                 set_active_live(live)
@@ -520,6 +523,7 @@ def run_civitai_tui(input_file: Optional[str] = None, threads: int = 6, max_retr
                         threads=threads,
                         max_retries=max_retries,
                         progress_callback=progress_cb,
+                        reset_callback=reset_cb,
                         stop_check=is_stop_requested
                     )
                     dl_data["done"] = True

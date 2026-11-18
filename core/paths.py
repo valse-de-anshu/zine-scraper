@@ -13,30 +13,37 @@ from typing import Optional, Any
 def sanitize_user_path(raw_path: str) -> str:
     """
     Cleans up file paths provided by users via drag-and-drop or pasting.
-    Strips quotes, file:// URIs, and intelligently fixes missing root slashes on Unix systems.
+    Strips quotes, file:// URIs, unescapes terminal spaces, decodes URL percent-encoding (%20),
+    and intelligently fixes missing root slashes on Unix systems.
     """
     if not raw_path:
         return raw_path
         
-    clean = raw_path.strip("'\" \t\n")
+    clean = raw_path.strip("'\" \t\r\n")
     if clean.startswith("file://"):
         clean = clean[7:]
+
+    # Handle URL percent-encoding (e.g. %20 for spaces when dropped from file managers/browsers)
+    if "%" in clean:
+        import urllib.parse
+        clean = urllib.parse.unquote(clean)
         
     # Fix missing root slash for absolute paths if dropped by terminal
     if clean.startswith(("home/", "mnt/", "media/", "usr/", "opt/", "Users/", "var/", "etc/", "tmp/")):
         clean = "/" + clean
 
-    # Handle bash/terminal escape sequences if path doesn't exist as-is
-    expanded = os.path.expanduser(clean)
-    if not os.path.exists(expanded) and "\\" in clean:
+    # Handle bash/terminal escape sequences (\ , \', \", \()
+    if "\\" in clean:
         import re
-        unescaped = re.sub(r"\\(.)", r"\1", clean)
-        if os.path.exists(os.path.expanduser(unescaped)):
-            clean = unescaped
-        elif os.path.exists(os.path.expanduser(clean.replace("\\ ", " "))):
-            clean = clean.replace("\\ ", " ")
-        else:
-            clean = unescaped
+        expanded = os.path.expanduser(clean)
+        if not os.path.exists(expanded):
+            unescaped = re.sub(r"\\(.)", r"\1", clean)
+            if os.path.exists(os.path.expanduser(unescaped)):
+                clean = unescaped
+            elif os.path.exists(os.path.expanduser(clean.replace("\\ ", " "))):
+                clean = clean.replace("\\ ", " ")
+            else:
+                clean = unescaped
 
     if "comfy ui-portable" in clean and not os.path.exists(os.path.expanduser(clean)):
         clean = clean.replace("comfy ui-portable", "comfyui-portable")

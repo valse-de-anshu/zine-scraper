@@ -161,9 +161,12 @@ zine --vacuum "my_reading_list.txt"
 zine breeze
 python3 orchestrator.py tts
 
-# Headless AI Harness (Synthesize chapter narration into master audio, subtitles & segments):
+# JSON-Driven Voice Harness (Render chapter recaps & custom JSONs with voice direction):
+zine harness-tts "chapters/chapter_001/script.json"
+python3 orchestrator.py harness-tts "my_voiceover.json" --voice seductive_director
+
+# Headless Audiobook Synthesis (Synthesize text into master audio & subtitles):
 zine breeze "chapters/chapter_001/narration.txt"
-python3 orchestrator.py breeze "path/to/series/chapters"
 
 # Or directly with Python:
 python3 orchestrator.py "https://example.com/media/title" --0
@@ -264,7 +267,8 @@ Type any of these commands directly into the main `Paste URL:` prompt:
 | **`bake`** / **`metadata`** | **Audio** | Audio Metadata & Cover Art Baking Engine (FFmpeg / Mutagen) |
 | **`lyrs`** | **Audio** | Synced `.lrc` Lyrics Search & Downloader (6-tier waterfall: LRCLIB, NetEase, Megalobiz) |
 | **`sc-lyrics`** | **Audio** | Recursive music library scanner and automated `.lrc` lyrics synchronization |
-| **`breeze`** | **Neural TTS** | Breeze-TTS-2 C++/GGUF speech engine (interactive voice studio or headless AI harness) |
+| **`breeze`** | **Neural TTS** | Breeze-TTS-2 C++/GGUF speech engine (interactive voice studio or novel synthesis) |
+| **`harness-tts`** | **TTS Harness** | Structured JSON Voice Harness (script.json recaps & 2-field JSONs with voice direction) |
 | **`tts`** | **AI Speech** | Universal Audiobook TTS Hub (choose between Breeze-TTS-2 / Qwen3-TTS, or pass file) |
 | **`subs`** | **AI Tools** | AI Subtitle Generator (`faster-whisper` local GPU transcription & translation) |
 | **`slice`** | **Tools** | Webtoon & Manhua Image Slicer (splits long vertical strips into standard pages) |
@@ -492,25 +496,37 @@ Zine natively supports 48 platforms across 12 structured categories (80+ support
   ```
   *(See [**AI Models Hub Guide**](Models/README%20to%20downlode%20ai%20model.md) for small, medium, and large model options).*
 
-### 3. Neural Speech & Audiobook Synthesis (`breeze`, `tts`)
-* **Interactive Voice Studio & Audiobook Reader**:
+### 3. Neural Speech & Audiobook Synthesis (`breeze`, `tts`, `harness-tts`)
+* **Interactive Voice Studio & Audiobook Reader (`breeze`, `tts`)**:
   - Run `zine breeze` or `python3 orchestrator.py tts` without arguments to launch the full-screen interactive voice console.
-  - Features **Voice Design** (prompt-driven voice synthesis), **Voice Cloning** (5-15s audio reference), **Saved Voice Profiles** (`.breeze` cache), and **Vocal Event Tags** `(sigh)`, `(whispering)`, `(clears throat)` with dynamic 2.5x CFG auto-boost.
-* **Headless AI Harness (Direct Script/Chapter Synthesis)**:
-  - Feed any `narration.txt` or chapter/series directory directly to synthesize master audio headlessly:
+  - Features **Voice Design** (prompt-driven voice synthesis), **Voice Cloning** (5-15s audio reference), **Saved Voice Profiles** (`.breeze` cache), and **Vocal Event Tags** `(sighs)`, `(whispers)`, `(clears throat)` with dynamic 2.5x CFG auto-boost.
+* **Structured JSON Voice Harness (`harness-tts`, `harness`)**:
+  - Specialized JSON-driven audio engine that separates **dynamic voice direction** from **normal narration**:
     ```bash
-    # Single chapter narration:
-    python3 orchestrator.py breeze "chapters/chapter_001/narration.txt"
+    # Render chapter recap script (script.json):
+    python3 orchestrator.py harness-tts "chapters/chapter_001/script.json"
 
-    # Entire series batch:
-    python3 orchestrator.py breeze "path/to/series/chapters"
+    # Render custom 2-field JSON ([{"text": "...", "direction": "..."}]):
+    python3 orchestrator.py harness-tts "voiceover.json" --voice seductive_director
+
+    # Interactive Harness TUI (browse scripts, select voice, inspect plan):
+    python3 orchestrator.py harness-tts
     ```
-  - **Clean Output Architecture**: Saves directly into that chapter's `audio/` folder without cluttering the workspace:
+  - **Selective Voice Direction**: Segments with `tts_instruction` / `direction` get steered dynamically; segments with `null` maintain a steady, natural narrator voice to avoid erratic pitch shifting.
+  - **Master Transcript Compilation**: Automatically extracts all narration lines and generates/updates the master `narration.txt` transcript with double-spaced paragraphs.
+  - **In-Place `script.json` Patching**: Measures real audio durations with ffprobe and patches `script.json` with actual segment WAV paths and timing.
+* **Headless Novel & Audiobook Reader (`breeze <file.txt>`)**:
+  - Feed any `narration.txt` or novel `.txt` file directly to synthesize master audio headlessly:
+    ```bash
+    python3 orchestrator.py breeze "chapters/chapter_001/narration.txt"
+    ```
+  - **Clean Output Architecture**: Saves directly into that chapter's `audio/` folder:
     ```text
     chapter_001/
-    ├── narration.txt          ← Input spoken transcription
+    ├── narration.txt          ← Input / compiled spoken transcript
+    ├── script.json            ← Master baked script (patched with real audio & durations)
     └── audio/
-        ├── chapter_full.wav   ← Master audio (-16 LUFS normalized)
+        ├── chapter_full.wav   ← Master stitched audio (-16 LUFS normalized)
         ├── chapter_full.srt   ← Synchronized subtitles
         └── segments/          ← Dedicated subfolder for chunk clips (segment_001.wav, ...)
     ```

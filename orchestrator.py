@@ -83,6 +83,18 @@ if len(sys.argv) > 1:
             custom_file = sys.argv[2]
         run_civitai_tui(input_file=custom_file)
         sys.exit(0)
+    elif arg_first in ["harness-tts", "--harness-tts", "harness", "--harness", "harness_tts", "--harness_tts"] or (arg_first == "harness" and len(sys.argv) > 2 and sys.argv[2].lower() in ["tts"]):
+        from core.paths import PathAuthority
+        pa = PathAuthority()
+        breeze_dir = str(pa.get_breeze_tts_dir())
+        if breeze_dir not in sys.path:
+            sys.path.insert(0, breeze_dir)
+        import harness_engine
+        pass_args = sys.argv[2:]
+        if arg_first == "harness" and pass_args and pass_args[0].lower() == "tts":
+            pass_args = pass_args[1:]
+        harness_engine.run_harness_cli(pass_args)
+        sys.exit(0)
     elif arg_first in ["breeze", "tts", "--breeze", "--tts", "breeze-tts", "--breeze-tts"]:
         from core.paths import PathAuthority
         pa = PathAuthority()

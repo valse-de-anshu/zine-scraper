@@ -1,0 +1,73 @@
+# ==============================================================================
+# BREEZE TTS 2 — COMPLETE CANONICAL VOCAL TAGS & PERFORMANCE REFERENCE
+# ==============================================================================
+# This text is designed as an all-in-one test suite and reference script.
+# It naturally uses EVERY SINGLE ONE of the 34 documented Breeze TTS audio tags,
+# organized into a continuous, cinematic dark fantasy / manhua narrative.
+#
+# Rules for Breeze TTS Tags:
+# 1. Use the EXACT lowercase spelling with parentheses: (sighs), not (sigh) or [sighs].
+# 2. Place tags inline right where the physical breath or vocal action occurs.
+# 3. Use commas (,), em-dashes (—), and ellipses (...) to shape natural breath rhythm.
+# ==============================================================================
+
+[SECTION 1: THE REACTION & BREATHING CYCLE]
+# Tags used: (clears throat), (pause), (yawns), (clicks tongue), (sighs), (gulps), (gasps), (inhales), (exhales), (breathing heavily)
+
+(clears throat) Listen closely, because I am only going to explain the rules of this dungeon once. (pause)
+
+While the rest of the rookie vanguard (yawns) out of pure boredom, Jaehwan stands near the gate, staring into the dark. The scouts haven't returned. (clicks tongue) That's never a good sign. (sighs) 
+
+Suddenly, a foul sulfur stench drifts from the corridor. The recruit beside him (gulps) in terror, staring at the shadows. (gasps) From the obsidian ceiling, a colossal spider descends! 
+
+Jaehwan (inhales) deeply, steadying his heartbeat, and (exhales) the tension through his teeth. With his twin daggers drawn, he sprints forward, (breathing heavily) as venomous fangs graze past his shoulder.
+
+
+[SECTION 2: COMBAT, DISTRESS & VIOLENT CLASH]
+# Tags used: (grunts), (groans), (whimpers), (crying), (sobs), (moans), (screams), (shouts)
+
+The beast lashes out with a barbed talon! Jaehwan parries the blow head-on—(grunts) the sheer shockwave cracks the stone floor beneath his boots. 
+
+Behind him, a fallen hunter is trapped under fallen rubble; he (groans) in agony as the venom spreads. A terrified apprentice (whimpers) in the corner, (crying) uncontrollably as the vanguard line shatters into chaos. (sobs) "We're all going to die here!" the boy (screams) at the top of his lungs. 
+
+Across the cavern, the injured squad captain (moans) under his breath, clenching a broken blade. "Hold the defensive formation!" Jaehwan (shouts) over the roar of the monster, thrusting his dagger straight into the creature's core.
+
+
+[SECTION 3: DEADPOOL 4TH-WALL HUMOR & CYNICAL SMUGNESS]
+# Tags used: (scoffs), (chuckles), (snorts), (smacks lips), (whispers), (laughs), (giggles)
+
+And right on cue, the corrupt sect elder struts into the chamber with that classic villain smirk. (scoffs) Because of course—why fight the boss when you can let the rookies die and steal the loot? 
+
+The elder claims he alone holds the divine grace to save us. (chuckles) Yeah, spoiler alert: the speech did not age well. Jaehwan (snorts) in disgust at the hypocrisy. (smacks lips) Delicious irony.
+
+Leaning close to the trembling elder, Jaehwan (whispers) right into his ear: "Your cultivation technique is trash." The crowd bursts into nervous relief—one swordsman (laughs) out loud while the priestess (giggles) behind her sleeve.
+
+
+[SECTION 4: PHYSIOLOGICAL REFLEXES, TENSION & CONCLUSION]
+# Tags used: (coughs), (sniffs), (gags), (hiccups), (sneezes), (burps), (stutters), (humming), (singing)
+
+The monster's corpse dissolves into toxic purple vapor. Jaehwan (coughs) violently through the smoke, wave after wave of nausea hitting him. The scout (sniffs) the caustic fumes and instantly (gags) from the stench. 
+
+To make matters worse, the alchemist drinks an unverified antidote in panic—and immediately gets the (hiccups) so bad he can barely speak. An errant speck of sulfur tickles his nose, and he (sneezes) right into his potion flask! (burps) "E-Excuse me..." he (stutters) nervously, his face completely flushed.
+
+With the cavern finally secure, Jaehwan wipes the ichor from his daggers. A lone bard sits by the campfire, (humming) a melancholy tune about fallen warriors, softly (singing) the ancient verse of the wandering souls. 
+
+(pause) Just another day in the tower.
+
+
+# ==============================================================================
+# CANONICAL 34 BREEZE AUDIO TAGS CHECKLIST:
+# ==============================================================================
+# [x] (laughs)               [x] (crying)              [x] (sighs)
+# [x] (chuckles)             [x] (sobs)                [x] (gasps)
+# [x] (giggles)              [x] (whimpers)            [x] (inhales)
+# [x] (groans)               [x] (exhales)             [x] (breathing heavily)
+# [x] (moans)                [x] (whispers)            [x] (shouts)
+# [x] (screams)              [x] (singing)             [x] (humming)
+# [x] (stutters)             [x] (pause)               [x] (clears throat)
+# [x] (coughs)               [x] (sniffs)              [x] (smacks lips)
+# [x] (clicks tongue)        [x] (yawns)               [x] (sneezes)
+# [x] (hiccups)              [x] (burps)               [x] (gulps)
+# [x] (gags)                 [x] (grunts)              [x] (scoffs)
+# [x] (snorts)
+# ==============================================================================

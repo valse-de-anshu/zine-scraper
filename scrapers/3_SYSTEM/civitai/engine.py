@@ -383,7 +383,7 @@ def download_chunk(
     session: requests.Session,
     url: str,
     headers: Dict[str, str],
-    part_path: str,
+    fd: int,
     start: int,
     end: int,
     file_lock: threading.Lock,
@@ -391,10 +391,12 @@ def download_chunk(
     max_retries: int = 5,
     stop_check: Optional[Callable[[], bool]] = None
 ) -> bool:
-    """Downloads a single slice/chunk in parallel with retries and mid-chunk resume."""
+    """Downloads a single slice/chunk in parallel with retries and atomic writes."""
     curr_pos = start
-    # Strip Authorization header so presigned S3/R2/B2 URLs do not reject with 400 Bad Request
-    base_headers = {k: v for k, v in headers.items() if k.lower() != 'authorization'}
+    # Strip Authorization and force Accept-Encoding: identity so CDNs honor Range: with 206 Partial Content
+    base_headers = {k: v for k, v in headers.items() if k.lower() not in ('authorization', 'accept-encoding')}
+    base_headers['Accept-Encoding'] = 'identity'
+    use_pwrite = hasattr(os, "pwrite")
 
     for attempt in range(1, max_retries + 1):
         if stop_check and stop_check():
@@ -407,24 +409,33 @@ def download_chunk(
 
         try:
             with session.get(url, headers=chunk_headers, stream=True, timeout=30) as r:
-                if r.status_code not in (200, 206):
+                # If we asked for a sub-range slice and server returned 200, Range is ignored.
+                # Must abort parallel slice immediately to prevent downloading duplicate full files!
+                if r.status_code == 200:
+                    return False
+                if r.status_code != 206:
                     r.raise_for_status()
 
-                if r.status_code == 200 and curr_pos > start:
-                    curr_pos = start
-
+                expected_bytes = end - curr_pos + 1
                 for chunk in r.iter_content(chunk_size=1024 * 1024):
                     if stop_check and stop_check():
                         return False
                     if chunk:
+                        if len(chunk) > expected_bytes:
+                            chunk = chunk[:expected_bytes]
                         chunk_len = len(chunk)
-                        with file_lock:
-                            with open(part_path, 'r+b') as f:
-                                f.seek(curr_pos)
-                                f.write(chunk)
+                        if use_pwrite:
+                            os.pwrite(fd, chunk, curr_pos)
+                        else:
+                            with file_lock:
+                                os.lseek(fd, curr_pos, os.SEEK_SET)
+                                os.write(fd, chunk)
                         curr_pos += chunk_len
+                        expected_bytes -= chunk_len
                         if progress_callback:
                             progress_callback(chunk_len)
+                        if expected_bytes <= 0:
+                            return True
                 if curr_pos > end:
                     return True
         except Exception:
@@ -446,6 +457,7 @@ def parallel_download_file(
     threads: int = 6,
     max_retries: int = 5,
     progress_callback: Optional[Callable[[int], None]] = None,
+    reset_callback: Optional[Callable[[], None]] = None,
     stop_check: Optional[Callable[[], bool]] = None
 ) -> bool:
     """
@@ -453,6 +465,11 @@ def parallel_download_file(
     """
     part_path = target_path + ".part"
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    if os.path.exists(part_path):
+        try:
+            os.remove(part_path)
+        except Exception:
+            pass
 
     if total_size < 10 * 1024 * 1024:
         return single_stream_download(
@@ -466,10 +483,14 @@ def parallel_download_file(
             stop_check=stop_check
         )
 
-    # Pre-allocate part file on disk
-    with open(part_path, 'wb') as f:
-        f.seek(total_size - 1)
-        f.write(b'\0')
+    # Open single shared file descriptor and pre-allocate total_size
+    fd = os.open(part_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        os.ftruncate(fd, total_size)
+    except Exception:
+        with open(part_path, 'wb') as f:
+            f.seek(total_size - 1)
+            f.write(b'\0')
 
     chunk_size = total_size // threads
     ranges = []
@@ -479,16 +500,23 @@ def parallel_download_file(
         ranges.append((start, end))
 
     file_lock = threading.Lock()
+    all_succeeded = False
 
-    with ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [
-            executor.submit(
-                download_chunk, session, download_url, headers, part_path,
-                start, end, file_lock, progress_callback, max_retries, stop_check
-            )
-            for start, end in ranges
-        ]
-        all_succeeded = all(f.result() for f in as_completed(futures))
+    try:
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            futures = [
+                executor.submit(
+                    download_chunk, session, download_url, headers, fd,
+                    start, end, file_lock, progress_callback, max_retries, stop_check
+                )
+                for start, end in ranges
+            ]
+            all_succeeded = all(f.result() for f in as_completed(futures))
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
 
     if stop_check and stop_check():
         if os.path.exists(part_path):
@@ -512,6 +540,13 @@ def parallel_download_file(
 
     if stop_check and stop_check():
         return False
+
+    # Reset progress bar so single_stream_download starts clean from 0
+    if reset_callback:
+        try:
+            reset_callback()
+        except Exception:
+            pass
 
     return single_stream_download(
         session=session,
@@ -539,7 +574,9 @@ def single_stream_download(
     part_path = target_path + ".part"
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-    base_headers = {k: v for k, v in headers.items() if k.lower() != 'authorization'}
+    base_headers = {k: v for k, v in headers.items() if k.lower() not in ('authorization', 'accept-encoding')}
+    base_headers['Accept-Encoding'] = 'identity'
+
     for attempt in range(1, max_retries + 1):
         if stop_check and stop_check():
             return False

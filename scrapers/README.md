@@ -244,6 +244,14 @@ Accelerated Multi-Stream Civitai & Anima Model Downloader:
 - **Secrets & Auth Integration**: Transparently resolves API keys from `secrets.json`, environment variables, or inline queue file headers (`cavitai.txt`).
 - **Full Revolt & Truncate Support**: Seamlessly responds to `Ctrl+R` (graceful stop / item limit) and `Ctrl+T` (early truncate) with immediate in-flight chunk cancellation.
 
+### 5. Neural TTS & Voice Harness (`Models/TTS/Breeze tts/`)
+High-performance C++ / GGUF neural speech engine and JSON voiceover automation harness powered by Breeze-TTS-2:
+- **Universal Voice Studio (`breeze`, `tts`)**: Interactive full-screen terminal console for voice design, few-shot voice cloning, voice conversion (`breeze-convert`), and audiobook synthesis.
+- **Structured JSON Voice Harness (`harness-tts`, `harness`)**: Dedicated JSON audio engine that processes chapter recap scripts (`script.json`) and lightweight 2-field JSONs (`[{"text": "...", "direction": "..."}]`).
+- **Selective Voice Direction**: Steers segments with custom directions dynamically while maintaining steady, grounded narrator delivery on normal narration beats (eliminating pitch rollercoasters).
+- **Automated Clean Master Transcript**: Automatically compiles all narration text into a master `narration.txt` file (double-spaced paragraphs) for video editors and transcript archiving.
+- **Audio Delivery & Normalization**: Produces individual ACX standard -16 LUFS normalized segment clips, stitches full master audio (`chapter_full.wav`), generates synchronized subtitles (`chapter_full.srt`), and updates `script.json` with real audio durations.
+
 ---
 
 ## 4. Standard 8-File Scraper Architecture
