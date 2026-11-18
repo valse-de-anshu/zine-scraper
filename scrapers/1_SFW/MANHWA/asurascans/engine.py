@@ -12,9 +12,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin
 
 import requests
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
 from bs4 import BeautifulSoup
 from PIL import Image
-from core.paths import PathAuthority
+from core.paths import PathAuthority, get_system_script
 
 try:
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -78,14 +83,42 @@ class BaseScraper:
         self.consecutive_failures = 0
 
     def get_soup(self, url: str) -> BeautifulSoup:
-        for attempt in range(5):
+        # Fast-path: curl_cffi with Chrome 124 TLS impersonation (bypasses Cloudflare Turnstile instantly)
+        if HAS_CURL_CFFI:
             try:
-                r = self.session.get(url, timeout=35)
+                r = cffi_requests.get(url, impersonate="chrome124", timeout=20)
+                if r.status_code == 200 and "challenges.cloudflare.com" not in r.text:
+                    return BeautifulSoup(r.text, "lxml")
+                elif r.status_code == 200:
+                    logging.debug(f"[AsuraScans] Cloudflare challenge detected on {url}")
+            except Exception as e:
+                logging.debug(f"[AsuraScans] curl_cffi request failed for {url}: {e}")
+
+        # Secondary fallback: Headless Playwright extractor
+        try:
+            import subprocess
+            script_path = get_system_script("playwright_extractor.py")
+            if script_path and Path(script_path).exists():
+                cmd = [sys.executable, str(script_path), url]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if res.returncode == 0 and "JSON_RESULT:" in res.stdout:
+                    out_json = res.stdout.split("JSON_RESULT:")[-1].strip()
+                    data = json.loads(out_json)
+                    html_content = data.get("html", "")
+                    if html_content:
+                        return BeautifulSoup(html_content, "lxml")
+        except Exception as e:
+            logging.debug(f"[AsuraScans] playwright_extractor fallback failed for {url}: {e}")
+
+        # Final fallback: Standard requests session
+        for attempt in range(2):
+            try:
+                r = self.session.get(url, timeout=20)
                 r.raise_for_status()
                 content = r.content.decode("utf-8", errors="replace")
                 return BeautifulSoup(content, "lxml")
-            except Exception as e:
-                time.sleep(2 ** attempt)
+            except Exception:
+                time.sleep(1 + attempt)
         raise RuntimeError(f"Failed page: {url}")
 
     def download_image(self, src: str, path: Path, referer: str = None) -> int:
@@ -113,6 +146,11 @@ class BaseScraper:
                     # Attempt 3: No referer
                     headers.pop("Referer", None)
                     r = self.session.get(src, stream=True, timeout=(8, 15), headers=headers)
+
+                if r.status_code == 403 and HAS_CURL_CFFI:
+                    # Attempt 4: curl_cffi Chrome impersonation
+                    headers["Referer"] = referer or f"https://{self.domain}/"
+                    r = cffi_requests.get(src, stream=True, impersonate="chrome124", timeout=(8, 15), headers=headers)
 
                 if r.status_code in (400, 403, 404, 410, 422, 500, 502, 503, 504):
                     return -1
@@ -182,6 +220,9 @@ class BaseScraper:
                 if r.status_code == 403:
                     headers.pop("Referer", None)
                     r = self.session.get(cover_url, stream=True, timeout=(10, 25), headers=headers)
+                if r.status_code == 403 and HAS_CURL_CFFI:
+                    headers["Referer"] = f"https://{self.domain}/"
+                    r = cffi_requests.get(cover_url, stream=True, impersonate="chrome124", timeout=(10, 25), headers=headers)
 
                 if r.status_code == 200:
                     with open(raw_temp, "wb") as f:
