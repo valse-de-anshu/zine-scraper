@@ -189,6 +189,10 @@ def resolve_download_metadata(
     """
     probe_headers = headers.copy()
     probe_headers['Accept'] = 'application/octet-stream, application/json, */*'
+    # If download_url points directly to a presigned S3/R2/B2 storage URL, strip Authorization to avoid HTTP 400
+    if any(q in download_url.lower() for q in ('x-amz-', 'r2.cloudflarestorage', 'b2.civitai', 'delivery.civitai')):
+        probe_headers = {k: v for k, v in probe_headers.items() if k.lower() not in ('authorization', 'accept-encoding')}
+        probe_headers['Accept-Encoding'] = 'identity'
 
     resp = session.get(download_url, headers=probe_headers, stream=True, allow_redirects=False, timeout=20)
 
@@ -238,9 +242,13 @@ def resolve_download_metadata(
 
             raise CivitaiDownloadError("Access restricted / Early access or Buzz required", category="Restricted", status_code=403)
 
-        # Valid CDN redirect (e.g. b2.civitai.com, delivery.civitai.com, etc.)
+        # Valid CDN redirect (e.g. b2.civitai.com, delivery.civitai.com, Cloudflare R2, AWS S3)
         cdn_url = loc if loc.startswith('http') else f"https://{domain}{loc}"
-        resp = session.get(cdn_url, headers=headers, stream=True, allow_redirects=True, timeout=20)
+        # Strip Authorization and force Accept-Encoding: identity so presigned storage URLs (S3/R2/B2)
+        # do not fail with HTTP 400 (InvalidRequest / Missing x-amz-content-sha256)
+        cdn_headers = {k: v for k, v in headers.items() if k.lower() not in ('authorization', 'accept-encoding')}
+        cdn_headers['Accept-Encoding'] = 'identity'
+        resp = session.get(cdn_url, headers=cdn_headers, stream=True, allow_redirects=True, timeout=20)
 
     # 2. Check for HTTP errors
     if resp.status_code not in (200, 206):

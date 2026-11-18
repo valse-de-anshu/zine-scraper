@@ -1,4 +1,9 @@
-# Progress Report - November 18, 2026 (AsuraScans Cloudflare TLS Bypass & Comprehensive Suite Audit)
+# Progress Report - November 18, 2026 (Civitai Presigned CDN Header Fix & Suite Health Verification)
+
+- **Civitai Presigned Storage Header Fix (`scrapers/3_SYSTEM/civitai/engine.py`):**
+  - **Root Cause of HTTP 400 Errors**: Civitai model downloads redirect (HTTP 307) from `/api/download/models/<mvid>` to presigned Cloudflare R2 / AWS S3 / Backblaze B2 storage endpoints (`r2.cloudflarestorage.com`) carrying presigned query authentication (`X-Amz-Signature`). S3-compatible endpoints strictly reject requests that supply both presigned query-string credentials and an `Authorization: Bearer <api_key>` header with `HTTP 400 InvalidRequest (Missing x-amz-content-sha256 / only one auth mechanism allowed)`. While `download_chunk()` and `single_stream_download()` already stripped `Authorization`, `resolve_download_metadata()` still passed `headers=headers` to `session.get(cdn_url)`, causing initial probe requests to fail with HTTP 400 across dozens of models.
+  - **Presigned Header Sanitization**: Sanitized headers in `resolve_download_metadata()` before probing `cdn_url` (and direct storage URLs), stripping `Authorization` and enforcing `Accept-Encoding: identity`.
+  - **Verified Live**: Successfully resolved metadata and verified downloads for previously failing models (`kirazuri-anima` [4.18 GB Checkpoint], `implied-clothed-sex` [228 MB LoRA], `miaomiao-3d-harem` [4.18 GB Checkpoint], `Standing_Girl_and_Sex_Scene` [228 MB LoRA]).
 
 - **AsuraScans Cloudflare Turnstile Bypass & Anti-Timeout Fix (`scrapers/1_SFW/MANHWA/asurascans/engine.py`):**
   - **Root Cause**: AsuraScans migrated behind stricter Cloudflare Turnstile bot challenges that immediately return `HTTP 403 Forbidden` (`cf-mitigated: challenge`) against standard Python `requests` TLS fingerprints. The previous engine retried with 5 exponential backoffs totaling over 3 minutes of dead time, manifesting as persistent timeouts and freezing the TUI.
